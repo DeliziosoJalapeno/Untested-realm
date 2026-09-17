@@ -16,6 +16,9 @@ registerScript('Sold-out Cemetery', {
     const self = ctx.state.sites[ctx.sourceId]
     if (!self || moved.isAvatar || moved.x !== self.x || moved.y !== self.y) return
     if (!effSubtypes(ctx.state, moved).includes('Undead')) return
+    // NB: there is NO once-per-turn limit. Two adjacent Sold-out Cemeteries may legally shuffle an Undead
+    // back and forth as many times as the player keeps choosing to (each push is its own direction prompt)
+    // — you just burn your clock; nothing forbids it. So we do NOT cap re-eviction.
     // Skip Undead that are already DOOMED but still on the board — their death is merely deferred
     // (parked behind a prompt in flow.pendingDeaths, OR lethally damaged inside an open damage event /
     // combat batch that hasn't settled yet). A card that kills an Undead here THEN summons another onto

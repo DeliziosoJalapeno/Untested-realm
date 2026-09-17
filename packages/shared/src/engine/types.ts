@@ -347,6 +347,7 @@ export type JudgeOp =
   | { k: 'draw'; player: PlayerId; deck: DeckName }
   | { k: 'token'; name: string; player: PlayerId; x: number; y: number; region: Region }
   | { k: 'destroySite'; siteId: string; toBanish?: boolean }
+  | { k: 'replaceSite'; siteId: string; name: string } // swap a site for another site in the same spot (same controller)
   | { k: 'siteWard'; siteId: string; on: boolean }
   | { k: 'flood'; siteId: string; on: boolean }
   // scenario creation: materialize REAL cards directly (no genesis, no cost)

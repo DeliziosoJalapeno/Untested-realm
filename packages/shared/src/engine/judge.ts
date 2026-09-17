@@ -243,6 +243,35 @@ export function applyJudge(state: GameState, player: PlayerId, op: JudgeOp): str
       checkStateBased(state)
       return null
     }
+    case 'replaceSite': {
+      // Swap a site for another site in the SAME square, keeping the same controller — an atomic
+      // "destroy this site + place that one here" (no rubble, no cemetery; the old card leaves the
+      // game like "remove completely"). The editor's one-click site swap.
+      const s = state.sites[op.siteId]
+      if (!s) return 'No such site.'
+      const def = findCard(op.name)
+      if (!def) return `Unknown card: ${op.name}`
+      if (def.type !== 'Site') return `${op.name} is not a site.`
+      const { x, y } = s
+      const holder = (s.controller ?? s.owner ?? player) as PlayerId
+      // remove the old site outright (banish its real card, like the editor's "remove completely")
+      const oldCard = state.cards[s.cardId]
+      delete state.sites[op.siteId]
+      if (oldCard && !oldCard.isToken) state.players[oldCard.owner].banished.push(oldCard.id)
+      // materialize the new site in the same spot, controlled by whoever held the old one
+      const isRubble = op.name === 'Rubble'
+      const cardId = newId(state, 'c')
+      state.cards[cardId] = { id: cardId, name: op.name, owner: holder, ...(isRubble ? { isToken: true } : {}) }
+      const siteId = newId(state, 's')
+      state.sites[siteId] = {
+        id: siteId, cardId, name: op.name, owner: holder,
+        controller: isRubble ? null : holder, x, y, tapped: false, isRubble,
+        ward: isRubble ? undefined : getKeywords(def.name).ward || undefined,
+      }
+      j(`replaced ${s.name} with ${op.name} at ${squareLabel(x, y)}`)
+      checkStateBased(state)
+      return null
+    }
     case 'siteWard': {
       const s = state.sites[op.siteId]
       if (!s) return 'No such site.'

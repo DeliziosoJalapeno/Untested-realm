@@ -1958,6 +1958,15 @@ button.autobattle:hover:not(:disabled) { background: #4a5cc0; }
 .jp-art-opt.sel { border-color: #ffd257; box-shadow: 0 0 6px rgba(255, 210, 87, 0.45); }
 .jp-art-opt:hover { border-color: #6a7090; }
 .jp-art-thumb { width: 52px; border-radius: 4px; display: block; }
+/* editor "replace this site" picker modal */
+.jp-replace-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); z-index: 60; display: flex; align-items: center; justify-content: center; }
+.jp-replace-box { background: #12151d; border: 1px solid #3a3f52; border-radius: 10px; padding: 12px; width: min(680px, 92vw); max-height: 82vh; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6); }
+.jp-replace-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.jp-replace-box > input { font-size: 13px; padding: 6px 8px; background: #0d0f16; border: 1px solid #3a3f52; border-radius: 6px; color: inherit; }
+.jp-replace-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; overflow-y: auto; padding: 2px; }
+.jp-replace-opt { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 4px; background: #14171f; border: 1px solid #3a3f52; border-radius: 6px; cursor: pointer; font-size: 11px; text-align: center; }
+.jp-replace-opt:hover { border-color: #ffd257; box-shadow: 0 0 6px rgba(255, 210, 87, 0.4); }
+.jp-replace-thumb { width: 100%; border-radius: 4px; display: block; }
 .jp-avatar-art { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
 .jp-art-who { font-size: 12.5px; opacity: 0.85; min-width: 7em; }
 .judgepanel { max-height: 82vh; overflow-y: auto; }

@@ -80,6 +80,25 @@ function add(c: Collection, name: string, finish: Finish) {
   c.cards[name][finish]++
 }
 
+/** manually add one copy of a card (default a standard finish) and persist. Used by the
+ *  collection page's card-search "add" interface — the same one the deck builder uses. */
+export function addCardToCollection(c: Collection, name: string, finish: Finish = 'std'): void {
+  add(c, name, finish)
+  saveCollection(c)
+}
+
+/** manually remove one copy (any finish, std → foil → curio last) and persist; no-op if none owned. */
+export function removeCardFromCollection(c: Collection, name: string): void {
+  const e = c.cards[name]
+  if (!e) return
+  if (e.std > 0) e.std--
+  else if (e.foil > 0) e.foil--
+  else if (e.curio > 0) e.curio--
+  else return
+  if (e.std + e.foil + e.curio === 0) delete c.cards[name]
+  saveCollection(c)
+}
+
 /** permanently destroy one Erik's Curiosa (the rip) — foils burn first, why not */
 export function ripEriksCuriosa(c: Collection): boolean {
   const e = c.cards["Erik's Curiosa"]

@@ -2061,8 +2061,17 @@ function GameInner({
   function manualNextSteps(): Step[] {
     const ms = manualState()
     if (!ms || mode.m !== 'manualMove') return []
+    // Rulebook: "the only restriction is that you may not repeat specific steps." A step is an EDGE
+    // (from→to), NOT a square — so a square may be revisited via a DIFFERENT edge, but the SAME edge
+    // can't be walked twice. Exclude already-walked edges here; otherwise the client would offer a
+    // repeat step the engine then silently drops (usedSteps), stranding the unit mid-move — the
+    // "movement stops when you go twice on the same square" bug.
+    const ek = (a: Step, b: Step) => `${a.x},${a.y},${a.region}->${b.x},${b.y},${b.region}`
+    const walked = new Set<string>()
+    let f: Step = { x: ms.u.x, y: ms.u.y, region: ms.u.region }
+    for (const s of mode.steps) { walked.add(ek(f, s)); f = s }
     return legalStepsFrom(st, ms.u, ms.pos).filter(
-      (to) => ms.spent + (isFreeStep(st, ms.u, ms.pos, to) ? 0 : 1) <= mode.budget,
+      (to) => !walked.has(ek(ms.pos, to)) && ms.spent + (isFreeStep(st, ms.u, ms.pos, to) ? 0 : 1) <= mode.budget,
     )
   }
   /** take one manual step to `to` (a legal next step). Reaching the stated destination
@@ -5870,6 +5879,9 @@ function JudgePanel({ view, me, send, selectedUnitId, selectedSiteId, selectedAr
   }
   const [tokenName, setTokenName] = useState('Foot Soldier')
   const [siteId, setSiteId] = useState('')
+  // "replace this site with another site" modal (an atomic destroy-and-place in the same spot)
+  const [replaceOpen, setReplaceOpen] = useState(false)
+  const [replaceQuery, setReplaceQuery] = useState('')
   const [artSel, setArtSel] = useState('')
   const [avatarPick, setAvatarPick] = useState<Record<number, string>>({})
   const [createName, setCreateName] = useState('Foot Soldier')
@@ -6313,12 +6325,40 @@ function JudgePanel({ view, me, send, selectedUnitId, selectedSiteId, selectedAr
               <button onClick={() => judge({ k: 'tap', id: site.id, tapped: !site.tapped })}>{site.tapped ? 'untap' : 'tap'}</button>
               <button onClick={() => judge({ k: 'siteWard', siteId: site.id, on: !site.ward })}>{site.ward ? 'unward' : 'ward'}</button>
               <button onClick={() => judge({ k: 'flood', siteId: site.id, on: !site.flooded })}>{site.flooded ? 'drain' : 'flood'}</button>
+              <button title="Swap this site for another site in the same spot (same controller)" onClick={() => { setReplaceQuery(''); setReplaceOpen(true) }}>🔄 replace…</button>
               <button title="Destroyed → cemetery, leaves rubble (fires 'when destroyed' triggers)" onClick={() => judge({ k: 'destroySite', siteId: site.id })}>destroy →⚰</button>
               <button title="Removed from the game completely; the square is cleared" onClick={() => { judge({ k: 'destroySite', siteId: site.id, toBanish: true }); setSiteId('') }}>remove 🚫</button>
             </>
           )}
         </span>
       </div>
+      )}
+      {replaceOpen && site && (
+        <div className="jp-replace-overlay" onClick={() => setReplaceOpen(false)}>
+          <div className="jp-replace-box" onClick={(e) => e.stopPropagation()}>
+            <div className="jp-replace-head">
+              <b>Replace {site.name} {squareLabel(site.x, site.y)} with…</b>
+              <button title="Close" onClick={() => setReplaceOpen(false)}>✕</button>
+            </div>
+            <input autoFocus placeholder="search sites…" value={replaceQuery} onChange={(e) => setReplaceQuery(e.target.value)} />
+            <div className="jp-replace-grid">
+              {allCards
+                .filter((c) => c.type === 'Site' && c.name.toLowerCase().includes(replaceQuery.toLowerCase()))
+                .slice(0, 120)
+                .map((c) => (
+                  <button
+                    key={c.name}
+                    className="jp-replace-opt"
+                    title={c.name}
+                    onClick={() => { judge({ k: 'replaceSite', siteId: site.id, name: c.name }); setReplaceOpen(false); setSiteId('') }}
+                  >
+                    <CardImg name={c.name} className="jp-replace-thumb" />
+                    <span>{c.name}</span>
+                  </button>
+                ))}
+            </div>
+          </div>
+        </div>
       )}
       {modType === 'site' && site && artPickerRow(site.name, site.cardId)}
       {modType === 'artifact' && (

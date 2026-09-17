@@ -1,7 +1,7 @@
 import { registerScript, type AbilityDef, type EffectAPI } from '../registry'
 import { siteAt } from '../../../engine/grid'
 import { cardCemeteryAbilities } from '../../../engine/statics'
-import { BONE_RAISERS, raiseFromCemetery } from '../multi-card-utils/bone-raisers'
+import { BONE_RAISERS, sacrificeSkeletonAndRaise } from '../multi-card-utils/bone-raisers'
 
 // "Can't move to defend." (Skeleton token)
 // Also grants bone-raiser abilities: click a Skeleton to sacrifice IT and raise a
@@ -29,13 +29,16 @@ registerScript('Skeleton', {
       out.push({
         key: `bones:${cardId}`,
         label: `(${c}), sacrifice → raise ${nm} here`,
-        cost: { mana: c, sacrificeSelf: true },
+        // NB: the sacrifice happens INSIDE the effect (not via a sacrificeSelf cost, which kills AFTER
+        // the effect). The Skeleton must be gone BEFORE the raised bone-raiser enters — otherwise its
+        // entry fires site triggers (Sold-out Cemetery) while this Skeleton is still a live Undead here,
+        // which offers it as a push target that then vanishes when the sacrifice resolves → soft-lock.
+        cost: { mana: c },
         contOwner: 'Bone Jumble',
         effect: (ctx: EffectAPI) => {
           const sk = ctx.state.units[ctx.sourceId]
           if (!sk || !siteAt(ctx.state, sk.x, sk.y)) return
-          // sacrificeSelf kills the Skeleton AFTER the effect, so summon to its square first.
-          raiseFromCemetery(ctx.state, ctx.controller, cardId, sk.x, sk.y)
+          sacrificeSkeletonAndRaise(ctx.state, ctx.controller, cardId, sk.id) // sacrifice FIRST, then raise
         },
       })
     }
