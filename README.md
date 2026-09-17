@@ -1,9 +1,9 @@
-# Untested Realm — a *Sorcery: Contested Realm* simulator
-J
+# Untested Realm — a 100% automated, 99%* verified *Sorcery: Contested Realm* simulator
+
 **▶ Play now at [untestedrealm.com](https://untestedrealm.com)**, on browser and mobile
 
 An unofficial, fan-made online sandbox simulator for the **Sorcery: Contested Realm** trading card
-game. 100% automated, 99%* verified.
+game.
 
 All **~1,100 cards** of the Alpha and Beta sets are implemented (497 minions, 208 sites,
 202 magics, 129 artifacts, 38 auras, 34 avatars), with over 1000 unique card script
@@ -24,7 +24,8 @@ backed by a suite of **1,190+ automated tests**
 - **Play the computer** — a real look-ahead search bot, not a scripted dummy.
 - **Hotseat** — two players pass-and-play on one screen.
 - **Sealed / Limited** — open seeded booster packs, build in a timed deckbuild phase, and play.
-
+- **Collection** - Track your real-life collection of cards or open some boosters - just for fun
+  
 …plus a full **deck builder** (import straight from a sorcerytcg.com link,
 tag filters, curve & element analysis, alternative card art), **secret achievements**, an
 in-game **rulebook / FAQ overlay**, and a **mobile** layout for phones.
