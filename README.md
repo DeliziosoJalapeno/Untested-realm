@@ -1,19 +1,18 @@
 # Untested Realm — a *Sorcery: Contested Realm* simulator
+J
+**▶ Play now at [untestedrealm.com](https://untestedrealm.com)**, on browser and mobile
 
-**▶ Play now at [untestedrealm.com](https://untestedrealm.com)**
-
-An unofficial, fan-made online simulator for the **Sorcery: Contested Realm** trading card
-game, built around a complete, faithful rules engine — the 5×4 realm grid, the four regions
-(surface / underground / underwater / void), turn structure, mana & elemental thresholds,
-movement, combat with defend / intercept / simultaneous strikes, death's door, and fully
-scripted card effects.
+An unofficial, fan-made online sandbox simulator for the **Sorcery: Contested Realm** trading card
+game. 100% automated, 99%* verified.
 
 All **~1,100 cards** of the Alpha and Beta sets are implemented (497 minions, 208 sites,
-202 magics, 129 artifacts, 38 auras, 34 avatars) — from plain keyword vanillas up to the
-gnarliest scripted interactions, backed by a suite of **1,190+ automated tests**.
+202 magics, 129 artifacts, 38 auras, 34 avatars), with over 1000 unique card script
+backed by a suite of **1,190+ automated tests**
 
 > Card names, text, and imagery are © Erik's Curiosa Limited. This project is a fan-made
 > playtest tool and is **not affiliated with or endorsed by** the publisher.
+
+**AI Disclaimer: AI has been used in code development, but no AI image generation model have been used or will ever be used in this project. Real art has been already commissioned for this project and will be integrated when it's ready**
 
 ---
 
@@ -26,7 +25,7 @@ gnarliest scripted interactions, backed by a suite of **1,190+ automated tests**
 - **Hotseat** — two players pass-and-play on one screen.
 - **Sealed / Limited** — open seeded booster packs, build in a timed deckbuild phase, and play.
 
-…plus a full **deck builder** (import straight from a [curiosa.io](https://curiosa.io) link,
+…plus a full **deck builder** (import straight from a sorcerytcg.com link,
 tag filters, curve & element analysis, alternative card art), **secret achievements**, an
 in-game **rulebook / FAQ overlay**, and a **mobile** layout for phones.
 
@@ -100,5 +99,5 @@ source of truth on any rules dispute.
 
 ## License
 
-Code is provided as-is for non-commercial, fan use. Card data and art remain the property of
-Erik's Curiosa Limited; please do not redistribute the card images.
+Code is fully open source (and at full disposal to the Valkenhall team if they want to integrate it in their engine and/or take inspiration from it)
+Card data and art remain the property of Erik's Curiosa Limited; please do not redistribute the card images.
