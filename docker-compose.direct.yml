@@ -1,0 +1,30 @@
+# Direct-port deployment: the app, reachable on a published host port — no
+# Cloudflare tunnel. Use this on a machine you control (a cloud VM with its own
+# public IP / firewall, or behind your own reverse proxy for TLS).
+#
+#   docker compose -f docker-compose.direct.yml up -d --build
+#   docker compose -f docker-compose.direct.yml logs -f app
+#   docker compose -f docker-compose.direct.yml down     # keeps the db volume
+#
+# Host port is configurable (default 8787):
+#   HOST_PORT=80 docker compose -f docker-compose.direct.yml up -d --build
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    mem_limit: 768m
+    # publish the container's 8787 on the host. "8787:8787" binds 0.0.0.0 (open
+    # to the network — rely on your VM firewall / security group). To keep it
+    # local-only and put a reverse proxy (Caddy/nginx) in front on the same box,
+    # use "127.0.0.1:${HOST_PORT:-8787}:8787" instead.
+    ports:
+      - "${HOST_PORT:-8787}:8787"
+    # PORT (8787), SORCERY_DB (/data/sorcery.db) and NODE_ENV=production all come
+    # from the image; override PORT here only if you also change the mapping.
+    # (`docker exec <app> battles` shows live games — loopback-only detail, no token.)
+    # accounts/decks persist across restarts/redeploys (unlike the throwaway demo)
+    volumes:
+      - app-db:/data
+
+volumes:
+  app-db:

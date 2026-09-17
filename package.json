@@ -1,0 +1,37 @@
+{
+  "name": "sorcery-simulator",
+  "private": true,
+  "version": "0.3.41",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm-run-all --parallel dev:server dev:client",
+    "dev:server": "npm run dev -w @sorcery/server",
+    "dev:client": "npm run dev -w @sorcery/client",
+    "test": "npm run test -w @sorcery/shared",
+    "build": "npm run build -w @sorcery/client",
+    "start": "npm run start -w @sorcery/server",
+    "gen:faq": "tsx scripts/gen_faq.ts",
+    "gen:card-index": "tsx scripts/gen_card_index.ts",
+    "gen:curios": "python scripts/gen_curios.py",
+    "gen:printings": "tsx scripts/gen_printings.ts",
+    "fetch:images": "python scripts/fetch_images.py",
+    "botmatch": "tsx scripts/botmatch.ts",
+    "arena": "tsx scripts/bot_arena.ts",
+    "census": "tsx scripts/census.ts",
+    "fuzz": "tsx scripts/fuzz_scripts.ts && tsx scripts/fuzz_cast.ts && tsx scripts/fuzz_combat.ts",
+    "fuzz:scripts": "tsx scripts/fuzz_scripts.ts",
+    "fuzz:cast": "tsx scripts/fuzz_cast.ts",
+    "fuzz:combat": "tsx scripts/fuzz_combat.ts",
+    "audit:noop": "tsx scripts/audit_noop.ts",
+    "audit:outcomes": "tsx scripts/audit_outcomes.ts",
+    "audit:gui": "tsx scripts/audit_gui.ts",
+    "audit:playable": "tsx scripts/audit_playable.ts",
+    "audit:dom": "vitest run --root packages/client"
+  },
+  "devDependencies": {
+    "npm-run-all": "^4.1.5",
+    "ts-morph": "^28.0.0"
+  }
+}

@@ -1,0 +1,32 @@
+import { registerScript } from '../registry'
+import { getCard } from '../../db'
+import { pushLog } from '../../../engine/effects'
+import { avatarOf, siteAt } from '../../../engine/grid'
+import { castFromCollection, affordable } from '../../../engine/casting'
+
+// '(F)(F) — Genesis → You may cast a Hellhounds from your collection to this site.'
+registerScript('Molten Maar', {
+  genesis: (ctx) => {
+    let fire = 0
+    for (const s of Object.values(ctx.state.sites)) {
+      if (s.controller === ctx.controller && !s.isRubble) fire += getCard(s.name).thresholds.fire
+    }
+    if (fire < 2) return
+    // "you may CAST a Hellhounds from your collection to this site" — only offer it
+    // if owned and payable (the cast pays its cost; see castFromCollection)
+    if ((ctx.state.players[ctx.controller].collection['Hellhounds'] ?? 0) <= 0) return
+    if (!affordable(ctx.state, ctx.controller, 'Hellhounds', avatarOf(ctx.state, ctx.controller))) return
+    ctx.ask({ kind: 'yesNo', title: 'Molten Maar: cast a Hellhounds from your collection here?' }, 'spawn')
+  },
+  conts: {
+    spawn: (ctx, _c, yes) => {
+      if (!yes) return
+      const maar = ctx.state.sites[ctx.sourceId]
+      if (!maar || !siteAt(ctx.state, maar.x, maar.y)) return
+      // a REAL paid cast to this site, not a free summon (card text says "cast")
+      if (castFromCollection(ctx.state, ctx.controller, 'Hellhounds', { x: maar.x, y: maar.y, region: 'surface' })) {
+        pushLog(ctx.state, ctx.controller, 'Hellhounds bound out of the Molten Maar!')
+      }
+    },
+  },
+})

@@ -1,0 +1,15 @@
+node_modules
+packages/*/node_modules
+packages/client/dist
+packages/server/data
+.omc
+.playwright-mcp
+.claude
+.mcp.json
+*.png
+*.jpeg
+*.jpg
+snap-home.md
+Dockerfile
+docker-compose.yml
+docker-compose.direct.yml

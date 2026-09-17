@@ -1,0 +1,2264 @@
+* { box-sizing: border-box; }
+/* dark scrollbars matching the site's palette (track = panel bg, thumb = the #3a4058 border blue,
+   hover = the #4a5378 accent). Firefox via scrollbar-color; WebKit/Chromium via the pseudos.
+   Specific "hidden scrollbar" rules (e.g. .m-leftmenu) still win by specificity. */
+* { scrollbar-width: thin; scrollbar-color: #3a4058 #12141c; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: #12141c; }
+::-webkit-scrollbar-thumb { background: #3a4058; border: 2px solid #12141c; border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: #4a5378; }
+::-webkit-scrollbar-corner { background: #12141c; }
+/* Base page colour lives on <html> (the canvas), NOT <body>. An opaque body box
+   paints ABOVE the home hero's `z-index:-1` fixed pseudo-element and would hide
+   it; putting the colour on the canvas keeps it behind the hero art. */
+html { background: #14161f; }
+body {
+  margin: 0;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: transparent;
+  color: #e8e6df;
+  overflow-x: hidden;
+}
+button {
+  background: #2c3350;
+  color: #e8e6df;
+  border: 1px solid #4a5378;
+  border-radius: 6px;
+  padding: 6px 12px;
+  margin: 2px;
+  cursor: pointer;
+  font-size: 13px;
+}
+button:hover:not(:disabled) { background: #3b4670; }
+button:disabled { opacity: 0.4; cursor: default; }
+button.selected { outline: 2px solid #ffd257; }
+button.danger { background: #58242c; border-color: #8a3a46; }
+input, select, textarea {
+  background: #1d2130;
+  color: #e8e6df;
+  border: 1px solid #4a5378;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 13px;
+}
+h1, h2, h3 { font-weight: 600; }
+
+.app { min-height: 100vh; }
+/* site-wide "server restarting soon" notice — pinned top-centre on every page */
+.restart-banner {
+  position: fixed; top: 0; left: 50%; transform: translateX(-50%);
+  z-index: 250; display: flex; align-items: center; gap: 12px;
+  background: #7a2733; color: #ffe6e6; padding: 8px 16px;
+  border-radius: 0 0 12px 12px; box-shadow: 0 4px 14px rgba(0,0,0,.5);
+  font-size: 14px; font-weight: 600; max-width: 96vw; text-align: center;
+}
+.restart-x {
+  background: rgba(255,255,255,.16); border: none; color: #fff; cursor: pointer;
+  border-radius: 6px; padding: 2px 9px; line-height: 1; font-size: 14px;
+}
+.restart-x:hover { background: rgba(255,255,255,.32); }
+
+.toast {
+  position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
+  background: #7a2733; padding: 10px 18px; border-radius: 8px; z-index: 100;
+  box-shadow: 0 4px 14px rgba(0,0,0,.5);
+}
+
+/* ---------- home ---------- */
+.home { position: relative; max-width: 640px; margin: 0 auto; padding: 48px 20px 40px; }
+/* zoomed-in One-shot Wizard art, fixed behind the whole page, darkened for legibility */
+.home::before {
+  content: '';
+  position: fixed; inset: 0; z-index: -1;
+  /* zoom in via background-size (not transform) so the layer stays exactly
+     viewport-sized and never spawns a scrollbar */
+  background: url('/cards/006-one_shot_wizard-b-s.webp') no-repeat center 22%;
+  background-size: 230%;
+  filter: brightness(0.4) saturate(1.1);
+}
+.home::after {
+  content: '';
+  position: fixed; inset: 0; z-index: -1;
+  /* softened so the hero art stays visible in the margins while the (already
+     dark) content panels keep text legible; edges no longer vignette to solid */
+  background:
+    radial-gradient(ellipse at 50% 28%, rgba(20,22,31,0) 0%, rgba(20,22,31,0.22) 60%, rgba(20,22,31,0.55) 100%),
+    linear-gradient(to bottom, rgba(20,22,31,0.12), rgba(20,22,31,0.42) 55%, rgba(20,22,31,0.82) 100%);
+}
+.home h1 {
+  font-family: 'Cinzel', serif;
+  font-weight: 900;
+  font-size: 56px;
+  line-height: 1.05;
+  letter-spacing: 3px;
+  margin: 0 0 6px;
+  text-align: center;
+  background: linear-gradient(180deg, #f6e8b8 0%, #d8b45c 55%, #9c7a2f 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 2px 10px rgba(0,0,0,0.85));
+}
+.subtitle {
+  font-family: 'Cormorant Garamond', serif;
+  font-style: italic; font-size: 20px; text-align: center;
+  color: #c9cee0; margin: 0 0 14px;
+  text-shadow: 0 1px 6px rgba(0,0,0,0.8);
+}
+.disclaimer { margin: 12px auto 18px; max-width: 520px; text-align: center; }
+.disclaimer p {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 13px; line-height: 1.55; color: #9096ad; margin: 5px 0;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.7);
+}
+.panel {
+  background: rgba(26, 30, 45, 0.72);
+  backdrop-filter: blur(7px); -webkit-backdrop-filter: blur(7px);
+  border: 1px solid rgba(120, 132, 180, 0.28); border-radius: 12px;
+  padding: 16px 20px; margin: 14px 0;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.45);
+}
+.panel h2 {
+  font-family: 'Cinzel', serif; font-weight: 700; font-size: 18px;
+  letter-spacing: 1px; color: #e7d9a8; margin: 0 0 10px;
+}
+.panel label { display: block; margin: 8px 0; }
+.or { margin: 0 10px; color: #9aa0b5; }
+/* the online "Find a battle — or — public — Create room" controls sit on ONE row */
+.online-actions { display: flex; align-items: center; flex-wrap: nowrap; gap: 8px; }
+.online-actions .or { margin: 0; white-space: nowrap; }
+.online-actions label { display: inline-flex; align-items: center; gap: 4px; margin: 0; white-space: nowrap; }
+.online-actions button { white-space: nowrap; }
+/* "Create room" options popup — all room settings live here so the online row stays one line */
+.roomopts-modal { background: #17121f; border: 1px solid #4a3d66; border-radius: 12px; width: min(520px, 96vw);
+  display: flex; flex-direction: column; box-shadow: 0 12px 48px rgba(0,0,0,.6); }
+.roomopts-body { display: flex; flex-direction: column; gap: 10px; padding: 16px 18px; }
+.roomopts-body > label { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 8px; cursor: pointer; }
+.roomopts-body .opt-name { white-space: nowrap; font-weight: 700; } /* keep e.g. "🎴 sealed" on one line */
+.roomopts-body .opt-desc { color: #9aa3c0; font-size: 12px; }
+.roomopts-body .clockcfg, .roomopts-body .sealcfg { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.roomopts-foot { display: flex; gap: 10px; justify-content: flex-end; padding: 12px 18px; border-top: 1px solid #33294a; }
+.roomcode { font-size: 22px; letter-spacing: 4px; color: #ffd257; }
+.waiting { text-align: center; padding-top: 15vh; }
+.waiting .waitbtns { display: flex; gap: 8px; justify-content: center; margin-top: 12px; }
+
+/* Non-blocking "waiting for opponent / matchmaking" banner: floats at the bottom and does NOT
+   cover the page, so you can keep using the menus (deck builder, collection…) while you wait. */
+.waitbanner {
+  position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+  z-index: 120; display: flex; align-items: center; gap: 12px;
+  max-width: min(92vw, 640px); padding: 10px 16px;
+  background: #1d2130; border: 1px solid #4a5378; border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(0,0,0,.55); font-size: 14px;
+}
+.waitbanner .spinner { font-size: 18px; animation: wb-pulse 1.4s ease-in-out infinite; }
+.waitbanner .wb-sub { opacity: .6; }
+.waitbanner button { margin-left: 4px; }
+@keyframes wb-pulse { 0%,100% { opacity: .45; } 50% { opacity: 1; } }
+@media (max-width: 560px) { .waitbanner .wb-sub { display: none; } }
+/* the Savior ward offer reuses the non-blocking banner, tinted gold */
+.waitbanner.savior-offer { border-color: #b79a4e; bottom: 64px; }
+.waitbanner.savior-offer .spinner { animation: none; }
+
+/* ---------- deck builder ---------- */
+.deckbuilder { padding: 12px; }
+.db-toolbar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.db-toolbar .spacer { flex: 1; }
+.db-columns { display: grid; grid-template-columns: 1fr 340px 260px; gap: 12px; }
+.db-filters { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; align-items: center; }
+.db-results {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px; max-height: calc(100vh - 180px); overflow-y: auto;
+}
+.db-card { position: relative; cursor: pointer; }
+.db-card:hover { outline: 2px solid #ffd257; border-radius: 6px; }
+.db-thumb { width: 100%; border-radius: 6px; }
+.badge {
+  position: absolute; top: 4px; right: 4px; font-size: 10px;
+  padding: 1px 5px; border-radius: 8px; background: #2f6b3a;
+}
+.badge.unsupported { background: #6b5b2f; }
+.db-deck { background: #1d2130; border-radius: 10px; padding: 10px 14px; max-height: calc(100vh - 140px); overflow-y: auto; }
+.db-deck h3 { margin: 8px 0 4px; font-size: 14px; color: #b9c0d8; }
+.db-tabs { display: flex; gap: 6px; margin-bottom: 8px; position: sticky; top: 0; background: #1d2130; padding-bottom: 4px; z-index: 1; }
+.db-tabs button { flex: 1; cursor: pointer; background: #262b3d; border: 1px solid #3a4058; color: #aab; border-radius: 8px; padding: 6px 8px; font-size: 13px; }
+.db-tabs button.active { background: #3a4570; border-color: #5b6488; color: #fff; font-weight: 600; }
+.db-hint { font-size: 12px; color: #8a92ad; margin: 4px 0 8px; line-height: 1.4; }
+.db-row { display: flex; justify-content: space-between; align-items: center; padding: 1px 0; font-size: 13px; }
+.db-problems { margin-top: 10px; font-size: 12px; }
+.db-problems .error { color: #ff8484; }
+.db-problems .warning { color: #ffd257; }
+.okmsg { color: #7fd18a; }
+.db-preview { position: sticky; top: 10px; }
+/* alternative-art picker (deck builder) */
+.db-row button.art-on { outline: 2px solid #ffd257; border-radius: 4px; }
+.art-picker { display: flex; flex-direction: column; gap: 8px; }
+.art-picker-head { display: flex; justify-content: space-between; align-items: center; font-size: 15px; }
+.art-picker-head button { background: none; border: none; color: inherit; cursor: pointer; font-size: 16px; }
+.art-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.art-opt { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px; background: #1a1d27; border: 1px solid #3a3f52; border-radius: 8px; cursor: pointer; color: inherit; font-size: 11px; }
+.art-opt.sel { border-color: #ffd257; box-shadow: 0 0 8px rgba(255, 210, 87, 0.4); }
+.art-opt:hover { border-color: #6a7090; }
+
+/* ---- mechanic-tag filter chips ---- */
+.db-tagtoggle {
+  cursor: pointer; background: #262b3d; border: 1px solid #3a4058; color: #aab;
+  border-radius: 8px; padding: 4px 10px; font-size: 12px;
+}
+.db-tagtoggle.open { background: #2f3550; color: #dfe4f5; }
+.db-tagtoggle.has { border-color: #a578f0; color: #d9c8ff; }
+.db-tagclear { cursor: pointer; background: none; border: none; color: #9aa3c0; font-size: 12px; padding: 4px 2px; }
+.db-tagclear:hover { color: #ff9a9a; }
+.db-tagpanel {
+  display: flex; flex-direction: column; gap: 6px;
+  background: #171a24; border: 1px solid #2c3145; border-radius: 10px;
+  padding: 8px 10px; margin-bottom: 8px;
+}
+.db-taghint { font-size: 10px; color: #6f7794; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 2px; }
+.db-taggroup { display: grid; grid-template-columns: 92px 1fr; gap: 8px; align-items: start; }
+.db-taggroup-label { font-size: 11px; color: #8a92ad; text-transform: uppercase; letter-spacing: .04em; padding-top: 4px; }
+.db-tagchips { display: flex; flex-wrap: wrap; gap: 4px; }
+.db-tagchip {
+  cursor: pointer; background: #232838; border: 1px solid #3a4058; color: #b7bed6;
+  border-radius: 999px; padding: 3px 9px; font-size: 12px; line-height: 1.2;
+}
+.db-tagchip:hover { border-color: #6a7090; color: #e6e9f5; }
+.db-tagchip.on { background: #6f4bd0; border-color: #a578f0; color: #fff; font-weight: 600; }
+
+/* advanced-filter panel: cost/threshold widget beside the mechanics chips */
+.db-advpanel { display: flex; gap: 8px; margin-bottom: 8px; align-items: stretch; }
+.db-advpanel .db-tagpanel { flex: 1; margin-bottom: 0; }
+.db-costwidget {
+  flex: 0 0 200px; display: flex; flex-direction: column; gap: 3px;
+  background: #171a24; border: 1px solid #2c3145; border-radius: 10px; padding: 8px 10px;
+}
+.db-costrow { display: grid; grid-template-columns: 18px 1fr 26px; gap: 6px; align-items: center; }
+.db-costsliders { position: relative; display: flex; flex-direction: column; gap: 2px; }
+.db-costsliders input[type=range] { width: 100%; accent-color: #a578f0; }
+.db-costval { font-size: 12px; color: #dfe4f5; font-variant-numeric: tabular-nums; text-align: center; }
+.db-thrrow { display: grid; grid-template-columns: 46px 1fr 14px; gap: 6px; align-items: center; }
+.db-thrlabel { font-size: 11px; text-transform: capitalize; }
+.db-thrrow input[type=range] { width: 100%; }
+.db-thrval { font-size: 12px; color: #8a92ad; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ---- deck analysis (right column, default view) ---- */
+.db-analysis { font-size: 12px; color: #c3c9dd; }
+.db-analysis-empty { color: #8a92ad; font-style: italic; padding-top: 8px; }
+.db-analysis h4 { margin: 0 0 8px; font-size: 14px; color: #dfe4f5; display: flex; justify-content: space-between; align-items: baseline; }
+.db-analysis .da-total { font-size: 11px; color: #8a92ad; font-weight: 400; }
+.da-section { margin-bottom: 12px; }
+.da-title { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #8a92ad; margin-bottom: 5px; }
+.da-cov { display: grid; grid-template-columns: 74px 1fr 20px; gap: 6px; align-items: center; margin: 2px 0; }
+.da-cov-label { color: #b7bed6; }
+.da-cov-n { text-align: right; color: #dfe4f5; font-variant-numeric: tabular-nums; }
+.da-bar { height: 8px; background: #232838; border-radius: 4px; overflow: hidden; }
+.da-bar-fill { display: block; height: 100%; background: linear-gradient(90deg, #6f4bd0, #a578f0); border-radius: 4px; }
+.da-curve { display: flex; align-items: flex-end; gap: 6px; height: 84px; }
+.da-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
+.da-col-n { font-size: 11px; color: #b7bed6; height: 14px; font-variant-numeric: tabular-nums; }
+.da-col-bar { width: 70%; min-height: 2px; background: linear-gradient(180deg, #a578f0, #6f4bd0); border-radius: 3px 3px 0 0; }
+.da-col-x { font-size: 11px; color: #8a92ad; margin-top: 3px; }
+.da-elems { display: flex; flex-wrap: wrap; gap: 8px; }
+.da-elem { font-size: 13px; font-variant-numeric: tabular-nums; }
+/* standard in-game element colours (match .el-air/.el-earth/.el-fire/.el-water) */
+.da-elem.elem-air { color: #cfd8ff; }
+.da-elem.elem-earth { color: #c9a86b; }
+.da-elem.elem-fire { color: #ff9a5a; }
+.da-elem.elem-water { color: #6bc6ff; }
+.da-elem.elem-none { color: #b9c0d8; }
+.art-thumb { width: 100%; border-radius: 6px; display: block; }
+
+/* card rendering */
+.cardimg { display: block; border-radius: 6px; }
+.cardtext {
+  background: #262b41; border: 1px solid #4a5378; border-radius: 6px;
+  padding: 6px; font-size: 11px; overflow: hidden;
+}
+.ct-name { font-weight: 700; }
+.ct-type { color: #9aa0b5; margin: 2px 0; }
+.ct-text { white-space: pre-wrap; font-size: 10px; }
+.hovercard { background: #1d2130; border: 1px solid #4a5378; border-radius: 10px; padding: 10px; }
+.hoverimg { width: 100%; max-width: 350px; margin: 0 auto; display: block; }
+.hoverinfo { font-size: 12px; margin-top: 6px; }
+.hovermeta { color: #b9c0d8; margin: 2px 0 4px; }
+.hovertext { white-space: pre-wrap; margin-top: 4px; color: #c8cde0; }
+/* Mobile card panel: shrink the (tall) vertical art so the one-line stats + the effect text
+   actually fit and are readable without scrolling the art off-screen. */
+.app.mobile .preview .hoverimg { max-width: 90%; }
+
+/* ---------- game ---------- */
+.game { display: grid; grid-template-columns: 1fr 525px; height: 100vh; overflow: hidden; }
+/* DESKTOP: the game is laid out at a FIXED 1600×900 design canvas (must match
+   DESKTOP_DESIGN_W/H in Game.tsx) and then uniformly scaled to the viewport by the JS
+   transform (translate(-50%,-50%) scale(uiScale)) — so the whole view is IDENTICAL on any
+   resolution monitor, just larger or smaller. Centred via top/left 50% + the translate. */
+.game.scaled { position: fixed; top: 50%; left: 50%; width: 1600px; height: 900px; }
+/* on the game page, pin the app to the viewport and letterbox around the scaled canvas */
+.app.at-game-desktop { position: fixed; inset: 0; overflow: hidden; background: #05060a; }
+
+/* DESKTOP scaled layout: 3-col grid — left action rail | board | sidebar. Column WIDTHS are set
+   inline in Game.tsx (rail fixed, board pinned to its exact width, sidebar 1fr). Pin each region
+   to its cell explicitly so the floating notification banners (out of flow) can't shift columns. */
+.game.scaled > .topbar { grid-column: 1 / -1; grid-row: 1; }
+.game.scaled > .d-leftmenu { grid-column: 1; grid-row: 2; min-height: 0; }
+/* Always show the board column's vertical scrollbar (scroll, not auto) so it does NOT
+   appear/disappear as the hand's height changes — e.g. a hand of only (short, landscape)
+   SITE cards used to make the content fit and the scrollbar vanish. The scrollbar gutter is
+   already reserved in the column width, so a permanent bar changes no other layout. This
+   leaves the hand + mana widget completely untouched. */
+.game.scaled > .table { grid-column: 2; grid-row: 2; min-height: 0; overflow-y: scroll; }
+.game.scaled > .sidebar { grid-column: 3; grid-row: 2; min-height: 0; }
+
+/* left action rail — SQUARE icon+label tiles stacked vertically (desktop counterpart of
+   .m-leftmenu). Extra padding-left insets the tiles from the edge; the grid column-gap adds the
+   breathing room between the rail and the board. */
+.d-leftmenu {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 10px 6px 10px 12px; border-right: 1px solid #303752; overflow-y: auto;
+}
+.railbtn {
+  width: 74px; height: 74px; flex: 0 0 auto; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 3px; padding: 4px; text-align: center;
+}
+.railbtn .ri { font-size: 24px; line-height: 1; }
+.railbtn .rl { font-size: 11px; line-height: 1.05; opacity: .9; }
+.railbtn.danger { background: #6b2732; }
+/* End turn: pushed to the bottom of the rail and highlighted */
+.railbtn.railturn { margin-top: auto; background: #2f6f3a; }
+.railbtn.railturn:disabled { background: #2a3140; color: #6a7290; }
+
+/* GUI symbol legend modal (❔ Symbols / Q). The compound `.modal.symbols-modal` selector wins the
+   z-index cascade over the base `.modal` (z:50) so the legend, opened deliberately, sits ABOVE an
+   active prompt on both desktop and the mobile phone-frame. */
+.modal.symbols-modal { z-index: 120; }
+.symbols-modal { max-width: 560px; width: min(560px, 92vw); max-height: 80vh; overflow: hidden; display: flex; flex-direction: column; }
+.sym-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.sym-head h3 { margin: 0; }
+.sym-grid { overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 4px; }
+.sym-row { display: flex; align-items: flex-start; gap: 10px; padding: 6px; border-radius: 6px; background: #171b28; }
+.sym-ic { flex: 0 0 auto; min-width: 56px; text-align: center; font-size: 20px; }
+.sym-txt { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.sym-txt b { color: #e6ebff; }
+.sym-txt span { color: #b9c0d8; }
+
+/* ---- FAQ view (📖 / F): dim the board & hand; cards with an official ruling glow gold ---- */
+.board.faq-mode .unit,
+.board.faq-mode .sitecard,
+.hand.faq-mode .handcard { filter: grayscale(0.85) brightness(0.5); transition: filter .12s; }
+.board.faq-mode .unit.has-faq,
+.board.faq-mode .sitecard.has-faq,
+.hand.faq-mode .handcard.has-faq {
+  filter: none; cursor: help; border-radius: 6px;
+  outline: 3px solid #ffcf56; outline-offset: -1px;
+  box-shadow: 0 0 12px 2px rgba(255, 207, 86, 0.72);
+}
+/* Lift a glowing UNIT / hand card above its neighbours — but NOT a site: a FAQ site keeps its
+   natural stacking so it stays BEHIND the units, artifacts and auras sitting on it (its gold glow
+   still shows around the square edges). Especially matters for a FAQ unit atop a FAQ site. */
+.board.faq-mode .unit.has-faq,
+.hand.faq-mode .handcard.has-faq { z-index: 6; }
+/* the FAQ reading panel (shown in the side preview while the FAQ view is on) */
+.faqpanel { display: flex; flex-direction: column; gap: 8px; font-size: 13px; color: #c7cee6; overflow-y: auto; max-height: 100%; padding: 2px; }
+.faq-hint { color: #9aa3c0; line-height: 1.45; }
+.faq-head { display: flex; gap: 10px; align-items: flex-start; }
+.faq-thumb { width: 104px; border-radius: 6px; flex: 0 0 auto; box-shadow: 0 0 8px rgba(0,0,0,.6); }
+.faq-cardname { display: flex; flex-direction: column; font-weight: 700; font-size: 15px; color: #ffe08a; }
+.faq-count { font-weight: 400; font-size: 11px; color: #9aa3c0; margin-top: 2px; }
+.faq-list { display: flex; flex-direction: column; gap: 10px; }
+.faq-qa { border-left: 2px solid #3a4260; padding-left: 8px; }
+.faq-q { color: #d7ddf2; margin-bottom: 3px; white-space: pre-wrap; }
+.faq-a { color: #a9d6b0; white-space: pre-wrap; }
+.faq-qa b { color: #ffcf56; }
+
+/* ---- Subtype view (🏷 / Z): the selected subtype's cards glow gold; all else dims ---- */
+.board.subtype-mode .unit,
+.board.subtype-mode .sitecard,
+.board.subtype-mode .overlay-item.aura,
+.board.subtype-mode .ground-art,
+.hand.subtype-mode .handcard { filter: grayscale(0.82) brightness(0.5); transition: filter .12s; }
+.board.subtype-mode .unit.st-match,
+.board.subtype-mode .sitecard.st-match,
+.board.subtype-mode .ground-art.st-match,
+.board.subtype-mode .carriedart.st-match,
+.hand.subtype-mode .handcard.st-match {
+  filter: none; border-radius: 6px;
+  outline: 3px solid #ffcf3d; outline-offset: -1px;
+  box-shadow: 0 0 12px 2px rgba(255, 207, 61, 0.8);
+}
+/* a matched CARRIED artifact glows even when its carrier unit is dimmed (unmatched) */
+.board.subtype-mode .carriedart.st-match { z-index: 6; }
+/* lift a glowing UNIT / hand card / ground artifact above its neighbours — but NOT a matched
+   SITE, which keeps its natural stacking so it stays behind the units/artifacts/auras on it
+   (its glow still shows around the square edges), as in the FAQ view. */
+.board.subtype-mode .unit.st-match,
+.board.subtype-mode .ground-art.st-match,
+.hand.subtype-mode .handcard.st-match { z-index: 6; }
+
+/* the subtype dropdown, peeking over the top edge of the board */
+.stbar {
+  position: absolute; top: -6px; left: 50%; transform: translateX(-50%); z-index: 45;
+  display: flex; flex-direction: column; align-items: stretch; width: 220px;
+  font-size: 14px; user-select: none; pointer-events: auto;
+}
+.stbar-head { display: flex; align-items: stretch; gap: 4px; }
+.stbar-arrow {
+  width: 30px; flex: 0 0 auto; border: 1px solid #3a4260; background: #1b2030; color: #dfe5f5;
+  border-radius: 8px; font-size: 18px; line-height: 1; cursor: pointer;
+}
+.stbar-arrow:hover:not(:disabled) { background: #262d43; }
+.stbar-arrow:disabled { opacity: 0.35; cursor: default; }
+.stbar-current {
+  flex: 1 1 auto; display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+  border: 1px solid #4a5378; background: #20263a; color: #fff; border-radius: 8px; cursor: pointer;
+  box-shadow: 0 3px 10px rgba(0,0,0,.45);
+}
+.stbar-current:hover { background: #283050; }
+.stbar-name { flex: 1 1 auto; text-align: center; font-weight: 700; }
+.stbar-count {
+  flex: 0 0 auto; min-width: 20px; text-align: center; font-size: 11px; font-weight: 700;
+  color: #0d1018; background: #ffcf3d; border-radius: 10px; padding: 1px 6px;
+}
+.stbar-caret { flex: 0 0 auto; font-size: 9px; color: #9aa3c0; }
+.stbar-menu {
+  margin-top: 4px; display: flex; flex-direction: column; gap: 2px; max-height: 320px; overflow-y: auto;
+  background: #171b28; border: 1px solid #3a4260; border-radius: 8px; padding: 4px;
+  box-shadow: 0 8px 20px rgba(0,0,0,.55);
+}
+.stbar-opt {
+  display: flex; align-items: center; gap: 8px; padding: 5px 8px; border: none; background: none;
+  color: #cfd6ec; border-radius: 6px; cursor: pointer; text-align: left;
+}
+.stbar-opt:hover { background: #262d43; }
+.stbar-opt.sel { background: #33406a; color: #fff; }
+.stbar-optname { flex: 1 1 auto; }
+/* geometric pentagram used for Evil — sized per context. RED by default (unit badge + legend),
+   but WHITE on the view buttons (rail + mobile) so it reads clearly on the button. */
+.evil-ico { display: inline-block; width: 1em; height: 1em; vertical-align: -0.15em; color: #ff3b3b; }
+.railbtn .rail-evil, .m-leftmenu .m-evil { color: #fff; }
+.railbtn .rail-evil { width: 26px; height: 26px; }
+.m-leftmenu .m-evil { width: 20px; height: 20px; }
+.kw-evil { background: rgba(0,0,0,.6); border-radius: 3px; padding: 0 1px; line-height: 0; }
+.kw-evil .evil-ico { width: 12px; height: 12px; vertical-align: middle; }
+.sym-ic .evil-ico { width: 17px; height: 17px; }
+
+/* keyboard-shortcut legend shown in the top bar (desktop) instead of the action buttons —
+   left-aligned (after the turn info) with generous spacing between hints. */
+.kbdhints { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; font-size: 12px; color: #9aa3c0; margin-left: 14px; }
+.kbdhints > span { display: inline-flex; align-items: center; gap: 5px; }
+.kbdhints kbd {
+  background: #262b3d; border: 1px solid #3a4260; border-bottom-width: 2px; border-radius: 4px;
+  padding: 0 5px; font-family: inherit; font-size: 11px; color: #d3d9f0;
+}
+
+/* desktop in-game hand: slightly smaller cards so the board can take more vertical space */
+.game.scaled .hand .handcard { width: 104px; }
+/* slimmer in-game player bars (desktop) — reclaim vertical space for the board. flex-shrink:0
+   so they keep full height in the scrolling table column (no overlap with the board/hand).
+   width:var(--board-w) + align-self:flex-start → the bars (and hand row) match the board's width
+   and left edge, so they stop exactly where the grid stops (not across the scrollbar gutter). */
+.game.scaled .table .playerbar { padding: 3px 10px; margin: 3px 0; gap: 10px; flex-shrink: 0; width: var(--board-w); align-self: flex-start; }
+.game.scaled .handrow { flex-shrink: 0; width: var(--board-w); align-self: flex-start; }
+/* zero-width, full-portrait-card-tall invisible item on the hand's first line, so the hand row
+   is always one spell-card tall (a card's worth of down-scroll) even with only site cards / an
+   empty hand. Negative margin cancels the flex gap it would add before the first card. */
+.game.scaled .hand-spacer { flex: 0 0 0; width: 0; height: 145px; margin-right: -6px; pointer-events: none; }
+.topbar {
+  grid-column: 1 / -1; display: flex; align-items: center; gap: 8px;
+  background: #10121a; padding: 3px 12px; border-bottom: 1px solid #303752;
+  font-size: 12px;
+}
+.topbar .spacer { flex: 1; }
+/* prominent whose-turn indicator (works in every mode) */
+.turnpill {
+  font-weight: 700; font-size: 13px; padding: 3px 12px; border-radius: 999px;
+  border: 1px solid; letter-spacing: .3px; white-space: nowrap;
+}
+.turnpill.mine { color: #d6ffe0; background: #1f6f3a; border-color: #52d67f; box-shadow: 0 0 8px rgba(82, 214, 127, .55); }
+.turnpill.theirs { color: #ffdede; background: #6b2732; border-color: #d67a86; }
+/* No horizontal padding: the board column is pinned to the board's exact width, so any side
+   padding would push the board wider than the column and produce a horizontal scrollbar. The
+   board is intentionally taller than the column, so this scrolls vertically a little (the hand's
+   lower half sits just below the fold) — a reserved gutter (SCROLLBAR_W) keeps the board flush. */
+.table { display: flex; flex-direction: column; padding: 6px 0; overflow-x: hidden; overflow-y: auto; }
+.sidebar { border-left: 1px solid #303752; display: flex; flex-direction: column; overflow: hidden; }
+.preview { flex: 0 0 auto; padding: 8px; min-height: 480px; }
+.log { flex: 1; overflow-y: auto; padding: 8px; font-size: 12px; color: #b9c0d8; border-top: 1px solid #303752; }
+.logline { padding: 1px 0; border-bottom: 1px dotted #262b41; }
+
+/* card names inside the log (and anywhere .cardref is used): coloured by element,
+   clickable/hoverable to show the card in the lateral detail panel */
+.cardref { cursor: pointer; font-weight: 600; }
+.cardref:hover { text-decoration: underline; }
+.cardref.elem-fire { color: #ff7a5c; }
+.cardref.elem-water { color: #5aa6ff; }
+.cardref.elem-air { color: #86d4f0; }
+.cardref.elem-earth { color: #9ccc65; }
+.cardref.elem-none { color: #d9c27a; }
+
+/* a peeked card shown inside a prompt (Seer / Rivers / Riddle Sphinx) */
+.promptcard { margin: 6px auto 10px; max-width: 300px; }
+.promptcard .hoverimg { max-width: 100%; }
+/* card-showing prompt popups (choose a spell, Browse, first-site pick…): 50% larger card tiles +
+   a wider dialog — DESKTOP ONLY (mobile keeps the original sizes). Excludes the mulligan panel. */
+.game.scaled .promptcard { max-width: 450px; }
+.game.scaled .modal .mullhand > .handcard { width: 210px; }
+.game.scaled .modal:has(.mullhand):not(.mulligan) { max-width: min(94vw, 940px); }
+
+.playerbar {
+  display: flex; gap: 14px; align-items: center; font-size: 13px;
+  background: #1a1e2d; padding: 5px 12px; border-radius: 8px; margin: 4px 0;
+}
+.panel.account { border-left: 3px solid #ffcf56; }
+button.autobattle { background: #3a4ba0; font-weight: 600; }
+button.autobattle:hover:not(:disabled) { background: #4a5cc0; }
+.linklike { background: none; border: none; color: #7fb0ff; cursor: pointer; text-decoration: underline; padding: 0; font-size: 13px; }
+.playerbar.me { border-left: 3px solid #56b7ff; }
+.playerbar.opp { border-left: 3px solid #ff7a7a; }
+/* the player whose turn it is gets a glow + a ▶ marker */
+.playerbar.active { background: #232a1e; box-shadow: 0 0 10px rgba(82, 214, 127, .35); }
+.activedot { color: #7be08f; font-size: 12px; }
+.revealedhand { display: inline-flex; align-items: center; gap: 3px; margin-left: auto; }
+.revealimg {
+  width: 30px; border-radius: 3px; display: block;
+  box-shadow: 0 0 0 1px #ffcf56; transition: transform .12s;
+}
+.revealimg:hover { transform: scale(3.2); transform-origin: right center; z-index: 40; position: relative; }
+/* Doomsday Cult: the revealed top-of-spellbook card shown in a player's bar (📖 + thumbnail). */
+.revealedtop { display: inline-flex; align-items: center; gap: 2px; }
+.revealedtop .revealimg { box-shadow: 0 0 0 1px #b07be0; } /* purple ring — a Cult reveal, not a hand reveal */
+.revealedtop.castable .revealimg { box-shadow: 0 0 0 2px #7ee081; animation: cultpulse 1.4s ease-in-out infinite; }
+@keyframes cultpulse { 0%, 100% { box-shadow: 0 0 0 2px #7ee081; } 50% { box-shadow: 0 0 0 3px #7ee081; } }
+.clock {
+  font-variant-numeric: tabular-nums; font-weight: 600; padding: 1px 8px; border-radius: 6px;
+  background: #262b3d; color: #b8c0d8;
+}
+.clock.running { background: #2f6f3a; color: #eaffea; box-shadow: 0 0 6px rgba(90, 220, 120, .5); }
+.clock.low { color: #ffd257; }
+.clock.running.low { background: #7a2733; color: #ffdede; box-shadow: 0 0 8px rgba(255, 90, 90, .7); }
+/* the opponent's clock is clickable to gift them extra time */
+.clock.giftable { cursor: pointer; }
+.clock.giftable:hover { outline: 1px solid #5a6bb0; }
+.clockcfg { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; font-size: 13px; }
+.clockcfg input[type='number'] { width: 3.5em; }
+
+/* width: max-content so the board keeps its NATURAL size (squares never flex-shrink to a
+   narrower boardscaler) — the `transform: scale(boardScale)` does all the fitting. Without
+   this, a fractional boardScale shrinks the boardscaler below the squares' natural width,
+   the squares shrink horizontally, and the absolute-positioned aura/2x2 overlays (which use
+   the logical 204px column pitch) drift out of alignment with the site grid. */
+.board { display: flex; flex-direction: column; gap: 4px; position: relative; width: max-content; }
+/* flex-shrink:0 — the boardscaler has an EXPLICIT height (the scaled board size); in the flex
+   column it must NOT shrink to fit, else the inner (transform-scaled) board overflows its own
+   box and the hand/bar overlap it. Keeping its full height makes .table scroll instead. */
+.boardscaler { overflow: visible; margin-top: 6px; flex-shrink: 0; position: relative; }
+/* ---- board zoom ---- the viewport clips at the fitted board size; the inner .boardzoom inflates
+   to fit×zoom so panning is native scroll. At 1× overflow is visible (no scrollbars, the board looks
+   exactly as before and the aura/subtype chrome can still peek over the top edge). */
+.boardviewport { position: relative; }
+.boardzoom { transform-origin: top left; }
+/* slim, unobtrusive scrollbars only appear once zoomed (overflow flips to auto inline) */
+.boardviewport::-webkit-scrollbar { width: 8px; height: 8px; }
+.boardviewport::-webkit-scrollbar-thumb { background: rgba(150, 165, 200, .5); border-radius: 4px; }
+.boardviewport::-webkit-scrollbar-track { background: rgba(0, 0, 0, .25); }
+/* corner zoom control: pinned bottom-right of the board box, never scrolls with the board */
+.zoomctl { position: absolute; right: 6px; bottom: 6px; z-index: 24; display: flex; gap: 2px;
+  background: rgba(12, 14, 22, .72); border: 1px solid #303752; border-radius: 8px; padding: 2px; }
+.zoombtn { min-width: 24px; height: 22px; padding: 0 6px; font-size: 13px; line-height: 1; color: #c7cee6;
+  background: #1b2030; border: 1px solid #2c3450; border-radius: 6px; cursor: pointer; }
+.zoombtn.zoomreset { min-width: 42px; font-size: 11px; font-variant-numeric: tabular-nums; }
+.zoombtn:hover:not(:disabled) { background: #263153; border-color: #3d4a72; color: #fff; }
+.zoombtn:disabled { opacity: .45; cursor: default; }
+/* desktop: left-align the board in its (scrollbar-reserving) column so the reserved gap sits
+   between the board's right edge and the vertical scrollbar. Overrides the inline `margin:0 auto`. */
+.game.scaled .boardscaler { margin-left: 0 !important; margin-right: auto !important; }
+
+/* narrow NON-scaled layouts (e.g. deck builder overlays) — the in-game desktop canvas is
+   fixed-size + uniformly scaled (.game.scaled), so it must NOT reflow at narrow widths. */
+@media (max-width: 1100px) {
+  .app:not(.at-game-desktop) .modal { left: 50%; width: 92vw; }
+  .app:not(.at-game-desktop) .promptbanner { left: 50%; width: 92vw; text-align: center; }
+  .app:not(.at-game-desktop) .judgepanel { max-width: 95vw; }
+}
+@media (pointer: coarse) {
+  button { padding: 10px 14px; font-size: 14px; }
+  .jp-group button { padding: 6px 9px; }
+}
+
+/* ============================================================================
+   MOBILE GUI — a landscape, "rotated" layout driven by the `.mobile` CLASS (so it
+   is identical on a real phone and in the desktop phone-frame preview). Regions:
+   left rail = life/mana (both players), centre = board, right = card panel + log,
+   hand = a show/hide overlay over the board. Constants below (rail 96 / top 40 /
+   panel max(230px,30%)) MUST match the boardScale math in Game.tsx.
+   ============================================================================ */
+
+/* real phone: MENUS scroll vertically (portrait, natural); the GAME page is fixed. */
+.app.mobile { position: fixed; inset: 0; width: 100%; height: 100%; overflow-y: auto; overflow-x: hidden; background: #05060a; }
+.app.mobile.at-game { overflow: hidden; display: flex; align-items: center; justify-content: center; }
+/* Real phone: size the game to the DYNAMIC viewport (100dvh) so the browser's chrome/URL
+   bar doesn't overlap the board — the game area shrinks vertically, width unchanged. The
+   desktop phone-frame simulator (.mobile-sim) keeps its fixed 866×400 frame. */
+.app.mobile.at-game:not(.mobile-sim) {
+  top: var(--vv-top, 0px); left: var(--vv-left, 0px);
+  width: var(--vv-width, 100vw); height: var(--vv-height, 100dvh);
+  right: auto; bottom: auto; min-height: 0;
+}
+
+/* desktop PREVIEW frame. Default = PORTRAIT phone (real ~9:19.5) for the home & menus,
+   scrollable. Only the GAME page (.at-game) flips to a LANDSCAPE phone so the board
+   layout is upright & readable on the PC monitor. Tweak the sizes to taste. */
+.app.mobile-sim {
+  position: fixed; inset: 0; margin: auto;
+  width: 390px; height: 844px; min-height: 0; max-height: 96vh; max-width: 96vw;
+  border-radius: 44px; overflow-y: auto; overflow-x: hidden; background: #05060a;
+  box-shadow: 0 0 0 12px #0b0b0d, 0 0 0 13px #2c2c33, 0 26px 74px rgba(0,0,0,0.7);
+}
+.app.mobile-sim.at-game { width: 866px; height: 400px; overflow: hidden; }
+
+/* the game is a LANDSCAPE canvas that fills its container — no rotation, so the board
+   squares / scenery / card art all stay upright. */
+/* FIXED design canvas — the whole game is laid out at 866×400 then uniformly scaled to
+   the visible viewport by the JS `uiScale` transform, so nothing ever clips (extra space
+   becomes letterbox padding around the centred canvas). */
+.game.mobile { position: relative; flex: 0 0 auto; width: 866px; height: 400px; overflow: hidden; }
+
+/* only the GAME page needs landscape — nudge a real portrait phone to rotate there
+   (menus stay portrait, so no hint on them). */
+.app.mobile.portrait.at-game::after {
+  content: '↻  Rotate your device to landscape';
+  position: fixed; inset: 0; z-index: 999;
+  display: flex; align-items: center; justify-content: center; text-align: center;
+  background: #05060a; color: #cdd3ea; font-size: 20px; padding: 24px;
+}
+
+/* MOBILE MENUS (home/decks/…): keep every element inside the narrow portrait frame.
+   The desktop @media(max-width) rules don't fire in the sim (wide PC viewport), so we
+   pin these to the .mobile CLASS — which also covers real phones. */
+.app.mobile .home { max-width: 100%; padding: 24px 12px 32px; box-sizing: border-box; }
+.app.mobile .panel { max-width: 100%; box-sizing: border-box; overflow-x: hidden; }
+.app.mobile .panel label { display: block; }
+.app.mobile select,
+.app.mobile input[type='text'],
+.app.mobile input[type='password'],
+.app.mobile input:not([type]) { max-width: 100%; box-sizing: border-box; }
+/* rows that are single-line on desktop must WRAP in the narrow frame */
+.app.mobile .online-actions,
+.app.mobile .joincode { flex-wrap: wrap; }
+.app.mobile .joincode input { width: 7em; max-width: 60%; }
+
+/* Deck builders (standard / collection / SEALED) in the narrow portrait frame. The desktop
+   3-column grid (pool | deck | hover-preview ≈ 640px) overflows the phone, so STACK it to one
+   column, drop the hover-preview pane (touch has no hover), and shrink the pool thumbs + booster
+   cards so several fit per row. The whole frame scrolls; the pool keeps its own short scroll box
+   so the deck panel below stays reachable. Pinned to the .mobile CLASS (fires in the sim too). */
+.app.mobile .db-columns { grid-template-columns: 1fr; }
+/* No hover on touch, so the card panel gets its own space: results shrink to ~half and the preview
+   sits right below them (order 1), pushing the deck panel last (order 2). Tap a card to inspect it. */
+.app.mobile .db-results { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); max-height: 24vh; order: 0; }
+.app.mobile .db-preview { display: block; position: static; order: 1; max-height: 30vh; overflow-y: auto;
+  background: #1d2130; border-radius: 10px; padding: 8px 10px; }
+.app.mobile .db-deck { max-height: none; order: 2; }
+.app.mobile .db-card.picked { outline: 2px solid #ffd257; border-radius: 6px; }
+.db-mobile-add { width: 100%; margin-bottom: 8px; padding: 8px; font-size: 15px; font-weight: 600;
+  cursor: pointer; background: #3a4570; border: 1px solid #5b6488; color: #fff; border-radius: 8px; }
+.app.mobile .db-hint { flex-basis: 100%; }
+.app.mobile .sealed-reveal { max-height: 40vh; }
+.app.mobile .packcard { width: 84px; }
+
+/* ---- mobile in-game chrome: TOPBAR(player bars) / [icon menu] [BOARD] [card panel] ---- */
+/* the top bar STOPS where the card panel begins (right: 240px) so the card panel can run the
+   FULL height (top: 0) instead of starting below the bar. */
+.game.mobile .topbar {
+  position: absolute; top: 0; left: 0; right: 240px; height: 40px; z-index: 20;
+  display: flex; align-items: center; gap: 6px; padding: 3px 6px; overflow: hidden;
+}
+.game.mobile .tb-actions { display: none; }            /* full-text buttons → left icon menu */
+.game.mobile .topbar .turnpill { font-size: 10px; flex: 0 0 auto; }
+.game.mobile .tb-endturn { margin-left: auto; flex: 0 0 auto; padding: 5px 9px; font-size: 11px; white-space: nowrap; }
+
+/* the two player bars sit in the TOP bar — compact, clickable to expand (PlayerInfoPopup). Capped
+   width so they never crowd out the turn pill + End turn in the now-narrower bar. */
+.game.mobile .topbar > .playerbar {
+  flex: 1 1 0; min-width: 0; max-width: 32%; margin: 0; height: 32px; overflow: hidden; cursor: pointer;
+  flex-direction: row; align-items: center; gap: 6px;
+  font-size: 10px; padding: 3px 6px; background: #171b28; border-radius: 6px;
+}
+.game.mobile .playerbar .deckcount,
+.game.mobile .playerbar .barthresh,
+.game.mobile .playerbar .revealedhand,
+.game.mobile .playerbar button { display: none; }
+
+/* LEFT: icon-only action menu (subsurface / editor / undo / log / concede…) */
+.game.mobile .m-leftmenu {
+  position: absolute; top: 44px; left: 3px; bottom: 4px; z-index: 18;
+  display: flex; flex-direction: column; gap: 3px;
+  overflow-y: auto; overflow-x: hidden; scrollbar-width: none;
+}
+.game.mobile .m-leftmenu::-webkit-scrollbar { display: none; }
+.game.mobile .m-leftmenu button {
+  width: 36px; height: 28px; flex: 0 0 auto; padding: 0; font-size: 15px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+}
+.game.mobile .m-leftmenu button.flag { background: #a33; color: #fff; }
+
+/* CENTRE: the board fills between the icon menu and the card panel (boardScale fits it) */
+.game.mobile .table {
+  position: absolute; top: 40px; left: 0; right: 0; bottom: 0;
+  padding: 4px 240px 4px 44px;
+  display: flex; align-items: center; justify-content: center; overflow: hidden;
+}
+.game.mobile .boardscaler { margin: 0 !important; }
+/* keep the board at NATIVE size (the JS transform-scale then fits it) — else the flex
+   .table shrinks the 200px squares into narrow/portrait cells that read as "rotated". */
+.game.mobile .board { width: max-content; }
+.game.mobile .board > div { flex-shrink: 0; }
+.game.mobile .square { flex-shrink: 0; }
+.game.mobile .avatarpanel { display: none; }
+
+/* RIGHT: card detail only — the log is a toggle overlay (📜) now. Runs the FULL height (top: 0)
+   since the top bar now stops at its left edge, giving the card panel more room. */
+.game.mobile .sidebar {
+  position: absolute; top: 0; right: 0; bottom: 0; width: 240px;
+  border-left: 1px solid #303752; border-top: none; flex-direction: column;
+  background: #0f111a; z-index: 15;
+}
+.game.mobile .sidebar .log { display: none; }
+.game.mobile .preview { min-height: 0; flex: 1; overflow: auto; }
+
+/* HAND: bottom overlay over the board, toggled by the floating centre-bottom 🂠 button */
+.game.mobile .hand {
+  position: absolute; left: 44px; right: 240px; bottom: 0; z-index: 30;
+  flex-wrap: nowrap; overflow-x: auto; gap: 6px; padding: 8px 8px 14px;
+  background: rgba(12,14,22,0.96); border-top: 1px solid #303752;
+  transform: translateY(105%); transition: transform 0.18s ease; pointer-events: none;
+}
+.game.mobile.hand-open .hand { transform: none; pointer-events: auto; }
+.game.mobile .hand .handcard { width: 92px; flex: 0 0 auto; }
+/* the 🂠 Hand button floats at the centre-bottom of the BOARD region, partially over it */
+.game.mobile .m-hand-btn {
+  position: absolute; left: calc(50% - 98px); bottom: 6px; transform: translateX(-50%);
+  z-index: 35; padding: 6px 16px; font-size: 15px; border-radius: 18px;
+  background: #2a3358; border: 1px solid #4a5378; box-shadow: 0 3px 10px rgba(0,0,0,0.5);
+}
+.game.mobile .m-hand-btn.selected { background: #3a4ba0; }
+
+/* LOG overlay (📜) — fills the board area (NOT over the card panel), scrollable */
+.game.mobile .m-logs {
+  position: absolute; top: 44px; left: 44px; right: 246px; bottom: 6px; z-index: 60;
+  background: rgba(8,10,16,0.97); border: 1px solid #303752; border-radius: 10px;
+  display: flex; flex-direction: column; padding: 8px;
+}
+.game.mobile .m-logs-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.game.mobile .m-logs .log { display: block; flex: 1; overflow-y: auto; font-size: 12px; color: #b9c0d8; }
+
+/* EDITOR (judge tools) must stay inside the frame — fill the board area, scrollable */
+.game.mobile .judgepanel {
+  position: absolute; top: 44px; left: 44px; right: 6px; bottom: 6px; z-index: 70;
+  max-width: none; max-height: none; width: auto; overflow: auto; margin: 0;
+}
+
+/* keep prompts / modals / toasts INSIDE the phone frame (absolute → relative to .game) */
+.game.mobile .modal {
+  position: absolute; left: 50%; top: 50%; right: auto; bottom: auto;
+  transform: translate(-50%, -50%); width: auto; max-width: 80%; max-height: 86%; overflow: auto;
+}
+.game.mobile .promptbanner {
+  position: absolute; left: 50%; right: auto; top: auto; bottom: 8px;
+  transform: translateX(-50%); width: auto; max-width: 80%; text-align: center;
+  /* draggable (drag anywhere on the banner background) so it can be shoved off a board
+     square you need to click; `none` stops the touch gesture becoming a page pan. */
+  touch-action: none; cursor: move;
+}
+.game.mobile .logtoasts { position: absolute; top: 42px; left: 50%; transform: translateX(-50%); z-index: 40; }
+.game.mobile .oppplay-stack { position: absolute; left: 50%; top: 6px; right: auto; transform: translateX(-50%); }
+.game.mobile .oppplay-card { max-width: 150px; }
+.game.mobile .oppplay-card img, .game.mobile .oppplay-card .cardimg { max-width: 150px; height: auto; }
+
+/* expandable player-detail popup (opened by clicking a player bar; PC + mobile) */
+.playerinfo { min-width: 210px; }
+.playerinfo .pi-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 7px 0; }
+.playerinfo .pi-thresh span { display: inline-flex; align-items: center; gap: 3px; }
+.playerinfo .pi-decks { font-size: 12px; color: #b9c0d8; gap: 14px; }
+.playerinfo .pi-zones { flex-direction: column; align-items: stretch; gap: 6px; }
+.board.subview .siteimg { filter: brightness(0.35) saturate(0.5); }
+/* subsurface view terrain cue: water sites glow dark blue, land sites brown
+   (dynamic — reflects whether the site provides a water threshold right now).
+   An overlay above the (dimmed) site image, below the units. */
+.subterrain {
+  position: absolute; inset: 0; z-index: 1; pointer-events: none; border-radius: 8px;
+}
+.subterrain.sub-water {
+  box-shadow: inset 0 0 30px 10px rgba(30, 90, 240, 0.9);
+  background: radial-gradient(ellipse at center, rgba(24, 70, 200, 0.28), rgba(24, 70, 200, 0.05) 70%);
+}
+.subterrain.sub-land {
+  box-shadow: inset 0 0 30px 10px rgba(165, 100, 40, 0.9);
+  background: radial-gradient(ellipse at center, rgba(140, 84, 34, 0.28), rgba(140, 84, 34, 0.05) 70%);
+}
+/* the surface strip fades further into the background while below */
+.board.subview .subsurface { opacity: 0.4; }
+/* Auras are a SURFACE effect — they don't reach the subsurface — so their tint/wall overlays recede
+   in subsurface view (still faintly there so you know an aura exists above). */
+.board.subview .overlay-item.aura,
+.board.subview .overlay-item.wall { opacity: 0.25; }
+/* …but the site OWNER colour-bar stays prominent against the dimmed art (brighter + a touch taller),
+   so you can still read who controls each site while looking underground/underwater. */
+.board.subview .site-ownerbar { z-index: 3; }
+/* submerged/burrowed creatures take the spotlight in subsurface view */
+.board.subview .units .unit {
+  filter: brightness(1.3) saturate(1.15);
+  box-shadow: 0 0 12px rgba(96, 200, 255, 0.85);
+}
+.board.subview .units .unit.tapped {
+  filter: brightness(0.9) saturate(1.1);
+  transform: translateX(9px) rotate(90deg);
+}
+.overlay-item {
+  position: absolute; z-index: 6; display: flex; align-items: center; justify-content: center;
+  pointer-events: none;
+}
+.overlay-item > * { pointer-events: auto; }
+
+/* In-tile card animations — death, teleport-out and step-wise movement all play on a REAL `.unit` chip
+   sitting in its square (see AnimGhost / the `anim` prop in Game.tsx), so each is exactly the size and slot
+   the card occupied and the surviving cards only reflow once the animation ends.
+   • death/teleout ride an .anim-ghost (art only, non-interactive);
+   • a mid-walk card is the live UnitChip relocated square-by-square with .anim-move. */
+.unit.anim-ghost { pointer-events: none; }
+/* death / removal — the departed card greys out immediately and fades away over ~2.8s in its own tile. */
+.unit.anim-death { filter: grayscale(1) brightness(0.85); animation: death-fade-anim 2.8s ease forwards; }
+@keyframes death-fade-anim { 0% { opacity: 0.95; } 55% { opacity: 0.8; } 100% { opacity: 0; } }
+/* teleport — the card 'zaps' out of its old tile (0.5s); the destination square glows via .tele-glow. */
+.unit.anim-teleout { z-index: 4; animation: tele-zap-anim 0.5s ease-out forwards; }
+@keyframes tele-zap-anim {
+  0% { opacity: 0.9; transform: scale(1); filter: brightness(1.4) saturate(1.4); }
+  45% { opacity: 0.95; transform: scale(1.08); filter: brightness(2.6) saturate(1.8); }
+  100% { opacity: 0; transform: scale(0.35) rotate(10deg); filter: brightness(3); }
+}
+/* a card mid-walk floats above its square-mates with a soft white glow as it steps through each square. */
+.unit.anim-move { z-index: 4; box-shadow: 0 0 10px 2px rgba(255, 255, 255, 0.55); }
+
+/* teleport destination — the target square glows outward (the site's z-index is NOT changed, so it never
+   lifts over the minions on it). */
+.tele-glow {
+  pointer-events: none; border-radius: 6px;
+  outline: 3px solid rgba(150, 200, 255, 0.95); outline-offset: 2px;
+  box-shadow: 0 0 24px 6px rgba(150, 200, 255, 0.9), inset 0 0 16px rgba(150, 200, 255, 0.45);
+  animation: tele-glow-anim 2s ease forwards;
+}
+@keyframes tele-glow-anim { 0%, 65% { opacity: 1; } 100% { opacity: 0; } }
+/* area auras read as a translucent tint over their squares, BELOW units (z-index 1
+   < .units z-index 2) so they never hide units, with a small identifying badge in
+   the corner. pointer-events pass through the tint to the units/squares beneath. */
+.overlay-item.aura {
+  /* By default the 2×2 aura card sits CENTRED on the block — i.e. on the shared corner of the 4
+     sites, its natural "intersection" home. Only when an oversized 2×2 minion (Mountain Giant)
+     occupies the SAME block does its centred chip cover the aura card; in that (and only that) case
+     the `.aura-covered` modifier below nudges the card to the top-left so it stays visible.
+     (Single-square / whole-site aura overlays have no card child, so this only affects 2×2 cards.) */
+  z-index: 1;
+  background: rgba(165, 120, 240, 0.16);
+  border: 2px solid rgba(175, 130, 240, 0.7); border-radius: 8px;
+  box-shadow: inset 0 0 22px rgba(165, 120, 240, 0.28);
+}
+/* an oversized 2×2 minion shares this aura's block — its chip centres on the same intersection, so
+   push the aura card to the top-left corner to keep it clear of the minion's image. */
+.overlay-item.aura.aura-covered { align-items: flex-start; justify-content: flex-start; }
+/* Aura CONTROL colour goes on the CARD (blue = yours, red = the opponent's, like a minion/Monument):
+   the strip thumbnail of a 1x1 aura, and the card image inside a 2x2 box or a wall bar. The aura's
+   EFFECT AREA keeps its ELEMENT-coloured border (auraTint / auraWallBg), so the two read distinctly. */
+.ground-art.site-aura.aura-mine { border-color: #56b7ff; box-shadow: 0 0 5px 1px rgba(86, 183, 255, .7); }
+.ground-art.site-aura.aura-theirs { border-color: #ff7a7a; box-shadow: 0 0 5px 1px rgba(255, 122, 122, .7); }
+.aura-mine > .auraimg, .aura-mine > .wallimg { border: 2px solid #56b7ff; }
+.aura-theirs > .auraimg, .aura-theirs > .wallimg { border: 2px solid #ff7a7a; }
+/* the card image sits top-left of its aura box; wrap is relative so overlapping
+   auras can be fanned (translate + z-index) and stay individually hoverable */
+.auraimg-wrap { position: relative; display: inline-block; }
+/* an aura the current prompt lets you pick (Enchantress "animate target aura"):
+   a pulsing gold highlight so you know to click it on the board */
+.overlay-item.aura.aura-selectable {
+  border-color: #ffd479; background: rgba(255, 212, 121, 0.18);
+  box-shadow: inset 0 0 22px rgba(255, 212, 121, 0.4), 0 0 12px 3px rgba(255, 212, 121, 0.7);
+  animation: aurapick 1s ease-in-out infinite;
+}
+.overlay-item.wall.aura-selectable { outline: 2px solid #ffd479; animation: aurapick 1s ease-in-out infinite; }
+/* Editor: only the aura's card thumbnail is the hit target (so the site beneath and any
+   overlapping/fanned auras stay reachable). Give it a clear pointer + hover ring. */
+.aura-edit-hit { cursor: pointer; }
+.aura-edit-hit:hover { outline: 2px solid #8fd0ff; outline-offset: 2px; border-radius: 5px; }
+/* an aura currently selected in the Editor (Modify → Aura) — a steady blue-white ring */
+.overlay-item.aura.aura-editing {
+  border-color: #8fd0ff; box-shadow: inset 0 0 22px rgba(143, 208, 255, 0.35), 0 0 12px 3px rgba(143, 208, 255, 0.75);
+}
+.overlay-item.wall.aura-editing { outline: 2px solid #8fd0ff; }
+.ground-art.site-aura.aura-editing { outline: 2px solid #8fd0ff; border-radius: 6px; }
+@keyframes aurapick { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.35); } }
+.auraimg { width: 46px; border-radius: 5px; margin: 3px; box-shadow: 0 0 6px rgba(0, 0, 0, .7); opacity: 0.95; }
+/* a wall aura is a thin edge bar — show its card as a small thumbnail centred on it
+   (allowed to overflow the thin bar so it reads as a card, like 2x2 auras do). */
+.wallimg { width: 34px; border-radius: 4px; box-shadow: 0 0 6px rgba(0, 0, 0, .8); pointer-events: auto; }
+/* clickable border placement hotspots for walls (site intersections) */
+.overlay-item.wall-hotspot {
+  pointer-events: auto; cursor: pointer; border-radius: 4px;
+  background: rgba(127, 209, 138, 0.35);
+  border: 2px dashed #7fd18a; box-shadow: 0 0 8px 2px rgba(127, 209, 138, 0.6);
+  animation: conepulse 0.9s ease-in-out infinite alternate;
+}
+.overlay-item.wall-hotspot:hover { background: rgba(255, 212, 121, 0.6); border-color: #ffd479; }
+/* clickable intersection marker for 2x2 aura placement (the shared corner of 4 sites) */
+.overlay-item.aura-anchor {
+  pointer-events: auto; cursor: pointer; border-radius: 50%;
+  background: rgba(165, 120, 240, 0.5);
+  border: 2px solid rgba(190, 150, 255, 0.95); box-shadow: 0 0 8px 2px rgba(165, 120, 240, 0.6);
+  animation: conepulse 0.9s ease-in-out infinite alternate;
+}
+.overlay-item.aura-anchor:hover { background: rgba(255, 212, 121, 0.85); border-color: #ffd479; }
+/* Multi-square bodies (amoeba via occupiesAllVisited, Rack-stretched avatar, Yog-Sothoth):
+   the head keeps its normal opaque chip; each EXTRA square renders a translucent "ghost" chip
+   INSIDE that square's unit grid (so it tiles/shrinks with any real minions there — it doesn't
+   sit as a full-size overlay behind them). Adjacent occupied squares are joined by a coloured
+   connective bar (z-index set inline: below other minions by default, above when hovered/selected). */
+.unit.bodyghost { opacity: 0.72; }
+.unit.bodyghost:hover { opacity: 0.9; }
+/* every chip of a multi-square body lights up TOGETHER when any part is hovered or the body is
+   selected — so you see the whole creature at once (prominent even on the translucent ghosts). */
+.unit.body-active { outline: 3px solid #ffe08a; outline-offset: 1px; box-shadow: 0 0 12px 2px rgba(255, 220, 120, .9); z-index: 6; }
+.unit.bodyghost.body-active { opacity: 1; }
+.bodylink { border-radius: 10px; pointer-events: none; }
+/* Yog-Sothoth's omnipresence: a 20%-opacity crop of its art washed across the ENTIRE board while
+   it's in the realm (purely decorative). Cropped ONLY along Y — the FULL card width is kept, and
+   a ~45%-tall height band from the UPPER portion of the card is stretched to fill the whole realm.
+   Height 100/45 ≈ 222% scales that band to the board height; position-y t/(1−f) places its top at
+   t (≈5%), so the visible slice is roughly 5%–50% of the card (the face/upper body). */
+.yog-overlay {
+  position: absolute; inset: 0; z-index: 1; pointer-events: none; opacity: 0.4;
+  background-repeat: no-repeat; background-size: 100% 222.2%; background-position: 50% 24%;
+}
+/* while Yog-Sothoth is in the realm the sites (and voids) fade 30% so the wash reads through and
+   the units/panels — which sit ABOVE the wash — stay crisp on top of it. */
+.board.yog-present .siteimg { opacity: 0.6; }
+.board.yog-present .square.void {
+  background: repeating-linear-gradient(45deg, rgba(16, 19, 33, .7), rgba(16, 19, 33, .7) 8px, rgba(12, 14, 24, .7) 8px, rgba(12, 14, 24, .7) 16px);
+}
+.bodylink.mine-1 { background: rgba(96, 170, 255, 0.5); box-shadow: 0 0 12px 3px rgba(96, 170, 255, 0.45); }
+.bodylink.mine-0 { background: rgba(230, 96, 96, 0.5); box-shadow: 0 0 12px 3px rgba(230, 96, 96, 0.45); }
+.unit.big { width: 116px; height: 152px; border-width: 3px; }
+.unit.big .unitstats { font-size: 14px; }
+.brow { display: flex; gap: 4px; }
+.square {
+  /* MUST match SQ_W×SQ_H in Game.tsx (overlay/boardScale math). Native site-art
+     ratio 531:380 (≈1.3974) so the art fills the square without cropping. */
+  width: 211px; height: 151px; border-radius: 8px; position: relative;
+  border: 1px solid #303752; overflow: hidden; cursor: pointer;
+  flex-shrink: 0; /* never shrink to fit a narrow container — keep the exact grid pitch */
+}
+.square.void { background: repeating-linear-gradient(45deg, #101321, #101321 8px, #0c0e18 8px, #0c0e18 16px); }
+.square.sited { background: #232840; }
+.square.rubble { background: #2a2723; }
+.square.hl-place { box-shadow: 0 0 17px 2px rgba(127, 209, 138, .95); }
+.square.hl-place::after {
+  content: ''; position: absolute; inset: 0; z-index: 5; pointer-events: none;
+  border-radius: 6px; box-sizing: border-box;
+  border: 2px solid #7fd18a; box-shadow: inset 0 0 20px rgba(127, 209, 138, .95);
+}
+.square.hl-cone {
+  outline: 3px solid #c77dff; outline-offset: -3px;
+  animation: conepulse 0.9s ease-in-out infinite alternate;
+}
+@keyframes conepulse {
+  from { box-shadow: inset 0 0 6px rgba(199, 125, 255, .3); }
+  to { box-shadow: inset 0 0 28px rgba(199, 125, 255, .75); }
+}
+.square.hl-move { outline: 3px solid #56b7ff; outline-offset: -3px; }
+.square.hl-self { outline: 3px solid #ffd257; outline-offset: -3px; }
+/* "printed area" damage confirmation: one box per affected site, outlined + glowing
+   in the spell's element colour (set inline), with a big damage number centred on it.
+   Sits above the site art but pointer-transparent so it's purely informational. */
+.areadmg-cell {
+  z-index: 12; pointer-events: none;
+  display: flex; align-items: center; justify-content: center;
+  border: 3px solid; border-radius: 8px;
+  animation: areadmgpulse 0.9s ease-in-out infinite alternate;
+}
+.areadmg-num {
+  font-size: 54px; font-weight: 900; line-height: 1;
+  text-shadow: 0 0 6px #000, 0 0 3px #000, 0 2px 4px rgba(0, 0, 0, .9);
+  -webkit-text-stroke: 1.5px rgba(0, 0, 0, .85);
+}
+/* Doomsday Device detonation: an ominous black blast grid (numbers re-lit ash-white so they read). */
+.areadmg-cell.doomsday {
+  border-color: #0a0a0c !important;
+  background: rgba(6, 6, 8, .5);
+  box-shadow: inset 0 0 24px rgba(0, 0, 0, .8), 0 0 16px rgba(0, 0, 0, .75) !important;
+}
+.areadmg-cell.doomsday .areadmg-num {
+  color: #f1eff5 !important;
+  text-shadow: 0 0 8px #000, 0 0 4px #000, 0 2px 5px #000;
+  -webkit-text-stroke: 1.8px #000;
+}
+@keyframes areadmgpulse { from { filter: brightness(0.9); } to { filter: brightness(1.3); } }
+/* post-cast reveal shown to BOTH players: hold full for ~1s, then fade out over ~2s */
+.areadmg-reveal { animation: areadmgreveal 3s ease-out forwards; }
+@keyframes areadmgreveal { 0% { opacity: 0; } 8%, 33% { opacity: 1; } 100% { opacity: 0; } }
+
+/* ── spell-cast reveal (BOTH players): golden caster + spell name, plus a numbered damage
+   grid OR red-glowing affected sites. Full brightness for 2s, then fades over the next 3s. ── */
+.castfx-fade { animation: castfxfade 5s ease-out forwards; }
+@keyframes castfxfade { 0%, 40% { opacity: 1; } 100% { opacity: 0; } }
+/* the caster UNIT chip glows gold (rendered inside UnitChip, not a square tile) */
+.castfx-unitglow {
+  position: absolute; inset: -3px; z-index: 6; pointer-events: none; border-radius: 9px;
+  border: 3px solid #ffd257;
+  box-shadow: 0 0 20px 6px rgba(255, 210, 87, .9), inset 0 0 14px rgba(255, 210, 87, .6);
+}
+.castfx-red {
+  z-index: 12; pointer-events: none; border-radius: 8px;
+  border: 4px solid #ff4d4d;
+  box-shadow: 0 0 22px 6px rgba(255, 60, 60, .75), inset 0 0 20px rgba(255, 60, 60, .55);
+}
+.castfx-name {
+  z-index: 14; pointer-events: none;
+  display: flex; align-items: flex-start; justify-content: center;
+}
+.castfx-name > span {
+  transform: translateY(-46%);
+  padding: 3px 12px; border-radius: 999px;
+  background: rgba(20, 12, 4, .88); color: #ffe6a0;
+  border: 2px solid #ffd257;
+  font-weight: 900; font-size: 22px; white-space: nowrap;
+  text-shadow: 0 0 6px #000, 0 1px 2px #000;
+  box-shadow: 0 0 14px rgba(255, 210, 87, .6);
+}
+
+/* mana-gain float: "+n ◆" rises over the source that just provided mana, ~1s (board-space, so it
+   scales with the board like the damage numbers). */
+.mana-float {
+  z-index: 40; pointer-events: none;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 900; font-size: 46px; line-height: 1; color: #8fe6ff;
+  text-shadow: 0 0 8px #000, 0 0 14px rgba(80, 200, 255, .9), 0 2px 4px rgba(0, 0, 0, .9);
+  -webkit-text-stroke: 1.5px rgba(0, 20, 40, .85);
+  animation: manafloat 1s ease-out forwards;
+}
+@keyframes manafloat {
+  0% { transform: translateY(14px) scale(.7); opacity: 0; }
+  18% { transform: translateY(0) scale(1.12); opacity: 1; }
+  70% { opacity: 1; }
+  100% { transform: translateY(-42px) scale(1); opacity: 0; }
+}
+
+/* level-up float: a green "level n" rises out of The Immortal Throne when it levels up, over 3s
+   (board-space, so it scales with the board like the mana floats). */
+.level-float {
+  z-index: 40; pointer-events: none;
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  font-weight: 900; font-size: 38px; line-height: 1; color: #43e07a; white-space: nowrap;
+  text-shadow: 0 0 8px #000, 0 0 14px rgba(50, 220, 110, .9), 0 2px 4px rgba(0, 0, 0, .9);
+  -webkit-text-stroke: 1.5px rgba(0, 30, 12, .85);
+  animation: levelfloat 3s ease-out forwards;
+}
+.level-float .lvl-arrow { font-size: 1.5em; line-height: .8; -webkit-text-stroke: 0; }
+
+/* idle "did you forget to end your turn?" reminder — a small centred card, non-blocking backdrop */
+.idle-nudge {
+  position: absolute; inset: 0; z-index: 210; pointer-events: none;
+  display: flex; align-items: center; justify-content: center;
+  animation: idle-fade-in .25s ease both;
+}
+.idle-nudge-card {
+  pointer-events: auto; text-align: center;
+  background: linear-gradient(180deg, #1a2030, #10141e);
+  border: 1px solid #3a4a6a; border-radius: 12px;
+  padding: 20px 26px; max-width: min(88vw, 380px);
+  box-shadow: 0 12px 40px rgba(0,0,0,.7), 0 0 22px rgba(90,150,255,.25);
+}
+.idle-nudge-title { font-size: 19px; font-weight: 800; color: #e8f0ff; margin-bottom: 8px; }
+.idle-nudge-body { font-size: 13px; color: #9fb0cc; margin-bottom: 16px; }
+.idle-nudge-btns { display: flex; gap: 10px; justify-content: center; }
+.idle-nudge-btns button { cursor: pointer; border-radius: 8px; padding: 9px 16px; font-weight: 700; font-size: 14px; border: 1px solid transparent; }
+.idle-dismiss { background: #2a3242; color: #cfe0ff; border-color: #3a4a6a; }
+.idle-dismiss:hover { background: #333d52; }
+.idle-endturn { background: #c9962f; color: #1a1300; }
+.idle-endturn:hover { background: #e0aa3c; }
+@keyframes idle-fade-in { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: none; } }
+@keyframes levelfloat {
+  0% { transform: translateY(16px) scale(.7); opacity: 0; }
+  8% { transform: translateY(0) scale(1.14); opacity: 1; }
+  80% { opacity: 1; }
+  100% { transform: translateY(-64px) scale(1); opacity: 0; }
+}
+
+/* Doomsday Device: the live fuse count sits on the card in solid black (white-edged so it reads on
+   the dark art), mirroring the Immortal Throne's level badge. */
+.doomsday-fuse {
+  position: absolute; left: 50%; bottom: 4%; transform: translateX(-50%);
+  z-index: 5; pointer-events: none; white-space: nowrap;
+  font-weight: 900; font-size: 15px; line-height: 1; color: #000;
+  -webkit-text-stroke: 1px #fff; paint-order: stroke fill;
+  text-shadow: 0 1px 2px rgba(255, 255, 255, .6);
+}
+/* fuse at 1 → imminent detonation: an angry red pulse on the device, on the ground OR carried. */
+.ground-art.doom-hot, .carriedart.doom-hot {
+  border-radius: 8px; animation: doompulse .8s ease-in-out infinite;
+}
+@keyframes doompulse {
+  0%, 100% { box-shadow: 0 0 6px 1px rgba(255, 45, 30, .55), inset 0 0 8px rgba(255, 70, 45, .4); filter: brightness(1); }
+  50% { box-shadow: 0 0 22px 7px rgba(255, 60, 40, .95), inset 0 0 15px rgba(255, 95, 55, .7); filter: brightness(1.28); }
+}
+/* ...and a bigger flash of the same solid-black, white-bordered writing on every tick. */
+.tick-float {
+  z-index: 40; pointer-events: none;
+  display: flex; align-items: center; justify-content: center;
+  animation: tickflash 2.2s ease-out forwards;
+}
+.tick-float .tick-text {
+  font-weight: 900; font-size: 46px; line-height: 1; color: #000; white-space: nowrap;
+  -webkit-text-stroke: 2px #fff; paint-order: stroke fill;
+  text-shadow: 0 0 10px rgba(255, 255, 255, .7), 0 2px 5px rgba(0, 0, 0, .8);
+}
+@keyframes tickflash {
+  0% { transform: translateY(10px) scale(.5); opacity: 0; }
+  12% { transform: translateY(0) scale(1.25); opacity: 1; }
+  70% { opacity: 1; }
+  100% { transform: translateY(-54px) scale(1); opacity: 0; }
+}
+
+/* persistent green level readout printed on The Immortal Throne artifact tile. */
+.throne-level {
+  position: absolute; left: 50%; bottom: 4%; transform: translateX(-50%);
+  z-index: 5; pointer-events: none; white-space: nowrap;
+  font-weight: 900; font-size: 13px; line-height: 1; color: #43e07a;
+  text-shadow: 0 0 4px #000, 0 0 8px rgba(50, 220, 110, .85), 0 1px 2px rgba(0, 0, 0, .95);
+  -webkit-text-stroke: .6px rgba(0, 30, 12, .9);
+}
+
+/* pre-game "VS" splash — both avatars + player names as the game opens. Positioned over the whole
+   game canvas (absolute inset:0 inside the transformed .game), so it's full-screen on desktop AND
+   mobile. Auto-fades near the end of its ~4s life; click/tap to skip. */
+.pregame-vs {
+  position: absolute; inset: 0; z-index: 200; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 4%;
+  background: #03050d; /* solid, darker very-dark blue */
+  animation: pv-fade-in .3s ease both, pv-fade-out .6s ease 3.4s both;
+}
+.pv-side { display: flex; flex-direction: column; align-items: center; gap: 14px; min-width: 0; }
+.pv-left { animation: pv-slide-l .5s cubic-bezier(.2,.8,.2,1) both; }
+.pv-right { animation: pv-slide-r .5s cubic-bezier(.2,.8,.2,1) both; }
+.pv-avatar { width: clamp(140px, 22vw, 280px); border-radius: 12px; box-shadow: 0 0 34px rgba(0,0,0,.75), 0 0 26px rgba(120,150,255,.35); }
+.pv-name {
+  font-size: clamp(18px, 3vw, 36px); font-weight: 800; color: #eef; text-shadow: 0 2px 8px #000;
+  max-width: 34vw; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pv-vs {
+  font-size: clamp(44px, 9vw, 120px); font-weight: 900; color: #ffd257; flex: 0 0 auto;
+  text-shadow: 0 0 20px rgba(255,210,87,.7), 0 3px 6px #000; -webkit-text-stroke: 2px rgba(80,40,0,.55);
+  animation: pv-pop .5s cubic-bezier(.2,1.6,.4,1) .18s both;
+}
+@keyframes pv-fade-in { from { opacity: 0 } to { opacity: 1 } }
+@keyframes pv-fade-out { from { opacity: 1 } to { opacity: 0 } }
+@keyframes pv-slide-l { from { transform: translateX(-48px); opacity: 0 } to { transform: none; opacity: 1 } }
+@keyframes pv-slide-r { from { transform: translateX(48px); opacity: 0 } to { transform: none; opacity: 1 } }
+@keyframes pv-pop { from { transform: scale(.3); opacity: 0 } to { transform: scale(1); opacity: 1 } }
+/* MOBILE: the splash lives inside the fixed 866×400 game canvas, where vw/vh don't map to it, so
+   the clamp()s blew up and overflowed. Pin fixed canvas-space sizes that always fit. */
+.game.mobile .pregame-vs { gap: 24px; }
+.game.mobile .pv-avatar { width: 150px; }
+.game.mobile .pv-name { font-size: 18px; max-width: 26%; }
+.game.mobile .pv-vs { font-size: 48px; -webkit-text-stroke-width: 1.5px; }
+
+/* ── two-sided battle reveal (BOTH players, 5s, click/Skip to dismiss) ── */
+.battle-pop {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  z-index: 120; cursor: pointer; animation: battlepop-in .22s ease both;
+}
+.battle-panel {
+  background: #14171f; border: 2px solid #7a6bb0; border-radius: 16px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, .75);
+  padding: 16px 20px;
+  /* grow to fit however many units the battle involved (up to the viewport), so a big
+     battle widens the panel instead of clipping its minions */
+  width: max-content; max-width: 96vw;
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+}
+.battle-title { font-size: 20px; font-weight: 900; letter-spacing: .04em; color: #ffd479; text-shadow: 0 1px 3px #000; }
+.battle-sides { display: flex; align-items: stretch; gap: 22px; justify-content: center; }
+/* size to the units it holds (so the panel's max-content grows with the battle); can still
+   shrink if the panel is capped at 96vw */
+.battle-side { display: flex; flex-direction: column; gap: 6px; flex: 0 1 auto; min-width: 0; }
+.battle-side.atk { align-items: flex-end; }
+.battle-side.def { align-items: flex-start; }
+.battle-side-label { font-size: 12px; text-transform: uppercase; letter-spacing: .1em; font-weight: 700; }
+.battle-side.atk .battle-side-label { color: #ff9b6b; }
+.battle-side.def .battle-side-label { color: #8fb7ff; }
+.battle-vs { align-self: center; font-size: 26px; color: #ffd479; }
+/* units never scroll: the row stays on one line and the chips shrink to fit */
+.battle-units { display: flex; flex-wrap: nowrap; gap: 8px; }
+.battle-unit { position: relative; flex: 0 1 92px; min-width: 44px; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.battle-unitimg { width: 100%; border-radius: 8px; }
+.battle-unit.dead .battle-unitimg { filter: grayscale(1) brightness(.55); }
+.battle-tomb { position: absolute; top: -7px; right: -7px; font-size: 22px; filter: drop-shadow(0 1px 2px #000); }
+.battle-dmg {
+  position: absolute; top: -9px; left: 50%; transform: translateX(-50%);
+  background: #b02020; color: #fff; font-weight: 900; font-size: 15px;
+  padding: 1px 7px; border-radius: 999px; border: 1.5px solid #ff8a8a; box-shadow: 0 0 8px rgba(255, 60, 60, .6);
+}
+.battle-uname { font-size: 11px; text-align: center; line-height: 1.1; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.battle-none { color: #6b7280; font-size: 22px; padding: 8px; }
+.battle-logs {
+  width: 100%; max-height: 22vh; overflow-y: auto; background: #0d0f16; border-radius: 10px;
+  padding: 8px 12px; font-size: 12.5px; line-height: 1.5; color: #cdd3e0;
+}
+@keyframes battlepop-in { from { opacity: 0; transform: translate(-50%, -46%) scale(.96); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+/* click-a-unit move highlight only: much thicker, fully solid, brighter than the
+   generic hl-move/hl-self — with an inner+outer glow and a light tint fill. */
+/* Drawn as an overlay ABOVE the site art (the site image is a child of .square and
+   would otherwise cover a background/inset-shadow on the square itself). */
+/* No hard line — the highlight is a soft glow that bleeds inward over the art
+   (::after, above the site image) and outward past the square edge (box-shadow on
+   the square itself, which its own overflow:hidden does NOT clip). 5% tint. */
+.square.hl-unitmove { box-shadow: 0 0 17px 2px rgba(56, 192, 255, .95); }
+.square.hl-unitself { box-shadow: 0 0 17px 2px rgba(255, 210, 61, .95); }
+.square.hl-unitmove::after,
+.square.hl-unitself::after {
+  content: ''; position: absolute; inset: 0; z-index: 5; pointer-events: none;
+  border-radius: 6px; box-sizing: border-box;
+}
+/* a visible border sits alongside the glow now (soft glow + a clear 2px edge) */
+.square.hl-unitmove::after {
+  border: 2px solid #46c4ff; box-shadow: inset 0 0 20px rgba(120, 210, 255, .95);
+}
+.square.hl-unitself::after {
+  border: 2px solid #ffd257; box-shadow: inset 0 0 20px rgba(255, 224, 140, .95);
+}
+/* a unit's OWN site, offered as a "loop" move (a unit with spare movement steps out and back):
+   the move-blue glow plus a ↻ corner badge and a dashed edge so it reads as move-in-place. */
+.square.hl-loop { box-shadow: 0 0 17px 2px rgba(56, 192, 255, .9); }
+.square.hl-loop::after {
+  content: '↻'; position: absolute; inset: 0; z-index: 6; pointer-events: none;
+  display: flex; align-items: flex-start; justify-content: flex-end;
+  padding: 2px 4px; font-size: 17px; line-height: 1; color: #bfe9ff; text-shadow: 0 0 4px #000, 0 0 2px #000;
+  border: 2px dashed #46c4ff; border-radius: 6px; box-sizing: border-box;
+}
+/* pathChoice: waypoints of the route currently hovered in the route picker */
+.square.hl-route { outline: 3px solid #b98cff; outline-offset: -3px; background: rgba(185, 140, 255, 0.22); }
+/* direction-picker conveyor: one chevron per lane square, pointing the way the effect travels and
+   pulsing outward (staggered per-square animation-delay) so it reads as a belt flowing to the
+   farthest reachable site. NO lateral lines — just the directional chevrons; the hovered
+   direction's lane brightens. */
+.square .belt {
+  position: absolute; inset: 0; z-index: 6; pointer-events: none;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 40px; line-height: 1;
+  color: var(--belt-color, #8ad6c8);
+  animation: beltglow 0.9s ease-in-out infinite;
+}
+.square .belt-up::before { content: '▲'; }
+.square .belt-down::before { content: '▼'; }
+.square .belt-left::before { content: '◀'; }
+.square .belt-right::before { content: '▶'; }
+/* the hovered direction's lane is bigger and pulses faster */
+.square .belt.active { font-size: 49px; animation-duration: 0.66s; }
+/* GLOW pulse — the chevrons never fade out; the per-square animation-delay makes the glow travel
+   outward like a conveyor. Coloured by the magic's / source unit's element (--belt-color). */
+@keyframes beltglow {
+  0%, 100% { filter: drop-shadow(0 0 3px var(--belt-color, #8ad6c8)); }
+  50%      { filter: drop-shadow(0 0 13px var(--belt-color, #8ad6c8)) drop-shadow(0 0 5px var(--belt-color, #8ad6c8)); }
+}
+/* the STARTING site shows all 4 arrows at once, each pinned to its edge so they radiate from the
+   centre (smaller than the lane chevrons; the hovered direction's arrow grows with .active). */
+.square .belt.belt-origin { inset: auto; width: 46%; height: 46%; font-size: 21px; }
+.square .belt-origin.belt-up { top: 0; left: 50%; transform: translateX(-50%); }
+.square .belt-origin.belt-down { bottom: 0; left: 50%; transform: translateX(-50%); }
+.square .belt-origin.belt-left { left: 0; top: 50%; transform: translateY(-50%); }
+.square .belt-origin.belt-right { right: 0; top: 50%; transform: translateY(-50%); }
+.square .belt.belt-origin.active { font-size: 27px; }
+/* while hovering a direction option, fade the OTHER directions' arrows right down so the chosen
+   lane stands out (the hovered lane keeps .active → full opacity). */
+.square .belt { transition: opacity .12s ease; }
+.board.belt-focus .square .belt:not(.active) { opacity: .12; }
+.sitecard { position: absolute; inset: 0; }
+.siteimg { width: 100%; height: 100%; object-fit: cover; opacity: 0.85; }
+/* owner strip as an INSET SHADOW, not a border: a border-bottom would steal 3px of
+   the image's content box and make object-fit:cover crop the (native-ratio) art. */
+/* owner strip: a REAL bar drawn on top of the site art (an inset box-shadow on the <img>
+   is painted over by the image itself → invisible), with a glow rising off it, so your
+   (blue) and the opponent's (red) sites read apart at a glance. */
+.site-ownerbar {
+  /* z-index 1 (below the aura overlay, which is also 1 but painted later in the DOM, so an
+     aura card sitting on the site COVERS the bar) — still under units/artifacts (z-index ≥2) */
+  position: absolute; left: 0; right: 0; bottom: 0; height: 4px; z-index: 1;
+  pointer-events: none; border-radius: 0 0 6px 6px;
+}
+/* viewpoint-relative (like units/auras/monuments): the CURRENT viewer's sites are blue, the
+   opponent's red — so it flips correctly when the perspective switches (hotseat / scenarios). */
+.site-ownerbar.owner-mine { background: #2ea8ff; box-shadow: 0 0 12px 3px rgba(46, 168, 255, .95), 0 -6px 12px -2px rgba(46, 168, 255, .8); }
+.site-ownerbar.owner-theirs { background: #ff4d4d; box-shadow: 0 0 12px 3px rgba(255, 77, 77, .95), 0 -6px 12px -2px rgba(255, 77, 77, .8); }
+.cardtext.siteimg { height: 100%; }
+/* Site hitbox: the site fills the whole square (.sitecard inset:0). The minion / artifact /
+   subsurface OVERLAY CONTAINERS span the square but are mostly empty space around their
+   chips; make the containers click-transparent and only the actual card chips clickable, so
+   clicking ANY part of a site not covered by a minion or another card reaches the site (to
+   activate its ability) instead of the old thin dead-strip. jsdom ignores pointer-events, so
+   the click-driven DOM tests still dispatch on their exact target. */
+.units, .subsurface, .voidunits, .ground-arts { pointer-events: none; }
+.unit, .ground-art { pointer-events: auto; }
+
+.units { position: absolute; top: 2px; left: 2px; right: 2px; display: flex; flex-wrap: wrap; gap: 2px; z-index: 2; }
+/* Crowded location: >6 minions tile into a fixed-column grid that fills the whole
+   square, each chip shrinking to fit (no overlap, no spill). --cols is set inline
+   per count (see unitsGridCols); rows self-size via grid-auto-rows: 1fr. */
+.units.grid {
+  top: 2px; left: 2px; right: 2px; bottom: 2px;
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 4), 1fr);
+  grid-auto-rows: 1fr;
+  gap: 1px;
+  align-items: stretch; justify-items: stretch;
+}
+.units.grid .unit,
+.units.grid .unit.small,
+.units.grid .unit.big { width: 100%; height: 100%; min-width: 0; }
+/* keep the tap rotation centred in a tiny cell (the 9px nudge is calibrated for the
+   full-size chip and would clip a small one) */
+.units.grid .unit.tapped { transform: rotate(90deg); }
+/* stats stay legible but scale down in the dense grid */
+.units.grid .unitstats { font-size: 9px; line-height: 1.15; }
+/* Uncrowded location (≤6 units): a centred grid where fewer units render BIGGER.
+   --cols is set inline per count (see unitsTileCols); chip sizes are fixed per count
+   so they stay the card's portrait shape and are centred in their cell. */
+.units.tiled {
+  top: 2px; left: 2px; right: 2px; bottom: 2px;
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 1), 1fr);
+  grid-auto-rows: 1fr;
+  gap: 3px; place-items: center;
+}
+/* Tapped chips rotate 90° WITH their stat bar (as a physical card would). A portrait chip's
+   rotated width = its HEIGHT, which can cross the square border for the edge cells — so shrink
+   just enough (about the chip centre) that the whole rotated card + bar stays inside the site.
+   Counts 1 and 4 already fit their cell rotated, so no shrink there. */
+.units.tiled .unit.tapped { transform: rotate(90deg); }
+.units.tiled[data-count="2"] .unit.tapped { transform: rotate(90deg) scale(0.85); }
+.units.tiled[data-count="3"] .unit.tapped { transform: rotate(90deg) scale(0.80); }
+.units.tiled[data-count="5"] .unit.tapped,
+.units.tiled[data-count="6"] .unit.tapped { transform: rotate(90deg) scale(0.95); }
+/* per-count chip sizes (portrait, largest that fits the square design 211×151) */
+/* a lone minion uses the 2-across layout (left cell), a touch smaller than a pair */
+.units.tiled[data-count="1"] .unit { width: 84px; height: 110px; }
+.units.tiled[data-count="2"] .unit { width: 92px; height: 121px; }
+.units.tiled[data-count="3"] .unit { width: 66px; height: 86px; }
+.units.tiled[data-count="4"] .unit,
+.units.tiled[data-count="5"] .unit,
+.units.tiled[data-count="6"] .unit { width: 55px; height: 72px; }
+.units.tiled[data-count="1"] .unitstats,
+.units.tiled[data-count="2"] .unitstats { font-size: 13px; }
+.units.tiled[data-count="4"] .unitstats,
+.units.tiled[data-count="5"] .unitstats,
+.units.tiled[data-count="6"] .unitstats { font-size: 10px; line-height: 1.15; }
+/* Ground cards (artifacts / 1x1 auras) share the site on the right border: reserve that strip
+   so the minions — especially UNTAPPED ones — never step over the cards' LEFT edge, and shrink
+   the chips to fit the area that's left. This applies at EVERY minion count (tiled ≤6 and the
+   dense grid >6), and reserves a WIDER strip when the cards wrap into two columns (has-arts2). */
+.units.tiled.has-arts,
+.units.grid.has-arts { right: 46px; }
+/* Two columns of the SMALL ground cards span barely more than one big column, so the minions
+   reserve the same narrow strip either way (has-arts sizes below apply — the element carries
+   both has-arts and has-arts2). */
+.units.tiled.has-arts[data-count="1"] .unit { width: 78px; height: 102px; }
+.units.tiled.has-arts[data-count="2"] .unit { width: 76px; height: 99px; }
+.units.tiled.has-arts[data-count="3"] .unit,
+.units.tiled.has-arts[data-count="4"] .unit { width: 50px; height: 66px; }
+.units.tiled.has-arts[data-count="5"] .unit,
+.units.tiled.has-arts[data-count="6"] .unit { width: 40px; height: 52px; }
+/* burrowed/submerged minions (shown in the surface/main view): anchored bottom-RIGHT and
+   reversed so the FIRST one sits on the right — clear of a centred aura badge that would
+   otherwise be covered when it lands on the site's bottom-left corner. Lifted above the owner bar. */
+.subsurface {
+  position: absolute; bottom: 5px; right: 2px; display: flex; flex-direction: row-reverse;
+  gap: 2px; z-index: 2; background: rgba(0,0,0,.5); border-radius: 6px; padding: 1px;
+}
+.voidunits { position: absolute; top: 30%; left: 2px; display: flex; gap: 2px; z-index: 2; }
+.unit {
+  width: 58px; height: 76px; border-radius: 5px; position: relative;
+  border: 2px solid #56b7ff; overflow: hidden; background: #10121a;
+}
+.unit.theirs { border-color: #ff7a7a; }
+/* rotating a portrait chip 90° around its centre makes it ~9px wider each side;
+   nudge right so the left edge doesn't clip past the site boundary */
+.unit.tapped { transform: translateX(9px) rotate(90deg); filter: brightness(0.65); }
+.unit.selected { outline: 2px solid #ffd257; }
+.unit.avatar { border-width: 3px; box-shadow: 0 0 8px rgba(255, 210, 87, .6); }
+.unit.small { width: 44px; height: 58px; }
+/* A buried/submerged chip in the surface view sits in the small bottom-right strip. Tapping
+   rotates it to landscape; reserve the ROTATED footprint (the margin swaps the box's width and
+   height: +7 each side, −7 top/bottom for a 44×58 chip) so it neither pokes out of the site nor
+   leaves a portrait-shaped "ghost" of the dark strip behind it. Drop the generic translateX
+   nudge (which is tuned for full-size chips and would shove it off the tile). */
+.subsurface .unit.small.tapped { transform: rotate(90deg); margin: -7px 7px; }
+.unitimg { width: 100%; height: 100%; object-fit: cover; object-position: top; }
+.unitstats {
+  position: absolute; bottom: 0; left: 0; right: 0; font-size: 12px;
+  background: rgba(0,0,0,.75); text-align: center; line-height: 1.3;
+}
+.kw { position: absolute; top: 0; right: 0; font-size: 9px; background: rgba(0,0,0,.6); border-radius: 3px; }
+/* combat badges (Lethal 🗡 / Ranged 🏹) hang off the RIGHT EDGE of the centred atk/def text:
+   .statval is a centred inline-block whose width is just the text, and the badges are absolute
+   (left:100%), so they never shift atk/def whether present or not. */
+.statval { position: relative; display: inline-block; }
+.statbadge { position: absolute; top: 50%; transform: translateY(-50%); font-size: 0.89em; line-height: 1; z-index: 4; pointer-events: none; }
+.statbadge-left { right: 100%; margin-right: 3px; }
+.statbadge-right { left: 100%; margin-left: 3px; }
+/* a unit's status badges live in a top-right strip that wraps, so they line up instead of piling
+   on the same corner (which hid all but one). Scoped `position:static` only affects badges INSIDE
+   the strip — site/artifact `.kw` badges keep their own absolute positions. */
+.kwbar { position: absolute; top: 1px; right: 1px; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 1px; max-width: 94%; z-index: 3; pointer-events: none; }
+.kwbar .kw { position: static; line-height: 1.1; padding: 0 1px; }
+/* render a colour emoji (dagger, bow) as a solid WHITE silhouette: brightness(0) blacks it out,
+   invert(1) flips that to white. The dark .kw background stays for contrast. */
+.kwglyph-white { display: inline-block; filter: brightness(0) invert(1); }
+/* carried artifacts, shown as tiny cards along the bottom-left of the carrier */
+.carriedarts { position: absolute; bottom: 14px; left: 1px; display: flex; flex-wrap: wrap; gap: 1px; z-index: 2; }
+.carriedart { position: relative; display: inline-block; line-height: 0; border: 1px solid #b98a4a; border-radius: 2px; }
+/* Dragonlord's set-aside dragon: top-right corner, a touch bigger + a fiery glow so it
+   reads as the avatar's aspect rather than a carried artifact */
+.carriedarts.dragonaside { top: 2px; right: 2px; bottom: auto; left: auto; }
+.carriedarts.dragonaside .carriedart { border-color: #ff9a3c; box-shadow: 0 0 5px rgba(255,150,60,.85); }
+.carriedarts.dragonaside .artthumb { width: 20px; height: 27px; }
+/* sits just ABOVE the .unitstats bar (bottom:0, ~16px tall) so it never hides the power/life readout */
+.carriedarts.imposterreal { top: auto; right: auto; bottom: 16px; left: 2px; }
+.carriedarts.imposterreal .carriedart { border-color: #b06cff; box-shadow: 0 0 5px rgba(160,108,255,.85); }
+.carriedarts.imposterreal .artthumb { width: 20px; height: 27px; }
+.carriedarts.bellymeal { top: auto; right: auto; bottom: 2px; left: 2px; }
+.carriedarts.bellymeal .carriedart { border-color: #57c06a; box-shadow: 0 0 5px rgba(90,200,110,.85); }
+.carriedarts.bellymeal .artthumb { width: 20px; height: 27px; }
+/* small count/text badge (collection viewers, choice grids) */
+.artbadge { font-size: 11px; line-height: 1; background: rgba(0,0,0,.65); border-radius: 3px; padding: 1px 3px; }
+/* coordinate caption disambiguating same-named effects in an order panel */
+/* effect caption on a card (order-your-prevention prompt, board-coord disambiguation): large enough
+   to read, spans the card width and WRAPS to multiple rows for phrase-length effect text. */
+.ordercoord { position: absolute; bottom: 3px; left: 3px; right: 3px; font-size: 13px; line-height: 1.2;
+  background: rgba(0,0,0,.8); color: #f0d488; border-radius: 4px; padding: 2px 4px; font-weight: 600;
+  text-align: center; white-space: normal; overflow-wrap: anywhere; }
+/* Warded units/sites: pulsing blue aura (opacity-only animation = GPU-cheap). */
+.wardglow { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.wardglow rect {
+  fill: rgba(80, 170, 255, 0.14);
+  stroke: #7ac8ff; stroke-width: 2.5; vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 0 3px #5aa8ff);
+  transform-box: fill-box; transform-origin: center;
+  animation: ward-pulse 2.2s ease-in-out infinite;
+}
+@keyframes ward-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.965); }
+  50%      { opacity: 0.95; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wardglow rect { animation: none; opacity: 0.7; transform: none; }
+}
+/* Minions get a slightly livelier pulse than sites (bigger breathe, brighter,
+   a touch faster) — sites keep the calmer base animation above. */
+.wardglow-strong rect {
+  stroke-width: 3;
+  animation: ward-pulse-strong 1.5s ease-in-out infinite;
+}
+@keyframes ward-pulse-strong {
+  0%, 100% { opacity: 0.45; transform: scale(0.92); }
+  50%      { opacity: 1; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wardglow-strong rect { animation: none; opacity: 0.8; transform: none; }
+}
+/* unit status auras — nested concentric frames (see Aura in Game.tsx).
+   ward = blue, branded-Evil = red, stealth = military green. */
+.aura { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.aura rect {
+  stroke-width: 3; vector-effect: non-scaling-stroke;
+  transform-box: fill-box; transform-origin: center;
+  animation: ward-pulse-strong 1.8s ease-in-out infinite;
+}
+.aura-ward rect { fill: rgba(80, 170, 255, 0.14); stroke: #7ac8ff; filter: drop-shadow(0 0 3px #5aa8ff); animation-duration: 1.5s; }
+.aura-evil rect { fill: rgba(200, 40, 40, 0.14); stroke: #e0554f; filter: drop-shadow(0 0 3px #c0342f); animation-duration: 2s; }
+.aura-stealth rect { fill: rgba(90, 110, 50, 0.16); stroke: #7d8a3f; filter: drop-shadow(0 0 3px #5a6e32); animation-duration: 2.4s; }
+/* death's door — urgent crimson glow on the avatar */
+.aura-door rect { fill: rgba(255, 30, 30, 0.22); stroke: #ff2a2a; stroke-width: 3.5; filter: drop-shadow(0 0 5px #ff2020); animation-duration: 1s; }
+@media (prefers-reduced-motion: reduce) {
+  .aura rect { animation: none; opacity: 0.75; transform: none; }
+}
+/* ANY legal target (unit, site, ground/carried artifact) is highlighted by default so it
+   reads as clickable, and glows brighter on hover. Units carry .unit.hl-target too — the
+   [data-target] rules unify sites & artifacts with the same look. */
+.unit.hl-target,
+[data-target="1"] { outline: 3px solid #ffd257; outline-offset: 1px; box-shadow: 0 0 10px rgba(255, 210, 87, .8); cursor: pointer; }
+.unit.hl-target:hover,
+[data-target="1"]:hover { outline-color: #ffe8a0; box-shadow: 0 0 16px rgba(255, 220, 120, 1); }
+/* Only small CHIPS (units / artifacts) rise in z on hover. A full-square SITE hitbox (.sitecard also
+   carries data-target) must NOT — raising it lifts the site above the minions standing on it. */
+.unit.hl-target:hover,
+.ground-art[data-target="1"]:hover,
+.carriedart[data-target="1"]:hover { z-index: 5; }
+/* Combat-prompt glows — the attack TARGET (gold, biggest, pulsing); DEFENDER candidates (gold, smaller;
+   brighter "-hot" while their option is hovered); the ATTACKER (red).
+   UNIT chips are smaller than their square so an OUTWARD outline reads even though the square clips
+   overflow, and they may rise a little in z-order. */
+.unit.glow-target {
+  outline: 4px solid #ffd257; outline-offset: 2px; border-radius: 6px;
+  box-shadow: 0 0 24px 5px rgba(255, 210, 87, .95); animation: glow-target-pulse 1.1s ease-in-out infinite;
+}
+@keyframes glow-target-pulse { 50% { box-shadow: 0 0 34px 8px rgba(255, 228, 150, 1); } }
+.unit.glow-defender {
+  outline: 2px solid #ffd257; outline-offset: 1px; border-radius: 6px;
+  box-shadow: 0 0 9px rgba(255, 210, 87, .7);
+}
+.unit.glow-defender-hot {
+  outline: 3px solid #ffe8a0; outline-offset: 1px; border-radius: 6px;
+  box-shadow: 0 0 18px 3px rgba(255, 228, 150, 1);
+}
+.unit.glow-attacker {
+  outline: 3px solid #ff5a5a; outline-offset: 1px; border-radius: 6px;
+  box-shadow: 0 0 16px 3px rgba(255, 74, 74, .95); animation: glow-attacker-pulse 1s ease-in-out infinite;
+}
+@keyframes glow-attacker-pulse { 50% { box-shadow: 0 0 24px 5px rgba(255, 90, 90, 1); } }
+/* 'atk' — a same-square strike target while I have one of my units selected: gold like a combat
+   target, plus a crosshair cursor so it reads as "click to attack". */
+.unit.glow-atk {
+  outline: 4px solid #ffd257; outline-offset: 2px; border-radius: 6px;
+  box-shadow: 0 0 24px 5px rgba(255, 210, 87, .95); animation: glow-target-pulse 1.1s ease-in-out infinite;
+  cursor: crosshair;
+}
+.unit.glow-target, .unit.glow-defender-hot, .unit.glow-atk { z-index: 6; }
+.unit.glow-defender, .unit.glow-attacker { z-index: 5; }
+/* A glowing SITE is lit on its SQUARE (same mechanism as movement targets, .square.hl-place): the
+   square's OWN box-shadow isn't clipped by its overflow:hidden and doesn't sit above the minions on it. */
+.square.hl-attack-cand { box-shadow: 0 0 17px 2px rgba(255, 210, 87, .85); }
+.square.hl-attack-hot { box-shadow: 0 0 22px 4px rgba(255, 228, 150, 1); }
+.square.hl-attack-target { box-shadow: 0 0 17px 2px rgba(255, 210, 87, .95); }
+.sitecard { position: relative; }
+/* per-square coordinate label, shown only while a prompt refers to squares by "(x,y)" */
+.sqcoord {
+  position: absolute; top: 2px; left: 50%; transform: translateX(-50%); z-index: 6;
+  font-size: 12px; font-weight: 700; color: #ffe08a; background: rgba(0, 0, 0, .72);
+  border-radius: 4px; padding: 0 5px; line-height: 1.35; pointer-events: none; letter-spacing: .3px;
+}
+/* Harbinger's fated squares — a large, player-coloured symbol with a matching glow
+   on the site border, so mirror matches stay legible at a glance. */
+.portent {
+  position: absolute; top: 1px; z-index: 4; font-size: 27px; line-height: 1;
+  pointer-events: none; filter: drop-shadow(0 0 2px #000);
+}
+.portent.owner0 { left: 3px; color: #56b7ff; text-shadow: 0 0 11px #56b7ff, 0 0 4px #cfeaff; }
+.portent.owner1 { right: 3px; color: #ff7a7a; text-shadow: 0 0 11px #ff7a7a, 0 0 4px #ffd6d6; }
+/* player-coloured glow on the site under a portent (both, in a mirror) */
+.square.portent-p0 .sitecard { box-shadow: 0 0 9px 2px rgba(86, 183, 255, .8); border-radius: 5px; }
+.square.portent-p1 .sitecard { box-shadow: 0 0 9px 2px rgba(255, 122, 122, .8); border-radius: 5px; }
+.square.portent-p0.portent-p1 .sitecard { box-shadow: 0 0 9px 2px rgba(86, 183, 255, .8), 0 0 9px 2px rgba(255, 122, 122, .8); }
+/* faint player-coloured outline on an empty portent square (no site to glow) */
+.square.portent-p0.void { box-shadow: inset 0 0 0 2px rgba(86, 183, 255, .5); }
+.square.portent-p1.void { box-shadow: inset 0 0 0 2px rgba(255, 122, 122, .5); }
+.square.portent-p0.portent-p1.void { box-shadow: inset 0 0 0 2px rgba(86, 183, 255, .5), inset 0 0 0 4px rgba(255, 122, 122, .45); }
+.sitecard .siteward { top: 2px; left: 2px; right: auto; font-size: 14px; padding: 1px 2px; z-index: 2; }
+.sitecard .siteflood { top: 2px; right: 2px; font-size: 12px; padding: 1px 2px; z-index: 2; }
+/* scorched 🔥 — sits just left of the flood symbol (top-right), for a site a roaming Wildfire has burned */
+.sitecard .sitescorched { top: 2px; right: 22px; font-size: 12px; padding: 1px 2px; z-index: 2; }
+/* kindled 🔥 — the same flame shifted more YELLOW, for a site the Flame of the First Ones has visited;
+   sits just left of the scorched mark so both can show on one site */
+.sitecard .siteflamevisited { top: 2px; right: 42px; font-size: 12px; padding: 1px 2px; z-index: 2; filter: hue-rotate(35deg) saturate(1.45) brightness(1.3); }
+/* silenced 🤐 — bottom-left corner on a site (clear of ward/flood), tiny on artifact thumbs */
+.sitecard .sitesilenced { bottom: 2px; left: 2px; top: auto; right: auto; font-size: 13px; padding: 1px 2px; z-index: 2; }
+.artsilenced { font-size: 8px; padding: 0 1px; }
+/* buried ⛏ / submerged 🌊 badge on a subsurface ground artifact — bottom-left, clear of 🤐 */
+.artregion { position: absolute; bottom: 1px; left: 1px; top: auto; right: auto; font-size: 10px; padding: 0 1px; line-height: 1; z-index: 4; text-shadow: 0 0 3px #000, 0 0 3px #000; }
+.marker {
+  position: absolute; bottom: 14px; right: 1px; width: 22px; border-radius: 3px;
+  border: 1px solid rgba(255,255,255,.6); box-shadow: 0 0 4px rgba(0,0,0,.8);
+}
+/* artifacts lying on the ground, as small physical cards */
+/* ground artifacts sit at MID-right (not bottom-right) so they clear the owner bar
+   along the bottom and don't collide with the minions/aura badge */
+/* ground artifacts: stacked vertically on the site's RIGHT border, centred so they clear the
+   bottom owner bar and the centred aura badge; z-7 keeps them above the minions AND above the site's
+   border/highlight animations (placement glow, combat outlines ≤ z-5) so an aura/artifact card is
+   never hidden under them. */
+.ground-arts { position: absolute; top: 50%; right: 2px; transform: translateY(-50%); display: flex; flex-direction: column; gap: 2px; z-index: 7; }
+.ground-art {
+  position: relative;
+  width: 26px; height: 34px; border-radius: 3px; overflow: hidden; cursor: pointer;
+  border: 1px solid #b98a4a; background: #10121a; box-shadow: 0 0 3px rgba(0,0,0,.6);
+}
+/* roomy ≤4-minion views: show the artifact(s) bigger */
+.ground-arts.ga-big .ground-art { width: 36px; height: 47px; }
+/* Many ground cards on one site: shrink each past 3, and wrap into 2 columns past 4
+   so the vertical strip doesn't overflow the site. */
+.ground-arts.ga-shrink .ground-art { width: 27px; height: 35px; }
+.ground-arts.ga-big.ga-shrink .ground-art { width: 30px; height: 39px; }
+/* In the two-column layout the cards go SMALL so two of them span barely more than one big
+   column — the strip stays narrow and the minions keep almost all their room. */
+.ground-arts.ga-2col .ground-art,
+.ground-arts.ga-big.ga-2col .ground-art { width: 20px; height: 26px; }
+.ground-arts.ga-2col { flex-flow: row wrap; justify-content: flex-end; align-content: center; max-width: 44px; }
+.ground-art:hover { border-color: #ffd479; box-shadow: 0 0 6px rgba(255,212,121,.7); }
+/* Monuments glow their controller's colour (like a minion chip): blue = yours, red = the opponent's.
+   They can change hands (Editor / effects), so the border tracks who currently controls them. */
+.ground-art.mono-mine { border-color: #56b7ff; box-shadow: 0 0 5px 1px rgba(86, 183, 255, .7); }
+.ground-art.mono-theirs { border-color: #ff7a7a; box-shadow: 0 0 5px 1px rgba(255, 122, 122, .7); }
+/* a single-site aura shown in the artifact space — tinted enchantment purple */
+.ground-art.site-aura { border-color: #a06bd8; box-shadow: 0 0 6px 1px rgba(160, 107, 216, .7); }
+.groundimg { width: 100%; height: 100%; object-fit: cover; object-position: top; }
+/* carried-artifact thumbnails on a unit */
+.artthumb { width: 16px; height: 21px; object-fit: cover; object-position: top; border-radius: 2px; display: block; }
+/* Earthquake rearrange panel: a 2x2 grid of the area's sites, laid out in board orientation; click two
+   to swap them (site + everything on it), Confirm sends the resulting permutation. Fixed (immovable)
+   squares are dimmed and un-clickable. The tiles are large and show each site's occupants. */
+.quakearrange { width: max-content; max-width: 94vw; }
+.quakearrange .quakegrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin: 10px 0; }
+.quakecell { position: relative; border: 2px solid #56607a; border-radius: 7px; padding: 6px; cursor: pointer; background: #10121a; display: flex; flex-direction: column; align-items: center; }
+/* sites are LANDSCAPE cards (211×151 on the board), so the tiles are wide, not tall — the site art
+   (default OR promo/alt-art) fills a horizontal box exactly as it looks on the board. */
+.quaketile { position: relative; width: 208px; height: 149px; }
+.quakecell .quakesiteimg { width: 100%; height: 100%; object-fit: cover; border-radius: 4px; display: block; }
+.quakecell.picked { border-color: #ffd257; box-shadow: 0 0 10px rgba(255,210,87,.8); }
+.quakecell.moved { border-color: #7ad17a; }
+.quakecell.fixed { cursor: default; opacity: .6; border-style: dashed; }
+.quakevoid { width: 208px; height: 149px; display: flex; align-items: center; justify-content: center; color: #8a90a2; font-style: italic; border: 1px dashed #3a4155; border-radius: 4px; }
+/* occupants that ride along with the site — a wrapped row of thumbnails across the tile's bottom */
+.quakeocc { position: absolute; left: 2px; right: 2px; bottom: 2px; display: flex; flex-wrap: wrap; gap: 2px; justify-content: center; padding: 2px; background: rgba(6,8,14,.72); border-radius: 4px; }
+.quakeocc-thumb { width: 26px; height: 34px; object-fit: cover; object-position: top; border-radius: 3px; border: 1.5px solid #56b7ff; box-shadow: 0 0 3px rgba(0,0,0,.7); }
+.quakeocc-thumb.theirs { border-color: #ff7a7a; }
+.quakeocc-more { align-self: center; font-size: 12px; font-weight: 700; color: #d6dcec; padding: 0 3px; }
+.quakecoord { font-size: 13px; color: #b9c0d0; margin-top: 4px; }
+.quakelock { position: absolute; top: 4px; right: 5px; font-size: 15px; }
+/* Carried artifacts stay full-size (26x34, same as a lone one) even when several are carried — up
+   to 6 read just as large as 1. To fit them across the carrier they overlap into a left-to-right
+   fan (nowrap + negative margins); hovering one lifts it clear so it can be read/clicked. */
+.carriedarts.single .artthumb,
+.carriedarts .artthumb { width: 26px; height: 34px; }
+.carriedarts { flex-wrap: nowrap; }
+.carriedarts .carriedart + .carriedart { margin-left: -18px; }
+.carriedarts .carriedart:hover { z-index: 6; }
+/* 7+ carried: past the "up to 6" design point, tighten the overlap so the fan doesn't run off the tile */
+.carriedarts[data-count="7"] .carriedart + .carriedart,
+.carriedarts[data-count="8"] .carriedart + .carriedart { margin-left: -21px; }
+/* Carried artifacts scale WITH their carrier: once the chip shrinks — a site with 4+ minions,
+   or 3 when a ground-card strip is also present, or the dense >6 grid — the carried thumbnails
+   shrink to match (and the fan overlap tightens) instead of overflowing the small chip. */
+.units.tiled[data-count="4"] .artthumb,
+.units.tiled[data-count="5"] .artthumb,
+.units.tiled[data-count="6"] .artthumb,
+.units.tiled.has-arts[data-count="3"] .artthumb { width: 18px; height: 24px; }
+.units.grid .artthumb { width: 13px; height: 17px; }
+.units.tiled[data-count="4"] .carriedart + .carriedart,
+.units.tiled[data-count="5"] .carriedart + .carriedart,
+.units.tiled[data-count="6"] .carriedart + .carriedart,
+.units.tiled.has-arts[data-count="3"] .carriedart + .carriedart { margin-left: -12px; }
+.units.grid .carriedart + .carriedart { margin-left: -9px; }
+/* the dragonaside keeps its own smaller sizing/positioning (more specific rules below/above) */
+
+/* flex-start so the mana widget is NOT stretched to the hand's height */
+.handrow { display: flex; gap: 10px; margin-top: 6px; align-items: flex-start; }
+/* mana widget under the player bar, at hand level: remaining / total this turn.
+   Fixed at ATLAS (landscape site) card height — never a full portrait card. */
+.manawidget {
+  flex: 0 0 auto; align-self: flex-start; height: 74px; box-sizing: border-box;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 1px; min-width: 66px;
+  padding: 4px 10px; border-radius: 8px; background: #171b28; border: 1px solid #34406a;
+}
+.mw-glyph { color: #7fb0ff; font-size: 15px; line-height: 1; }
+.mw-nums { font-size: 19px; font-weight: 700; color: #dfe6fb; line-height: 1.1; white-space: nowrap; }
+.mw-nums b { color: #8fd0ff; }
+.mw-slash { color: #7c85a3; font-weight: 400; margin: 0 1px; }
+.mw-label { font-size: 9px; text-transform: uppercase; letter-spacing: .5px; color: #8b93b0; }
+.avatarpanel {
+  flex: 0 0 170px; background: #1a1e2d; border-radius: 8px; padding: 8px; font-size: 13px;
+}
+.avatarpanel .stat { display: inline-block; margin-right: 10px; font-size: 15px; }
+.aff span { margin-right: 6px; font-weight: 700; }
+.el-air { color: #cfd8ff; } .el-earth { color: #c9a86b; } .el-fire { color: #ff9a5a; } .el-water { color: #6bc6ff; }
+/* elemental thresholds shown on the player bar */
+.barthresh { font-weight: 700; }
+.barthresh span { margin-left: 6px; }
+
+/* scenarios page */
+.scenario-list { max-width: 760px; margin: 0 auto; padding: 8px 12px; }
+.scenario-list h3 { margin: 18px 0 6px; border-bottom: 1px solid #303752; padding-bottom: 4px; }
+.scenario-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 6px; }
+.scenario-row:hover { background: #1c2230; }
+.scenario-name { flex: 1; font-weight: 600; }
+.scenario-badges { display: inline-flex; gap: 4px; }
+.scenario-badges .badge { font-size: 11px; padding: 1px 6px; border-radius: 10px; opacity: 0.9; }
+.badge.builtin { background: #2a3a4a; color: #9ecbff; }
+.badge.public { background: #24422c; color: #7fd89a; }
+.badge.private { background: #3a2a2a; color: #ffb0a0; }
+.scenario-row button.danger { color: #ff9a9a; }
+[data-judge-savebox] input[type="checkbox"] { vertical-align: middle; }
+
+/* shared /room link invite banner on Home */
+.roominvite { flex-basis: 100%; margin: 4px 0; padding: 6px 10px; border-radius: 6px; background: #23303f; color: #9ecbff; font-size: 14px; }
+
+/* waiting-room "change your setup while alone" panel */
+.roomconfig { margin: 10px auto; padding: 10px 12px; max-width: 480px; display: flex; flex-direction: column; gap: 6px; align-items: center; background: #1c2230; border-radius: 8px; }
+
+/* free "go back" on a card's first prompt */
+.promptback { display: block; margin-top: 8px; color: #ffcf8a; background: #362f1c; border: 1px solid #5a4a2a; }
+.promptback:hover { background: #443a22; }
+
+/* manual room-code join row on Home */
+.joincode { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+/* public rooms lobby on Home */
+.lobby { flex-basis: 100%; margin-top: 8px; }
+.lobby-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.lobby-list { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
+.lobby-row { display: flex; align-items: center; gap: 10px; padding: 5px 8px; border-radius: 6px; background: #1c2230; }
+.lobby-who { flex: 1; font-weight: 600; }
+.lobby-clock { opacity: 0.85; font-size: 13px; }
+.lobby-status { opacity: 0.7; font-size: 12px; min-width: 5.5em; text-align: right; }
+/* "Your games" rejoin list (signed-in) */
+.mygames { margin: 4px 0 10px; padding: 8px 10px; border: 1px solid #3a4058; border-radius: 8px; background: #1a1e2d; }
+.mygames > b { display: block; margin-bottom: 6px; color: #cbd3ee; }
+.mygames-row { display: flex; align-items: center; gap: 10px; padding: 3px 0; }
+.mygames-row .lobby-who { flex: 1; }
+.lobby-mode { font-size: 12px; padding: 1px 7px; border-radius: 10px; white-space: nowrap; }
+.lobby-mode.sealed { background: rgba(140, 84, 220, 0.28); color: #d7b8ff; }
+.lobby-mode.constructed { background: rgba(96, 140, 200, 0.22); color: #a9c6ff; }
+
+/* ── Sealed create controls (in the online panel) ── */
+.sealcfg { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0 2px; font-size: 13px; }
+
+/* ── Sealed deckbuild — reuses the standard Deck Builder graphics (db-* classes); only
+   the toolbar's timer / opponent status / Ready button are sealed-specific. ── */
+.sealed-timer { font-variant-numeric: tabular-nums; }
+.sealed-timer.low { color: #ff8080; font-weight: 700; }
+.sealed-opp { font-size: 13px; opacity: 0.85; }
+.sealed-ready { background: #2b6b3a; border: 1px solid #3f9a55; }
+.sealed-ready.on { background: #1f7a46; box-shadow: 0 0 8px rgba(80, 220, 130, 0.6); }
+.sealed-ready:disabled { background: #5a3030; border-color: #7a3a3a; }
+/* a pool card whose copies are all used up */
+.db-card.spent { opacity: 0.35; pointer-events: none; }
+/* sealed: like the Collection page — the booster opener sits at the top and the deck-
+   builder grid below fills as you reveal. The whole screen scrolls inside the fixed game
+   page; the opener itself is a bounded, scrollable strip. */
+.app.at-game-desktop .deckbuilder { height: 100vh; overflow-y: auto; }
+.sealed-reveal { max-height: 320px; overflow-y: auto; margin-bottom: 8px; }
+.sealed-reveal-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.sealed-reveal-head h3 { margin: 4px 0; }
+.sealed-showboosters { margin-bottom: 8px; }
+.unitactions { margin-top: 6px; border-top: 1px solid #303752; padding-top: 6px; }
+.hand { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; }
+.handcard { width: 140px; cursor: pointer; border-radius: 6px; position: relative; }
+.handcard:hover { outline: 2px solid #ffd257; }
+.handcard.selected { outline: 3px solid #7fd18a; }
+.handimg { width: 100%; border-radius: 6px; display: block; }
+/* a caster-locked spell whose bonded caster is gone: a dead card in hand */
+.handcard.locked-dead { filter: grayscale(1) brightness(.55); cursor: not-allowed; }
+.handcard.locked-dead:hover { outline: 2px solid #a33; }
+/* miniature of the caster that must cast this spell, tucked bottom-right */
+.castlock {
+  position: absolute; right: 3px; bottom: 3px; width: 40px; height: 40px;
+  border-radius: 5px; overflow: hidden; border: 2px solid #ffd257;
+  box-shadow: 0 0 5px rgba(0,0,0,.8); background: #10121a; pointer-events: none;
+}
+.castlock.gone { border-color: #d0454a; }
+.castlock.stolen { border-color: #8a8f9c; } /* sealed by a thief (Pith Imp) */
+.castlockimg { width: 100%; height: 100%; object-fit: cover; object-position: top center; }
+/* a spell sealed in your hand (Pith Imp): shown but greyed out, uncastable */
+.handcard.sealed { filter: grayscale(1) brightness(.7); cursor: not-allowed; }
+.handcard.sealed:hover { outline: 2px solid #8a8f9c; }
+/* an UNCONDITIONAL casting-cost change (Court of Equity's +1/+2, a standing discount…): a +n/−n ◆
+   badge tucked top-left of the card while it's in your hand — shown on both desktop and mobile. */
+.handcost-badge {
+  position: absolute; top: 4px; left: 4px; z-index: 3;
+  font-size: 15px; font-weight: 700; line-height: 1; white-space: nowrap;
+  padding: 2px 5px; border-radius: 6px; border: 1.5px solid;
+  background: rgba(12, 14, 22, .85); text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
+  font-variant-numeric: tabular-nums; pointer-events: none;
+}
+.handcost-badge.up { border-color: #e0555a; color: #ff8f93; }   /* costs MORE to cast — reddish */
+.handcost-badge.down { border-color: #6fcf7f; color: #9ff0ad; } /* costs LESS to cast — greenish */
+
+/* a minion holding face-down card(s) — a covered Sorcery card, bottom-right */
+.heldcards { position: absolute; right: 1px; bottom: 14px; z-index: 3; line-height: 0; }
+.heldcard {
+  width: 17px; height: 23px; border-radius: 3px; object-fit: cover;
+  border: 1px solid #b9a15a; box-shadow: 0 0 4px rgba(0,0,0,.9);
+}
+.heldcount {
+  position: absolute; right: -3px; top: -5px; font-size: 8px; font-weight: 700;
+  background: #10121a; color: #cfd3dd; border-radius: 6px; padding: 0 3px; border: 1px solid #6b7280;
+}
+
+.modal {
+  position: fixed; top: 50%; left: 40%; transform: translate(-50%, -50%);
+  background: #1d2130; border: 1px solid #4a5378; border-radius: 12px;
+  padding: 18px 24px; z-index: 50; max-width: 640px; max-height: 80vh; overflow-y: auto;
+  box-shadow: 0 10px 40px rgba(0,0,0,.6);
+}
+.modal h3 { margin-top: 0; }
+.confirm-concede { text-align: center; }
+.confirm-concede p { color: #b9c0d8; margin: 6px 0 14px; }
+.confirm-actions { display: flex; gap: 10px; justify-content: center; }
+.prompterr { color: #ff8a8a; margin: 6px 0; font-size: 13px; }
+
+/* Full-screen deck-confirmation preview shown before a game starts (standard + mobile). */
+.deckconfirm { position: fixed; inset: 0; z-index: 2000; background: rgba(9, 7, 15, 0.98); display: flex; flex-direction: column; }
+.dc-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 12px 20px; background: #17121f; border-bottom: 1px solid #4a3d66; }
+.dc-title { display: flex; flex-direction: column; gap: 2px; }
+.dc-title b { font-size: 18px; }
+.dc-pick { font-size: 16px; font-weight: bold; display: flex; align-items: center; gap: 6px; }
+.dc-pick select { font-size: 15px; padding: 4px 8px; max-width: 60vw; }
+.dc-sub { font-size: 12px; opacity: 0.7; }
+.dc-actions { display: flex; gap: 10px; }
+.dc-actions button { padding: 9px 16px; border-radius: 6px; }
+.dc-confirm { background: #3a7d3a; color: #fff; font-weight: bold; }
+.dc-body { flex: 1; overflow-y: auto; padding: 16px 20px 48px; }
+.dc-section { margin-bottom: 24px; }
+.dc-section h3 { margin: 4px 0 10px; font-size: 15px; border-bottom: 1px solid #33294a; padding-bottom: 4px; }
+.dc-count { opacity: 0.6; font-weight: normal; }
+.dc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; align-items: start; }
+.dc-card { position: relative; }
+.dc-thumb { width: 100%; height: auto; border-radius: 6px; display: block; }
+.dc-badge { position: absolute; right: 4px; bottom: 4px; background: rgba(0, 0, 0, 0.82); color: #fff;
+  font-size: 12px; font-weight: bold; padding: 1px 6px; border-radius: 10px; }
+/* mobile / narrow: tighter grid + a sticky action bar so Confirm is always reachable */
+.mobile .dc-grid { grid-template-columns: repeat(auto-fill, minmax(74px, 1fr)); gap: 6px; }
+.mobile .dc-bar { position: sticky; top: 0; padding: 10px 14px; }
+.mobile .dc-title b { font-size: 16px; }
+@media (max-width: 560px) { .dc-grid { grid-template-columns: repeat(auto-fill, minmax(74px, 1fr)); } }
+/* body = the scrolling card grid + a RESERVED detail column on the right (a real column, so the
+   preview never overlaps the cards). Hover / tap a card to read it in the column. */
+.dc-main { flex: 1; display: flex; min-height: 0; }
+.dc-detail {
+  flex: 0 0 300px; width: 300px; overflow-y: auto; padding: 16px 16px 48px;
+  border-left: 1px solid #2a2f45; background: #0d0f18;
+}
+.dc-detail-empty { color: #6f7896; font-size: 13px; padding: 8px 2px; }
+.mobile .dc-detail { flex-basis: 40vw; width: 40vw; padding: 10px 10px 32px; }
+
+/* --- changelog ("What's new") --- */
+.changelog-open { font-size: 13px; white-space: nowrap; }
+.changelog-overlay { position: fixed; inset: 0; z-index: 2100; background: rgba(9, 7, 15, 0.72);
+  display: flex; align-items: center; justify-content: center; padding: 24px; }
+.changelog-modal { background: #17121f; border: 1px solid #4a3d66; border-radius: 12px;
+  width: min(680px, 96vw); max-height: 86vh; display: flex; flex-direction: column;
+  box-shadow: 0 12px 48px rgba(0,0,0,.6); }
+.changelog-head { display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px; border-bottom: 1px solid #33294a; }
+.changelog-head h2 { margin: 0; font-size: 18px; }
+.changelog-close { background: none; border: none; color: #cbb8ff; cursor: pointer; font-size: 18px; padding: 2px 8px; }
+.changelog-body { overflow-y: auto; padding: 8px 18px 20px; }
+.changelog-entry { border-bottom: 1px solid #241d33; padding: 6px 0; }
+.changelog-entry > summary { cursor: pointer; display: flex; align-items: baseline; gap: 10px;
+  padding: 8px 4px; list-style: none; font-size: 15px; }
+.changelog-entry > summary::-webkit-details-marker { display: none; }
+.changelog-entry > summary::before { content: '▸'; color: #7fb0ff; transition: transform .15s; display: inline-block; }
+.changelog-entry[open] > summary::before { transform: rotate(90deg); }
+.cl-version { font-weight: bold; color: #ffd257; }
+.cl-date { font-size: 12px; opacity: 0.6; }
+.cl-count { margin-left: auto; font-size: 12px; opacity: 0.6; }
+.changelog-entry ul { margin: 4px 0 10px; padding-left: 26px; }
+.changelog-entry li { margin: 5px 0; font-size: 13.5px; line-height: 1.45; opacity: 0.92; }
+.cl-section-title { margin: 10px 0 2px; padding-left: 4px; font-size: 12px; font-weight: 700;
+  letter-spacing: 0.04em; text-transform: uppercase; color: #9db8ff; opacity: 0.85; }
+.cl-section:first-of-type .cl-section-title { margin-top: 4px; }
+/* drag handle for draggable modals (mulligan, prompts, animist chooser): a header
+   the user can grab to shove the panel aside and reveal the board underneath */
+.draghandle { cursor: move; user-select: none; }
+.draghandle::before {
+  content: '⠿'; margin-right: 8px; color: #6b74a0; font-size: 14px; vertical-align: middle;
+}
+.choices { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0; }
+.allocrow { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+.allocrow span { flex: 1; }
+.allocnum { min-width: 2em; text-align: center; font-size: 16px; }
+.mull-oppstatus { font-size: 13px; color: #9fb0cc; margin: -2px 0 4px; text-align: center; }
+.mull-firstplayer { font-size: 13px; font-weight: 600; color: #ffd76a; margin: 2px 0; text-align: center; }
+.mullhand { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+/* the mulligan panel is bigger than a normal modal so the opening hand reads clearly:
+   a wider dialog and larger hand cards. */
+/* two ROWS stacked vertically (each .mullrow is a horizontal row of cards), balanced in the JSX.
+   The 2-row STRUCTURE applies on both platforms; the enlarged SIZES are DESKTOP-ONLY — mobile
+   keeps the original small cards. */
+.modal.mulligan .mullhand { flex-direction: column; align-items: center; gap: 8px; }
+.mullrow { display: flex; flex-wrap: nowrap; justify-content: center; gap: 8px; }
+/* DESKTOP: wide panel + FIXED-WIDTH cards, so SITES share the SAME WIDTH as spells (sites render
+   shorter, same width) — NOT height-based, which made landscape sites wider than portrait spells. */
+/* TALLER panel (fills the viewport height, no scroll) with TRIMMED vertical chrome so both rows of
+   the SAME-SIZE cards fit. Card width unchanged (314px → sites match spells). */
+/* TALLER panel: a plain min-height makes the box ~15% taller. NORMAL top-aligned block layout
+   (title stays at the top — NOT flex-centred, which clipped it). Cards unchanged at 314px.
+   HEIGHT IN DESIGN PX, NOT vh: the panel is a position:fixed child of the transformed
+   `.game.scaled` canvas, so it is sized inside the fixed 900px design box and scaled uniformly
+   with everything else — identical on every monitor. `vh` (the real window height) made the panel
+   grow on tall screens and overflow up under the turn bar / browser chrome. 850px is centred at
+   top≈25px, just clearing the ~30px turn bar; the drag-clamp keeps it there when shoved. */
+.game.scaled .modal.mulligan { max-width: min(98vw, 1848px); min-height: 850px; max-height: 850px; padding: 18px 24px; z-index: 50; }
+.game.scaled .modal.mulligan h3 { margin: 4px 0 26px; }
+.game.scaled .modal.mulligan .mullhand { gap: 26px; margin: 26px 0 30px; }
+.game.scaled .modal.mulligan .mullrow { gap: 62px; }
+.game.scaled .modal.mulligan .handcard { width: 314px; }
+/* a crowded opening hand (>6 cards) uses smaller cards so both rows still fit comfortably */
+.game.scaled .modal.mulligan.crowded .handcard { width: 250px; }
+.mull-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+/* inline "keep this hand?" confirmation (mulligan panel only; mulligan itself is immediate) */
+.mull-confirm { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+.mull-confirm > span { font-weight: 600; color: #ffd257; }
+/* dim the whole game behind the open mulligan panel — EXCEPT the card detail panel, which stays
+   bright (raised above the dim) so you can read the card you're hovering. */
+.mull-dim { position: fixed; inset: 0; z-index: 44; background: rgba(4, 5, 9, .84); pointer-events: none; }
+/* DESKTOP only: raise the card panel above the dim. On mobile the sidebar is already absolutely
+   positioned (right:0); forcing position:relative there reflowed it to the LEFT — so leave it alone. */
+.game.scaled:has(.mull-dim) .sidebar,
+.game.scaled:has(.mull-dim) .preview { position: relative; z-index: 60; }
+/* MOBILE: the sidebar is already absolutely positioned, so just raise its z-index above the dim
+   (no position change → it stays put) so the card panel isn't darkened during the mulligan. */
+.game.mobile:has(.mull-dim) .sidebar { z-index: 60; }
+.promptbanner {
+  position: fixed; bottom: 12px; left: 40%; transform: translateX(-50%);
+  background: #2c3350; border: 1px solid #ffd257; border-radius: 10px;
+  padding: 8px 16px; z-index: 40; font-size: 14px;
+  /* draggable anywhere on the background (buttons/inputs still click) so it can be shoved
+     off a board square you need to click — same as mobile. */
+  cursor: move; touch-action: none;
+}
+/* interactive controls inside a draggable banner keep their own cursor */
+.promptbanner button, .promptbanner input, .promptbanner select, .promptbanner a, .promptbanner label { cursor: pointer; }
+.judgepanel {
+  position: fixed; bottom: 10px; left: 10px; z-index: 45;
+  background: #1d2130; border: 1px solid #b9a15a; border-radius: 10px;
+  padding: 12px 16px; max-width: 88vw; width: 900px; font-size: 13.5px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.6);
+}
+.jp-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 15px; }
+/* only the title area is the drag grip — the buttons keep working */
+.jp-head .draghandle { display: inline-flex; align-items: center; gap: 8px; flex: 1 1 auto; }
+.jp-head button { margin-left: auto; }
+.jp-head button + button { margin-left: 6px; }
+.jp-hint { color: #9aa0b5; font-size: 12px; }
+/* page tabs + the Modify sub-type tabs */
+.jp-tabs { display: flex; gap: 4px; border-bottom: 1px solid #3a3f57; margin: 2px 0 8px; }
+.jp-tabs button {
+  padding: 5px 14px; font-size: 13px; background: #262b3d; color: #c8cce0;
+  border: 1px solid #3a3f57; border-bottom: none; border-radius: 7px 7px 0 0; cursor: pointer;
+}
+.jp-tabs button:hover { background: #2e3450; }
+.jp-tabs button.active { background: #b9a15a; color: #1a1a1a; font-weight: 600; }
+.jp-modtabs { display: flex; gap: 4px; margin: 2px 0 6px; }
+.jp-modtabs button {
+  padding: 3px 12px; font-size: 12.5px; background: #262b3d; color: #c8cce0;
+  border: 1px solid #3a3f57; border-radius: 6px; cursor: pointer;
+}
+.jp-modtabs button:hover { background: #2e3450; }
+.jp-modtabs button.active { background: #6b7bd6; color: #fff; font-weight: 600; border-color: #6b7bd6; }
+.jp-row { display: flex; flex-wrap: wrap; gap: 12px; margin: 5px 0; align-items: center; }
+.jp-group { display: inline-flex; align-items: center; gap: 3px; flex-wrap: wrap; }
+.jp-group button { padding: 3px 9px; font-size: 12.5px; }
+.jp-group label { display: inline-flex; align-items: center; gap: 2px; }
+.jp-group select, .jp-group input { font-size: 12.5px; padding: 2px 4px; }
+/* editor alternative-art picker: a row of small clickable printing thumbnails */
+.jp-group.jp-art { gap: 6px; }
+.jp-art-opt { padding: 2px; background: #14171f; border: 1px solid #3a3f52; border-radius: 6px; cursor: pointer; line-height: 0; }
+.jp-art-opt.sel { border-color: #ffd257; box-shadow: 0 0 6px rgba(255, 210, 87, 0.45); }
+.jp-art-opt:hover { border-color: #6a7090; }
+.jp-art-thumb { width: 52px; border-radius: 4px; display: block; }
+.jp-avatar-art { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+.jp-art-who { font-size: 12.5px; opacity: 0.85; min-width: 7em; }
+.judgepanel { max-height: 82vh; overflow-y: auto; }
+
+/* rip-to-pieces animation: the card tears in two */
+.ripoverlay {
+  position: fixed; inset: 0; z-index: 80; display: flex;
+  align-items: center; justify-content: center; pointer-events: none;
+}
+.riphalf { position: absolute; width: 260px; overflow: hidden; }
+.riphalf .ripimg { width: 260px; }
+.riphalf.left {
+  clip-path: polygon(0 0, 55% 0, 45% 30%, 55% 55%, 42% 80%, 50% 100%, 0 100%);
+  animation: ripleft 1.4s ease-in forwards;
+}
+.riphalf.right {
+  clip-path: polygon(55% 0, 100% 0, 100% 100%, 50% 100%, 42% 80%, 55% 55%, 45% 30%);
+  animation: ripright 1.4s ease-in forwards;
+}
+@keyframes ripleft {
+  0% { transform: translate(0, 0) rotate(0); opacity: 1; }
+  25% { transform: translate(-14px, 0) rotate(-4deg); opacity: 1; }
+  100% { transform: translate(-180px, 220px) rotate(-35deg); opacity: 0; }
+}
+@keyframes ripright {
+  0% { transform: translate(0, 0) rotate(0); opacity: 1; }
+  25% { transform: translate(14px, 0) rotate(4deg); opacity: 1; }
+  100% { transform: translate(180px, 220px) rotate(35deg); opacity: 0; }
+}
+
+.gameover {
+  position: fixed; inset: 0; display: flex; flex-direction: column; gap: 14px;
+  align-items: center; justify-content: center;
+  background: rgba(10, 12, 20, 0.75); z-index: 60; font-size: 22px;
+  pointer-events: none; /* the board and header stay reachable */
+}
+.gameover button { pointer-events: auto; font-size: 16px; }
+
+/* post-game rematch offer (inside .gameover) */
+.rematch-offer {
+  pointer-events: auto; display: flex; flex-direction: column; gap: 8px; align-items: center;
+  background: rgba(24, 28, 42, 0.92); border: 1px solid #3a4666;
+  border-radius: 10px; padding: 14px 20px; font-size: 17px; max-width: 90vw;
+}
+.rematch-offer b { color: #ffd76a; }
+.rematch-offer span { font-size: 14px; color: #cdd3e6; }
+.rematch-btns { display: flex; gap: 10px; }
+.rematch-btns [data-rematch-yes] { background: #2e7d4f; border-color: #3fae6e; font-weight: 600; }
+.rematch-btns [data-rematch-yes]:hover { background: #379a5f; }
+.rematch-btns [data-rematch-no] { background: #4a2e2e; border-color: #6b4141; }
+[data-rematch-deck] { pointer-events: auto; }
+
+/* mobile overrides (must come after base rules) */
+@media (max-width: 1100px) {
+  .modal { left: 50vw; width: 92vw; max-width: 92vw; }
+  .promptbanner { left: 50vw; width: 92vw; text-align: center; }
+}
+
+/* pack opening */
+.packcard { position: relative; width: 120px; cursor: pointer; }
+.packcard .cardback {
+  width: 120px; height: 168px; border-radius: 8px; object-fit: contain;
+  background: #0c0e18; border: 2px solid #4a5378;
+}
+.packcard.facedown:hover .cardback { border-color: #ffd257; transform: translateY(-4px); transition: all .15s; }
+.packcard.revealed { animation: flipin .35s ease-out; }
+@keyframes flipin { from { transform: rotateY(90deg); } to { transform: rotateY(0); } }
+.packcard.finish-foil.revealed { outline: 3px solid #7fd1ff; border-radius: 8px; box-shadow: 0 0 18px rgba(127, 209, 255, .8); }
+.packcard.finish-curio.revealed { outline: 3px solid #ffd257; border-radius: 8px; box-shadow: 0 0 26px rgba(255, 210, 87, .95); }
+.finishtag {
+  position: absolute; top: 4px; left: 4px; font-size: 10px; padding: 2px 6px;
+  border-radius: 8px; background: rgba(0,0,0,.8); font-weight: 700;
+}
+.finishtag.foil { color: #7fd1ff; }
+.finishtag.curio { color: #ffd257; }
+
+/* ---------- real card backs (public/backs) ---------- */
+/* base: never crop — a landscape atlas back stays intact in any slot. Per call
+   site an override (e.g. .heldcard) may switch to object-fit: cover. */
+.cardbackimg { display: block; object-fit: contain; user-select: none; }
+/* tiny inline deck/hand indicators — height-based so both the portrait spell
+   back and the landscape atlas back keep their true aspect ratio. */
+.backicon { height: 1.05em; width: auto; border-radius: 2px; vertical-align: -0.18em; margin: 0 1px; }
+.deckcount { display: inline-flex; align-items: center; gap: 1px; }
+
+/* ---------- floating action panel (spawns next to the selected board square) ---------- */
+/* board-space (inside .board so it scales/flips with the board); overrides the
+   .unitactions default top-border spacing since it's now a standalone card. */
+.actionfloat {
+  position: absolute; z-index: 20;
+  background: #1d2130; border: 1px solid #4a5378; border-radius: 10px;
+  padding: 8px 10px; box-shadow: 0 8px 28px rgba(0,0,0,.6);
+  display: flex; flex-direction: column; gap: 4px;
+  /* a long list of actions (e.g. Vivien copying many abilities) must SCROLL, not cover the
+     board — cap the height (board-space, so it scales down on mobile) and show a scrollbar. */
+  max-height: 520px; overflow-y: auto; overscroll-behavior: contain;
+  touch-action: pan-y; /* touch-scroll the list; DRAG the panel by its title only */
+}
+.actionfloat button { cursor: pointer; }
+.actionfloat .unitactions { margin-top: 0; border-top: none; padding-top: 0; }
+/* the title doubles as the drag handle and stays pinned while the list scrolls under it */
+.actionfloat b {
+  display: block; margin: -8px -10px 4px; padding: 8px 10px 4px;
+  position: sticky; top: -8px; z-index: 1; background: #1d2130;
+  cursor: move; touch-action: none;
+}
+
+/* ---------- top-center log toasts (additive; the .log sidebar is untouched) ---------- */
+.logtoasts {
+  position: fixed; top: 54px; left: 50%; transform: translateX(-50%);
+  z-index: 60; pointer-events: none;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  max-width: 60vw;
+}
+.logtoast {
+  background: rgba(29, 33, 48, .94); border: 1px solid #4a5378; border-radius: 10px;
+  padding: 6px 14px; font-size: 13px; color: #e6e9f5;
+  box-shadow: 0 6px 22px rgba(0,0,0,.55); text-align: center;
+  animation: logtoast-inout 3s ease forwards;
+}
+@keyframes logtoast-inout {
+  0%   { opacity: 0; transform: translateY(-6px); }
+  12%  { opacity: 1; transform: translateY(0); }
+  78%  { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-4px); }
+}
+/* ---------- opponent "card played" big pop-ups (stackable) ---------- */
+.oppplay-stack {
+  position: fixed; top: 8%; left: 50%; transform: translateX(-50%);
+  z-index: 75; display: flex; flex-direction: column; align-items: center; gap: 12px;
+  max-height: 86vh; overflow-y: auto;
+  transition: left .3s ease, top .3s ease, transform .3s ease;
+}
+/* slid aside during a board cast-reveal so the animation isn't obstructed */
+.oppplay-stack.aside { left: 14px; top: 10%; transform: none; }
+.oppplay-pop {
+  position: relative; display: flex; align-items: flex-start; gap: 10px;
+  animation: oppplay-in .25s ease both;
+}
+
+/* close-only "opponent revealed…" notice (Common Sense, Black Mass) */
+.reveal-pop {
+  position: fixed; top: 12%; left: 50%; transform: translateX(-50%); z-index: 118;
+  background: #171a26; border: 1px solid #7a6bb0; border-radius: 14px; padding: 14px 16px;
+  box-shadow: 0 14px 48px rgba(0,0,0,.7); max-width: 92vw;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  animation: oppplay-in .25s ease both;
+}
+.reveal-pop-head {
+  text-transform: uppercase; letter-spacing: .08em; font-size: 12px; font-weight: 700; color: #c7b6ff;
+}
+.reveal-pop-cards { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; max-width: 620px; }
+.reveal-pop-card {
+  display: flex; flex-direction: column; align-items: center; gap: 4px; width: 116px;
+  background: #10131d; border: 1px solid #3a4160; border-radius: 10px;
+  padding: 8px; cursor: pointer;
+}
+.reveal-pop-card:hover { border-color: #ffd479; }
+.game.scaled .reveal-pop-card { width: 174px; } /* 50% larger on desktop only */
+.reveal-pop-img { width: 100%; border-radius: 6px; }
+.reveal-pop-name { font-size: 12px; text-align: center; line-height: 1.15; }
+.reveal-pop-close { align-self: center; }
+.oppplay-card {
+  background: #171a26; border: 1px solid #5b6488; border-radius: 14px; padding: 14px;
+  box-shadow: 0 14px 48px rgba(0, 0, 0, .7); width: 420px; max-width: 88vw;
+}
+.oppplay-label {
+  text-transform: uppercase; letter-spacing: .08em; font-size: 12px; font-weight: 700;
+  color: #ffd479; margin-bottom: 8px; text-align: center;
+}
+/* scale the shared hover card up a bit inside the pop-up */
+.oppplay-card .hoverimg { max-width: 100%; }
+.oppplay-card .hoverinfo { font-size: 14px; }
+.oppplay-continue {
+  align-self: center; cursor: pointer; font-size: 20px; line-height: 1;
+  background: #2e7d46; border: 1px solid #3fa15e; color: #eafff0;
+  border-radius: 50%; width: 44px; height: 44px; box-shadow: 0 6px 20px rgba(0,0,0,.5);
+}
+.oppplay-continue:hover { background: #379a54; }
+@keyframes oppplay-in {
+  0%   { opacity: 0; transform: translateY(-8px) scale(.94); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.botstepbar .botstep-step { background: #3a4570; border-color: #5b6488; }
+
+/* step-mode pause bar for "vs Computer" — the bot waits here for a manual advance */
+.botstepbar {
+  position: fixed; bottom: 20px; right: 20px; left: auto; transform: none;
+  z-index: 70; display: flex; align-items: center; gap: 12px;
+  background: rgba(29, 33, 48, .97); border: 1px solid #4a5378; border-radius: 12px;
+  padding: 10px 16px; box-shadow: 0 8px 28px rgba(0, 0, 0, .6); color: #e6e9f5; font-size: 14px;
+}
+.botstepbar button { cursor: pointer; }
+.botstepbar .botstep-next { background: #2e7d46; border-color: #3fa15e; font-weight: 600; }
+.botstepbar .botstep-auto { opacity: .85; }
+
+/* "Computer is thinking…" indicator shown while the Thinking (search) bot plans in its worker */
+.bot-thinking {
+  position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+  z-index: 80; display: flex; align-items: center; gap: 10px;
+  background: rgba(29, 33, 48, .97); border: 1px solid #4a5378; border-radius: 999px;
+  padding: 8px 18px; box-shadow: 0 8px 28px rgba(0, 0, 0, .6);
+  color: #e6e9f5; font-size: 14px; font-weight: 600; letter-spacing: .2px;
+  pointer-events: none;
+}
+.bot-thinking-spinner {
+  width: 15px; height: 15px; border-radius: 50%;
+  border: 2px solid rgba(150, 170, 255, .35); border-top-color: #8fa4ff;
+  animation: bot-thinking-spin .7s linear infinite;
+}
+@keyframes bot-thinking-spin { to { transform: rotate(360deg); } }
+
+/* ── Secret achievements ─────────────────────────────────────────────────────── */
+.achv-toasts {
+  position: fixed; top: 14px; right: 14px; z-index: 200;
+  display: flex; flex-direction: column; gap: 10px; pointer-events: none;
+}
+.achv-toast {
+  pointer-events: auto; cursor: pointer;
+  display: flex; align-items: center; gap: 12px;
+  min-width: 240px; max-width: 340px; padding: 12px 16px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #2a230d, #45370f);
+  border: 1px solid rgba(255, 210, 87, .7);
+  box-shadow: 0 6px 26px rgba(0, 0, 0, .5), 0 0 22px rgba(255, 210, 87, .35);
+  color: #ffe9b0;
+  animation: achv-in .35s cubic-bezier(.2, .9, .3, 1.3);
+}
+@keyframes achv-in { from { opacity: 0; transform: translateX(30px) scale(.9); } to { opacity: 1; transform: none; } }
+.achv-toast-trophy { font-size: 28px; filter: drop-shadow(0 0 6px rgba(255, 210, 87, .8)); }
+.achv-toast-body { display: flex; flex-direction: column; gap: 1px; }
+.achv-toast-kicker { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: #d8b25a; }
+.achv-toast-name { font-size: 15px; font-weight: 700; color: #fff3d0; }
+.achv-toast-hint { font-size: 11px; opacity: .78; }
+
+.achv-overlay {
+  position: fixed; inset: 0; z-index: 130; display: flex; align-items: center; justify-content: center;
+  background: rgba(6, 5, 10, .72); backdrop-filter: blur(2px);
+}
+.achv-panel {
+  width: min(560px, 92vw); max-height: 80vh; display: flex; flex-direction: column;
+  background: #17151c; border: 1px solid rgba(255, 210, 87, .35);
+  border-radius: 14px; box-shadow: 0 12px 50px rgba(0, 0, 0, .6); overflow: hidden;
+}
+.achv-head {
+  display: flex; align-items: center; gap: 12px; padding: 14px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, .08);
+  background: linear-gradient(135deg, #241d0a, #322709);
+}
+.achv-head h3 { margin: 0; color: #ffe9b0; font-size: 18px; flex: 0 0 auto; }
+.achv-count { margin-left: auto; color: #d8b25a; font-weight: 700; font-variant-numeric: tabular-nums; }
+.achv-x { background: none; border: none; color: #bbb; font-size: 16px; cursor: pointer; padding: 4px 8px; }
+.achv-x:hover { color: #fff; }
+.achv-list { overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.achv-row { display: flex; align-items: flex-start; gap: 12px; padding: 10px 12px; border-radius: 10px; }
+.achv-row.unlocked { background: rgba(255, 210, 87, .08); border: 1px solid rgba(255, 210, 87, .3); }
+.achv-row-icon { font-size: 20px; line-height: 1.3; }
+.achv-row-text { display: flex; flex-direction: column; gap: 2px; }
+.achv-row-name { font-weight: 700; color: #fff3d0; }
+.achv-row-hint { font-size: 12px; opacity: .72; }
+.achv-locked-note {
+  text-align: center; padding: 14px 10px; margin-top: 4px;
+  color: #9a93a5; font-style: italic; font-size: 13px;
+  border: 1px dashed rgba(255, 255, 255, .12); border-radius: 10px;
+}
+
+/* ── Rip animation (Erik's Curiosa): a big card tears in two, centre-screen, both players ── */
+.rip-overlay {
+  position: absolute; inset: 0; z-index: 210; pointer-events: none;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+  background: rgba(3, 5, 13, .72);
+  animation: rip-bg 3s ease forwards;
+}
+.rip-card { position: relative; width: 240px; height: 336px; filter: drop-shadow(0 10px 26px rgba(0, 0, 0, .7)); }
+.rip-half { position: absolute; inset: 0; }
+.rip-half .cardimg { width: 100%; height: 100%; object-fit: contain; border-radius: 10px; }
+.rip-left {
+  clip-path: polygon(0 0, 50% 0, 46% 12%, 53% 25%, 47% 38%, 52% 50%, 46% 62%, 53% 75%, 47% 88%, 50% 100%, 0 100%);
+  animation: rip-left 3s cubic-bezier(.35, .6, .3, 1) forwards;
+}
+.rip-right {
+  clip-path: polygon(50% 0, 100% 0, 100% 100%, 50% 100%, 47% 88%, 53% 75%, 46% 62%, 52% 50%, 47% 38%, 53% 25%, 46% 12%, 50% 0);
+  animation: rip-right 3s cubic-bezier(.35, .6, .3, 1) forwards;
+}
+.rip-label {
+  font-size: 20px; font-weight: 800; color: #ffe9b0; white-space: nowrap;
+  text-shadow: 0 2px 6px #000, 0 0 12px rgba(255, 210, 87, .5);
+  animation: rip-bg 3s ease forwards;
+}
+@keyframes rip-bg { 0% { opacity: 0; } 8% { opacity: 1; } 78% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes rip-left {
+  0% { transform: translate(0, 0) rotate(0); }
+  22% { transform: translate(0, 0) rotate(0); }
+  34% { transform: translate(-12px, 3px) rotate(-5deg); }
+  100% { transform: translate(-130px, 250px) rotate(-34deg); opacity: 0; }
+}
+@keyframes rip-right {
+  0% { transform: translate(0, 0) rotate(0); }
+  22% { transform: translate(0, 0) rotate(0); }
+  34% { transform: translate(12px, 3px) rotate(5deg); }
+  100% { transform: translate(130px, 250px) rotate(34deg); opacity: 0; }
+}
+.game.mobile .rip-card { width: 150px; height: 210px; }
+.game.mobile .rip-label { font-size: 15px; }

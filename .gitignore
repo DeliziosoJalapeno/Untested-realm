@@ -1,0 +1,57 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Logs
+*.log
+*.out
+
+# Local databases (runtime sqlite: accounts, rematch/undo temp stores)
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+
+# Environment & secrets
+.env
+.env.*
+
+# Editor / agent tooling state (machine-local)
+.omc/
+.claude/
+.playwright-mcp/
+.mcp.json
+
+# Card images are fetched locally (npm run fetch:images) into dist/, never committed
+
+# --- root-only scratch (anchored so real source under packages/ is never hidden) ---
+/tmp_*
+/_door*.txt
+/dev_server.out
+/arena_*.txt
+/arena_*.log
+/interrogator_*.log
+/mirror_*.log
+/mirror_*.out
+/*_check*.log
+/scraped_decks.json
+/achievements_wanted.txt
+
+# Root scratch screenshots (not referenced by the app or README)
+/*.png
+/*.jpg
+/*.jpeg
+
+# All Markdown is local scratch/notes (status reports, agent guides, per-card gap notes in
+# test-gaps/, the copyrighted rulebook/FAQ dumps, personal notes) and stays local — EXCEPT the
+# README and the client changelog entries, which are real build source the app imports.
+*.md
+!README.md
+!packages/client/src/changelog/*.md
+
+# Internal scratch: per-card gap notes + one-off audit scripts (all working files, not shipped)
+/test-gaps/

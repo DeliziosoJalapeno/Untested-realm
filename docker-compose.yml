@@ -1,0 +1,38 @@
+# Demo stack: the app + a Cloudflare tunnel, both fully containerized.
+#
+#   docker compose up -d --build
+#   docker compose logs tunnel      <- the public https://*.trycloudflare.com URL
+#   docker compose down             <- demo over, everything gone
+#
+# Safety posture: the app publishes NO ports on the host — its only ingress is
+# the cloudflared container over the compose-internal network, and the only
+# egress path in is Cloudflare's edge (HTTPS/WSS terminated there). The app
+# runs as a non-root user with an ephemeral database.
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    mem_limit: 768m
+    # `docker exec <app> battles` shows live games (full detail — it queries the
+    # server over loopback from inside the container; no token needed).
+    # no `ports:` on purpose — unreachable from the LAN, only via the tunnel.
+    # The demo DB is ephemeral (wiped with the container); for a persistent
+    # deployment with a published port, use docker-compose.direct.yml instead.
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    mem_limit: 128m
+    depends_on:
+      - app
+    # TryCloudflare: free, no account, no token — prints a random
+    # https://<something>.trycloudflare.com URL in this container's logs.
+    # The URL rotates on every restart (good for a throwaway demo).
+    command: tunnel --no-autoupdate --url http://app:8787
+    # For a STABLE hostname on a domain you own (still free tier): create a
+    # named tunnel in the Cloudflare dashboard (Zero Trust -> Tunnels), then
+    # replace `command:` above with:
+    #   command: tunnel --no-autoupdate run
+    #   environment:
+    #     - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+    # and put TUNNEL_TOKEN=... in a local .env (never commit it).
