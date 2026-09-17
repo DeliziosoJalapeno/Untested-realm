@@ -12,7 +12,7 @@ backed by a suite of **1,190+ automated tests**
 > Card names, text, and imagery are © Erik's Curiosa Limited. This project is a fan-made
 > playtest tool and is **not affiliated with or endorsed by** the publisher.
 
-**AI Disclaimer: AI has been used in code development, but no AI image generation model have been used or will ever be used in this project. Real art has been already commissioned for this project and will be integrated when it's ready**
+*AI Disclaimer: AI has been used in code development, but no AI image generation model have been used or will ever be used in this project. Real art has been already commissioned for this project and will be integrated when it's ready*
 
 ---
 
