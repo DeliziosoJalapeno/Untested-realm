@@ -188,6 +188,38 @@ h1, h2, h3 { font-weight: 600; }
 .db-problems .warning { color: #ffd257; }
 .okmsg { color: #7fd18a; }
 .db-preview { position: sticky; top: 10px; }
+/* Collection page: a two-mode top (open a booster / add single cards) over a full-width owned grid. */
+.cp-top { background: #1d2130; border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; }
+.cp-modes { position: static; margin-bottom: 10px; max-width: 360px; }
+/* FIXED height so the panel toggling (empty ↔ card) never resizes the top and shifts the grid below —
+   that reflow was the "violent flickering". Both columns scroll internally instead. */
+.cp-top-body { display: flex; gap: 14px; align-items: stretch; height: 520px; }
+.cp-left { flex: 1; min-width: 0; display: flex; flex-direction: column; } /* tabs + modality; panel sits beside it full-height */
+.cp-modality { flex: 1; min-width: 0; overflow-y: auto; }
+.cp-modality .db-results { max-height: none; } /* the modality itself is the single scroll container */
+.cp-modality .db-filters { position: sticky; top: 0; background: #1d2130; z-index: 1; padding: 2px 0 6px; }
+/* owned-count badge: bigger + a clear dark border/shadow so the number stands out on the card art
+   — in both the add-cards grid and the your-cards grid below. */
+.cp-modality .db-card .badge,
+.cp-collection .db-card .badge {
+  font-size: 14px; font-weight: 700; padding: 2px 8px; border-radius: 9px;
+  border: 2px solid rgba(0, 0, 0, 0.8);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.55);
+}
+.cp-modality .db-card .badge,
+.cp-collection .db-card .badge { top: 26px; } /* clear the card's top-right power number (both grids) */
+.cp-preview { flex: 0 0 342px; position: static; overflow: hidden; } /* full-height card panel (5% narrower), no scrollbar */
+/* Adaptive card panel (collection page ONLY): the card IMAGE flexes/shrinks to make room for the text, so
+   a text-heavy card just renders smaller and the panel never needs a scrollbar. */
+.cp-preview .hovercard { display: flex; flex-direction: column; height: 100%; min-height: 0; gap: 6px; }
+.cp-preview .hoverimg { flex: 1 1 auto; min-height: 0; width: 100%; max-width: 304px; object-fit: contain; object-position: top center; }
+.cp-preview .hoverinfo { flex: 0 0 auto; min-height: 0; }
+.cp-boosterbar { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+.cp-mobilebtns { display: flex; gap: 6px; margin-bottom: 6px; }
+.cp-collection h3 { margin: 4px 0; font-size: 15px; color: #b9c0d8; }
+.cp-collection .db-results { max-height: none; } /* the owned grid flows; the page scrolls */
+@media (max-width: 800px) { .cp-top-body { flex-direction: column; height: auto; } .cp-preview { flex-basis: auto; width: 100%; } }
 /* alternative-art picker (deck builder) */
 .db-row button.art-on { outline: 2px solid #ffd257; border-radius: 4px; }
 .art-picker { display: flex; flex-direction: column; gap: 8px; }

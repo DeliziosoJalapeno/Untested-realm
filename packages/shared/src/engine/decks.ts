@@ -22,6 +22,9 @@ export interface DeckList {
    *  art differs from the default (Beta) need an entry. Purely cosmetic; travels with the deck so the
    *  opponent sees the arts you actually chose. See printings.ts / CardImg. */
   art?: Record<string, string>
+  /** the deck-list URL this deck was imported from (e.g. https://sorcerytcg.com/decks/<id>). Set on
+   *  import; enables the deck builder's "🔄 Sync" button to re-import and match upstream changes. */
+  source?: string
 }
 
 export const MIN_SPELLBOOK = 60

@@ -74,29 +74,40 @@ export default function DeckBuilder({ onBack }: { onBack: () => void }) {
   const [importing, setImporting] = useState(false)
   const [importMsg, setImportMsg] = useState<string | null>(null)
 
-  async function importDeckFromLink() {
-    if (!importUrl.trim() || importing) return
+  // Import a deck-list URL. `keepId` set → SYNC an existing deck in place (same id + your local name);
+  // omitted → a fresh import into a new deck (takes the source's name). Either way we stamp `source` so
+  // the deck stays linked for future syncs.
+  async function importFromUrl(url: string, keepId?: string) {
+    if (!url.trim() || importing) return
     setImporting(true)
     setImportMsg(null)
     try {
-      const res = await fetch(`/import-deck?url=${encodeURIComponent(importUrl.trim())}`)
+      const res = await fetch(`/import-deck?url=${encodeURIComponent(url.trim())}`)
       const body = await res.json()
       if (!res.ok || body.error) throw new Error(body.error ?? `HTTP ${res.status}`)
-      const deck = normalizeZones({ ...(body.deck as DeckList), id: newDeckId() }) // fresh id; bucket sites per avatar rule
-      const saved = saveDeck(deck) // persist immediately (local + account) as its own deck
+      const deck = normalizeZones({
+        ...(body.deck as DeckList),
+        id: keepId ?? newDeckId(), // sync → same deck; fresh import → new id. Bucket sites per avatar rule.
+        source: url.trim(), // remember where it came from → enables Sync
+        ...(keepId ? { name: current.name, fromCollection: current.fromCollection, art: current.art } : {}), // sync keeps your local name/art/mode
+      })
+      const saved = saveDeck(deck) // persist immediately (local + account)
       setCurrent(structuredClone(saved))
       setDecks(loadDecks())
       const nSpell = Object.values(deck.spellbook).reduce((a, b) => a + b, 0)
       const nSite = Object.values(deck.atlas).reduce((a, b) => a + b, 0)
       const nCol = Object.values(deck.collection ?? {}).reduce((a, b) => a + b, 0)
-      setImportMsg(`Imported "${deck.name}" — ${nSpell} spells, ${nSite} sites${nCol ? `, ${nCol} in collection` : ''}.`)
-      setImportUrl('')
+      setImportMsg(`${keepId ? 'Synced' : 'Imported'} "${saved.name}" — ${nSpell} spells, ${nSite} sites${nCol ? `, ${nCol} in collection` : ''}.`)
+      if (!keepId) setImportUrl('')
     } catch (e: any) {
       setImportMsg(`✗ ${e?.message ?? e}`)
     } finally {
       setImporting(false)
     }
   }
+  const importDeckFromLink = () => importFromUrl(importUrl)
+  // Re-import the current deck from its source URL, matching upstream (sorcerytcg.com) changes in place.
+  const syncDeck = () => { if (current.source && current.id) void importFromUrl(current.source, current.id) }
 
   const problems = useMemo(() => {
     const base = validateDeck(current)
@@ -177,6 +188,11 @@ export default function DeckBuilder({ onBack }: { onBack: () => void }) {
         <input value={current.name} onChange={(e) => setCurrent({ ...current, name: e.target.value })} />
         <button onClick={persist}>Save</button>
         <button onClick={removeCurrent} disabled={!current.id || decks.every((d) => d.id !== current.id)} title="Delete this deck">🗑 Delete</button>
+        {current.source && current.id && (
+          <button onClick={syncDeck} disabled={importing} title={`Re-import from ${current.source} — matches upstream changes (keeps your local name)`}>
+            {importing ? 'Syncing…' : '🔄 Sync'}
+          </button>
+        )}
         <button onClick={() => setShowImport(!showImport)}>Import / Export</button>
       </div>
 
@@ -205,6 +221,7 @@ export default function DeckBuilder({ onBack }: { onBack: () => void }) {
                 ...parseDeckText(current.name, text),
                 id: current.id, // keep it the SAME deck, don't detach into a new one
                 fromCollection: current.fromCollection,
+                source: current.source, // keep the deck linked to its source for Sync
               })
               setCurrent(parsed)
               setShowImport(false)
