@@ -1,6 +1,6 @@
 import { type EffectAPI } from '../registry'
 import { pushLog, toCemetery } from '../../../engine/effects'
-import { inBounds, siteAt, squareLabel } from '../../../engine/grid'
+import { inBounds, siteAt, squareLabel, edgesConnected, GRID_W, GRID_H } from '../../../engine/grid'
 import type { GameState } from '../../../engine/types'
 
 /** cast-time placement rule: walls go on the border of a site you control */
@@ -24,8 +24,11 @@ export function wallGenesis(wallName: string) {
       return dispel(ctx)
     }
     aura.squares = [{ x: at.x, y: at.y }]
+    // a side is offered when its neighbour is a real square. With a Magellan Globe the seam-border
+    // neighbour wraps to the far edge (a real square), so an edge site can raise a wall on its outer
+    // border; without a Globe that side is off-board and dropped — walls span the seam only under it.
     const sides = (['north', 'east', 'south', 'west'] as const).filter((s) => {
-      const n = neighbor(at, s)
+      const n = neighbor(ctx.state, at, s)
       return inBounds(n.x, n.y)
     })
     // the client places walls by clicking an edge (a site intersection) and passes the
@@ -38,18 +41,21 @@ export function wallGenesis(wallName: string) {
   }
 }
 
-function neighbor(at: { x: number; y: number }, side: string): { x: number; y: number } {
-  return side === 'north' ? { x: at.x, y: at.y + 1 }
+function neighbor(state: GameState, at: { x: number; y: number }, side: string): { x: number; y: number } {
+  const raw = side === 'north' ? { x: at.x, y: at.y + 1 }
     : side === 'south' ? { x: at.x, y: at.y - 1 }
     : side === 'east' ? { x: at.x + 1, y: at.y }
     : { x: at.x - 1, y: at.y }
+  // the seam border only exists with a Magellan Globe: wrap the off-board neighbour to the far edge
+  if (edgesConnected(state)) return { x: ((raw.x % GRID_W) + GRID_W) % GRID_W, y: ((raw.y % GRID_H) + GRID_H) % GRID_H }
+  return raw
 }
 
 export function raiseCont(ctx: EffectAPI, c: any, choice: unknown): void {
   const aura = ctx.state.auras[ctx.sourceId]
   if (!aura || typeof choice !== 'string') return dispel(ctx)
   const a = { x: c.x as number, y: c.y as number }
-  const b = neighbor(a, choice)
+  const b = neighbor(ctx.state, a, choice)
   if (!inBounds(b.x, b.y)) return dispel(ctx)
   aura.edge = { a, b }
   aura.squares = [a, b] // a wall is a 2x1 aura: it spans the border between BOTH squares

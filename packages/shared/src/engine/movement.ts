@@ -1,6 +1,6 @@
 import { getCard, type ParsedKeywords } from '../cards/db'
 import type { GameState, PlayerId, Region, Step, UnitState } from './types'
-import { GRID_H, GRID_W, inBounds, isOrthAdjacent, isDiagAdjacent, siteAt, isWaterSite, sameSquare, adjacentSquares, nearbySquares, occupiedSquares, edgesConnected } from './grid'
+import { GRID_H, GRID_W, inBounds, isOrthAdjacent, isDiagAdjacent, siteAt, isWaterSite, sameSquare, nearbySquaresW, orthAdjacentWrapped, occupiedSquares, edgesConnected } from './grid'
 import { emitUnitMoved, makeCtx, avatarTrapBlocksMove, recordMoveAnim } from './effects'
 import { getScript } from '../cards/scripts/registry'
 import { effKeywords, isDisabled, isUnmodifiable, terrainAt, siteSilenced, artifactSilenced } from './statics'
@@ -618,6 +618,16 @@ export function stepDistance(a: { x: number; y: number }, b: { x: number; y: num
   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y)
 }
 
+/** Step distance (definition 1), Magellan-aware: each axis takes the SHORT way round the joined edges
+ *  when a Magellan Globe is in play, else plain Manhattan. "Up to X steps away" range checks (Sleep,
+ *  the explosions, trebuchets, ballistae…) must use THIS so a square that is close only via the wrap
+ *  is in range (FAQ: adjacency — and therefore "steps away" — spans the connected edges). */
+export function stepDistanceW(state: GameState, a: { x: number; y: number }, b: { x: number; y: number }): number {
+  if (!edgesConnected(state)) return stepDistance(a, b)
+  const dx = Math.abs(a.x - b.x), dy = Math.abs(a.y - b.y)
+  return Math.min(dx, GRID_W - dx) + Math.min(dy, GRID_H - dy)
+}
+
 /**
  * The legal squares a unit reaches by taking ONE step of its own relative to
  * `ref` — Sorcery definition 2 ("take a step" / "move one step": Coy Nixie,
@@ -625,6 +635,13 @@ export function stepDistance(a: { x: number; y: number }, b: { x: number; y: num
  * Airborne steps diagonally (Chebyshev metric, 8 neighbours), grounded steps
  * orthogonally (Manhattan, 4 neighbours); Immobile or otherwise-blocked steps are
  * excluded via isLegalStep. `dir` selects steps that get closer or farther.
+ *
+ * Topology is Magellan-aware: the neighbourhood is drawn from the WRAPPED
+ * primitives (orthAdjacentWrapped / nearbySquaresW), so an edge square's step
+ * across the joined border is a real candidate, and "closer/farther" is measured
+ * with the wrapped distance (each axis shrinks to the short way round the globe).
+ * isLegalStep then confirms the wrapped destination the same way normal movement
+ * does. Without a Magellan Globe every wrap is a no-op, so this is unchanged.
  */
 export function selfStepsToward(
   state: GameState,
@@ -633,11 +650,16 @@ export function selfStepsToward(
   dir: 'closer' | 'away' = 'closer',
 ): Step[] {
   const air = !!effKeywords(state, mover).airborne
+  const wrap = edgesConnected(state)
+  const axis = (a: number, b: number, size: number) => {
+    const d = Math.abs(a - b)
+    return wrap ? Math.min(d, size - d) : d
+  }
   const dist = (x: number, y: number) =>
-    air ? Math.max(Math.abs(x - ref.x), Math.abs(y - ref.y)) : Math.abs(x - ref.x) + Math.abs(y - ref.y)
+    air ? Math.max(axis(x, ref.x, GRID_W), axis(y, ref.y, GRID_H)) : axis(x, ref.x, GRID_W) + axis(y, ref.y, GRID_H)
   const cur = dist(mover.x, mover.y)
   const from: Step = { x: mover.x, y: mover.y, region: mover.region }
-  return (air ? nearbySquares(mover.x, mover.y) : adjacentSquares(mover.x, mover.y))
+  return (air ? nearbySquaresW(state, mover.x, mover.y) : orthAdjacentWrapped(state, mover.x, mover.y))
     .filter((s) => !(s.x === mover.x && s.y === mover.y))
     .filter((s) => (dir === 'closer' ? dist(s.x, s.y) < cur : dist(s.x, s.y) > cur))
     .filter((s) => isLegalStep(state, mover, from, { x: s.x, y: s.y, region: mover.region }))
@@ -653,6 +675,9 @@ export const selfStepsAway = (state: GameState, mover: UnitState, ref: { x: numb
  * definition 1 (push/pull/drag: Maelström, Whirlwind, Wind Sylph). The unit is
  * NOT moving of its own volition, so: one orthogonal square (Manhattan), same
  * region only, no Airborne diagonals. Surface destinations must have a site.
+ * Magellan-aware: the neighbourhood wraps (orthAdjacentWrapped) and closer/farther
+ * uses the wrapped distance, so a unit at the edge can be shoved across the joined
+ * border. Without a Globe every wrap is a no-op, so this is unchanged.
  */
 export function forcedStepsToward(
   state: GameState,
@@ -660,13 +685,9 @@ export function forcedStepsToward(
   ref: { x: number; y: number },
   dir: 'closer' | 'away' = 'closer',
 ): Step[] {
-  const cur = stepDistance(mover, ref)
-  return [
-    { x: mover.x + 1, y: mover.y }, { x: mover.x - 1, y: mover.y },
-    { x: mover.x, y: mover.y + 1 }, { x: mover.x, y: mover.y - 1 },
-  ]
-    .filter((s) => inBounds(s.x, s.y))
-    .filter((s) => (dir === 'closer' ? stepDistance(s, ref) < cur : stepDistance(s, ref) > cur))
+  const cur = stepDistanceW(state, mover, ref)
+  return orthAdjacentWrapped(state, mover.x, mover.y)
+    .filter((s) => (dir === 'closer' ? stepDistanceW(state, s, ref) < cur : stepDistanceW(state, s, ref) > cur))
     .filter((s) => (mover.region === 'surface' ? !!siteAt(state, s.x, s.y) : true))
     .map((s) => ({ x: s.x, y: s.y, region: mover.region }))
 }

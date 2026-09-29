@@ -2,7 +2,7 @@ import { registerScript, type EffectAPI } from '../registry'
 import { getCard } from '../../db'
 import { pushLog } from '../../../engine/effects'
 import { enterSite } from '../../../engine/casting'
-import { inBounds, siteAt } from '../../../engine/grid'
+import { orthAdjacentWrapped, siteAt } from '../../../engine/grid'
 
 // (Necromancer scripted in m7; Avatar of Air, Avatar of Water in m1; Druid in m9.)
 
@@ -10,7 +10,7 @@ import { inBounds, siteAt } from '../../../engine/grid'
 //  to you with Rubble. / Tap → Replace an adjacent Rubble with the topmost site
 //  of your atlas.'
 function geomancerFill(ctx: EffectAPI, sq: { x: number; y: number } | null | undefined) {
-  if (!sq || siteAt(ctx.state, sq.x, sq.y) || !inBounds(sq.x, sq.y)) return
+  if (!sq || siteAt(ctx.state, sq.x, sq.y)) return
   const rubbleCardId = `c${ctx.state.nextId++}`
   ctx.state.cards[rubbleCardId] = { id: rubbleCardId, name: 'Rubble', owner: ctx.controller, isToken: true }
   const rubbleId = `s${ctx.state.nextId++}`
@@ -26,7 +26,7 @@ function geomancerReclaim(ctx: EffectAPI, sq: { x: number; y: number } | null | 
   const p = ctx.state.players[ctx.controller]
   const rubble = sq ? siteAt(ctx.state, sq.x, sq.y) : null
   if (!self || !rubble || !rubble.isRubble || !p.atlas.length) return
-  if (Math.abs(rubble.x - self.x) + Math.abs(rubble.y - self.y) !== 1) return
+  if (!orthAdjacentWrapped(ctx.state, self.x, self.y).some((s) => s.x === rubble.x && s.y === rubble.y)) return
   const { x, y } = rubble
   delete ctx.state.sites[rubble.id]
   const cardId = p.atlas.shift()!
@@ -43,10 +43,7 @@ registerScript('Geomancer', {
     const self = ctx.state.units[ctx.sourceId]
     const site = ctx.state.sites[siteId]
     if (!self || !site || getCard(site.name).thresholds.earth === 0) return
-    const voids = [
-      { x: self.x + 1, y: self.y }, { x: self.x - 1, y: self.y },
-      { x: self.x, y: self.y + 1 }, { x: self.x, y: self.y - 1 },
-    ].filter((s) => inBounds(s.x, s.y) && !siteAt(ctx.state, s.x, s.y))
+    const voids = orthAdjacentWrapped(ctx.state, self.x, self.y).filter((s) => !siteAt(ctx.state, s.x, s.y))
     if (!voids.length) return
     // Only one void to fill → place it automatically, no prompt.
     if (voids.length === 1) return geomancerFill(ctx, voids[0])
@@ -60,8 +57,9 @@ registerScript('Geomancer', {
       const self = ctx.state.units[ctx.sourceId]
       const p = ctx.state.players[ctx.controller]
       if (!self || !p.atlas.length) return ctx.log('Your atlas is empty.')
+      const adj = orthAdjacentWrapped(ctx.state, self.x, self.y)
       const rubble = Object.values(ctx.state.sites).filter(
-        (s) => s.isRubble && Math.abs(s.x - self.x) + Math.abs(s.y - self.y) === 1,
+        (s) => s.isRubble && adj.some((a) => a.x === s.x && a.y === s.y),
       )
       if (!rubble.length) return ctx.log('No adjacent Rubble.')
       // Only one adjacent Rubble → reclaim it automatically, no prompt.

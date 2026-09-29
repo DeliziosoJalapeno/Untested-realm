@@ -7,7 +7,7 @@ import { activePrompt, resolvePrompt, pushLog, pushPrompt, registerCont, drawCar
 import { castSpell, playSite, affinity, validateTarget, resolvePendingCast } from './casting'
 import { moveAttack, shootProjectile, pickUp, drop, enforceForcedAttacks, resolvePendingMoveAttack } from './combat'
 import { applyJudge } from './judge'
-import { abilityAnchor, avatarOf, unitsAt } from './grid'
+import { abilityAnchor, avatarOf, unitsAt, nearbySquaresW } from './grid'
 import { canTap, isDisabled, effKeywords, siteSilenced, grantedAbilities, attackBlockedAt } from './statics'
 import { reachableLocations } from './movement'
 
@@ -231,7 +231,7 @@ function mustAttackViolation(state: GameState, player: PlayerId): string | null 
       if (!getScript(a.name)?.forcesNearbyAttacks) return false
       const ax = a.carriedBy ? state.units[a.carriedBy]?.x : a.x
       const ay = a.carriedBy ? state.units[a.carriedBy]?.y : a.y
-      return ax !== undefined && ay !== undefined && Math.abs(u.x - ax) <= 1 && Math.abs(u.y - ay) <= 1
+      return ax !== undefined && ay !== undefined && nearbySquaresW(state, ax, ay).some((s) => s.x === u.x && s.y === u.y)
     })
   }
   for (const u of Object.values(state.units)) {

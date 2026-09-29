@@ -1,5 +1,5 @@
 import { type EffectAPI } from '../registry'
-import { chebyshev, siteAt } from '../../../engine/grid'
+import { chebyshevW, siteAt } from '../../../engine/grid'
 import { pushLog, checkStateBased, toCemetery } from '../../../engine/effects'
 import type { GameState } from '../../../engine/types'
 
@@ -30,7 +30,7 @@ export const dispelScript = {
     const t = ctx.targets[0]
     if (!('square' in t)) return
     const caster = ctx.caster!
-    if (chebyshev(caster, t.square) > 2) return ctx.log('Too far away.')
+    if (chebyshevW(ctx.state, caster, t.square) > 2) return ctx.log('Too far away.')
     for (const a of Object.values(ctx.state.artifacts)) {
       if (a.x === t.square.x && a.y === t.square.y) ctx.breakArtifact(a.id)
     }

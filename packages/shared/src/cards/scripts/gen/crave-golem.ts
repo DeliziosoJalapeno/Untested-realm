@@ -52,7 +52,7 @@ registerScript('Crave Golem', {
   conts: {
     lumber: (ctx, _c, sq) => {
       const self = ctx.state.units[ctx.sourceId]
-      if (!self || !sq || Math.abs(sq.x - self.x) + Math.abs(sq.y - self.y) !== 1) return
+      if (!self || !sq || !orthAdjacentWrapped(ctx.state, self.x, self.y).some((s) => s.x === sq.x && s.y === sq.y)) return
       resolveMovement(ctx.state, self, [{ x: sq.x, y: sq.y, region: self.region }])
     },
     crave: (ctx, c, choice) => craveAttack(ctx, (c.__opts as string[])[luckyChoiceIndex(c, choice)]),

@@ -1,8 +1,8 @@
 import { getCard, cardSupport, getKeywords } from '../cards/db'
 import { getScript, type TargetRef, type TargetSpec } from '../cards/scripts/registry'
 import type { GameState, PlayerId, Region, Thresholds, UnitState } from './types'
-import { adjacentSquares, adjacentSquaresW, avatarOf, chebyshev, nearbySquares, nearbySquaresW, siteAt, sitesOf, inBounds, unitsAt, occupies, GRID_W, GRID_H, edgesConnected, aura2x2Squares } from './grid'
-import { newId, pushLog, makeCtx, checkStateBased, opponent, emitUnitEnters, emitEvent, isMagicProtected, loseLife, checkWard, pushPrompt, registerCont, runCont, toCemetery, bumpManaSpent, beginAreaReveal, recordAffectedSites, snapshotRealm, recordTouchedSites, sealSpellReveal, setActionCredit, restoreActionCredit, hushedByStatic, recordManaGain, deferTurnStep, settleEntering, runDamageEvent } from './effects'
+import { adjacentSquares, adjacentSquaresW, avatarOf, chebyshev, chebyshevW, orthAdjacentWrapped, nearbySquares, nearbySquaresW, siteAt, sitesOf, inBounds, unitsAt, occupies, GRID_W, GRID_H, edgesConnected, aura2x2Squares } from './grid'
+import { newId, pushLog, makeCtx, checkStateBased, opponent, emitUnitEnters, emitEvent, isMagicProtected, loseLife, checkWard, pushPrompt, registerCont, runCont, toCemetery, bumpManaSpent, beginAreaReveal, recordAffectedSites, snapshotRealm, recordTouchedSites, sealSpellReveal, setActionCredit, restoreActionCredit, firesGenesisOnEntry, recordManaGain, deferTurnStep, settleEntering, runDamageEvent } from './effects'
 import { effKeywords, isDisabled, disabledByEffect, canExistIn, siteSilenced, siteDisabledByArtifact, artifactSilenced, zoneAccessToll, applyKeywordString, isArtifactUnit, isEvilUnit, isEvilCardName, isEvilCardNameFor, cardSubtypesFor, collectionBanned, payZoneToll, takeFromCollection, carriedInside, isBlanked, isCarriableArtifact } from './statics'
 import { siteEntryAllowed } from './movement'
 
@@ -166,14 +166,15 @@ export function baseSiteSquares(state: GameState, player: PlayerId, ignoreSiteId
   }
   const mySites = sitesOf(state, player).filter((s) => !s.isRubble && s.id !== ignoreSiteId)
   if (mySites.length > 0) {
-    // must border a site you control (own square excluded — it's occupied)
-    return candidates.filter((c) => mySites.some((s) => Math.abs(s.x - c.x) + Math.abs(s.y - c.y) === 1))
+    // must border a site you control (own square excluded — it's occupied); Magellan-aware, so a site
+    // across the joined edge counts as bordering
+    return candidates.filter((c) => orthAdjacentWrapped(state, c.x, c.y).some((n) => mySites.some((s) => s.x === n.x && s.y === n.y)))
   }
-  // no sites: as close as possible to your avatar
+  // no sites: as close as possible to your avatar (wrapped distance under a Magellan Globe)
   const avatar = avatarOf(state, player)
   let best = Infinity
-  for (const c of candidates) best = Math.min(best, chebyshev(c, avatar))
-  return candidates.filter((c) => chebyshev(c, avatar) === best)
+  for (const c of candidates) best = Math.min(best, chebyshevW(state, c, avatar))
+  return candidates.filter((c) => chebyshevW(state, c, avatar) === best)
 }
 
 /** Would a site named `name` be a legal placement for `player` at square `S`, treating `S` as empty
@@ -939,8 +940,11 @@ function summonCastMinion(
   // Genesis + cast-rider are one simultaneous damage event (a Genesis that blasts an area — Wraetannis
   // Titan, Vile Imp — resolves reduction/prevention across every victim before any death settles).
   runDamageEvent(state, () => {
-    // a minion cast into an already-silenced location (Silent Hills) has no abilities → no Genesis
-    if (script?.genesis && !unit.silenced && !hushedByStatic(state, unit)) {
+    // a minion enters with no abilities to fire — silenced, hushed by a static silence (Silent Hills),
+    // or already disabled by an OUTSIDE source (atop a burrowed Root Spider, an area-disable) — so it
+    // fires no Genesis. Shared predicate with the effect-summon path (a Slumbering Giantess summoned
+    // already-disabled must never add her own "fall asleep" whichever way she enters).
+    if (script?.genesis && firesGenesisOnEntry(state, unit)) {
       script.genesis(makeCtx(state, unitId, player, targets, at, extra))
     }
     // cast-only riders (Mephistopheles' avatar replacement — "Must be cast...", NOT a Genesis ability;

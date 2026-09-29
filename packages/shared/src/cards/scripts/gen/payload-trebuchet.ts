@@ -2,7 +2,7 @@ import { registerScript } from '../registry'
 import { getCard } from '../../db'
 import { toCemetery } from '../../../engine/effects'
 import { GRID_H, GRID_W, unitsAt } from '../../../engine/grid'
-import { stepDistance } from '../../../engine/movement'
+import { stepDistanceW } from '../../../engine/movement'
 import type { Region } from '../../../engine/types'
 
 // 'Tap bearer and another ally here, Discard a card → Deal damage equal to the
@@ -47,7 +47,7 @@ registerScript('Payload Trebuchet', {
       const bearer = art?.carriedBy ? ctx.state.units[art.carriedBy] : null
       if (!bearer) return
       const squares: { x: number; y: number }[] = []
-      for (let x = 0; x < GRID_W; x++) for (let y = 0; y < GRID_H; y++) if (stepDistance({ x, y }, bearer) <= 3) squares.push({ x, y }) // "up to three steps away" (def. 1)
+      for (let x = 0; x < GRID_W; x++) for (let y = 0; y < GRID_H; y++) if (stepDistanceW(ctx.state, { x, y }, bearer) <= 3) squares.push({ x, y }) // "up to three steps away" (def. 1)
       ctx.ask({ kind: 'chooseSquare', title: `The ${dmg}-damage payload lands where?`, data: { squares } }, 'impact', { dmg, region: bearer.region })
     },
     impact: (ctx, c, sq) => {

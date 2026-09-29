@@ -1,6 +1,7 @@
 import { registerScript, type EffectAPI } from '../registry'
 import { getCard } from '../../db'
 import { selfStepsCloser } from '../../../engine/movement'
+import { orthAdjacentWrapped } from '../../../engine/grid'
 
 // 'Whenever an enemy casts magic, Sturmgeist steps closer then strikes it if adjacent.'
 registerScript('Sturmgeist', {
@@ -37,7 +38,7 @@ function sturmStrike(ctx: EffectAPI): void {
   const self = ctx.state.units[ctx.sourceId]
   if (!self) return
   const prey = Object.values(ctx.state.units).find(
-    (u) => u.isAvatar && u.controller !== ctx.controller && u.region === self.region && Math.abs(u.x - self.x) + Math.abs(u.y - self.y) <= 1,
+    (u) => u.isAvatar && u.controller !== ctx.controller && u.region === self.region && orthAdjacentWrapped(ctx.state, self.x, self.y).some((s) => s.x === u.x && s.y === u.y),
   )
   if (prey) ctx.strike(self, { unit: prey.id })
 }

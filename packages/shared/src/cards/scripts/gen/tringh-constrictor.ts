@@ -38,7 +38,7 @@ registerScript('Tringh Constrictor', {
     slither: (ctx, _c, sq) => {
       const self = ctx.state.units[ctx.sourceId]
       if (!self) return
-      if (sq && (sq.x !== self.x || sq.y !== self.y) && Math.abs(sq.x - self.x) + Math.abs(sq.y - self.y) === 1) {
+      if (sq && (sq.x !== self.x || sq.y !== self.y) && orthAdjacentWrapped(ctx.state, self.x, self.y).some((s) => s.x === sq.x && s.y === sq.y)) {
         ctx.teleport(self.id, sq.x, sq.y, self.region)
       }
       const prey = unitsAt(ctx.state, self.x, self.y, self.region).filter((u) => u.id !== self.id && !u.isAvatar).map((u) => u.id)

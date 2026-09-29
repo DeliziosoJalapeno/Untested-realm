@@ -1,5 +1,5 @@
 import { registerScript } from '../registry'
-import { chebyshev, unitsAt } from '../../../engine/grid'
+import { chebyshevW, unitsAt } from '../../../engine/grid'
 
 // 'Airborne / Tap → Deal 3 damage to each other unit at target nearby location.
 // Summon a Skeleton token there for each unit that died.'
@@ -13,7 +13,7 @@ registerScript('Draconian Bonekite', {
       const self = ctx.state.units[ctx.sourceId]
       const t = ctx.targets[0]
       if (!self || !t || !('square' in t)) return
-      if (chebyshev(self, t.square) > 1) return ctx.log('Too far.')
+      if (chebyshevW(ctx.state, self, t.square) > 1) return ctx.log('Too far.')
       const region = t.square.region ?? self.region
       // The 3 damage hits everyone at once (a simultaneous blast: no victim leaves the board until
       // every hit's reduction/prevention has resolved), THEN we settle and count who fell — a

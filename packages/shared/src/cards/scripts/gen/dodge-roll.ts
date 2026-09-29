@@ -1,6 +1,6 @@
 import { registerScript } from '../registry'
 import { pushLog, emitUnitMoved } from '../../../engine/effects'
-import { inBounds, siteAt } from '../../../engine/grid'
+import { orthAdjacentWrapped, siteAt } from '../../../engine/grid'
 import { isLegalStep } from '../../../engine/movement'
 import { canRespond, payResponse } from '../multi-card-utils/response'
 
@@ -23,9 +23,7 @@ registerScript('Dodge Roll', {
       const u = ctx.state.units[c.targetId as string]
       if (!u) return
       // "move to another adjacent location" is a STEP — only offer legal ones (Immobile / walls / entry-bans)
-      const squares = [
-        { x: u.x + 1, y: u.y }, { x: u.x - 1, y: u.y }, { x: u.x, y: u.y + 1 }, { x: u.x, y: u.y - 1 },
-      ].filter((s) => inBounds(s.x, s.y) && siteAt(ctx.state, s.x, s.y) && isLegalStep(ctx.state, u, { x: u.x, y: u.y, region: u.region }, { x: s.x, y: s.y, region: u.region }))
+      const squares = orthAdjacentWrapped(ctx.state, u.x, u.y).filter((s) => siteAt(ctx.state, s.x, s.y) && isLegalStep(ctx.state, u, { x: u.x, y: u.y, region: u.region }, { x: s.x, y: s.y, region: u.region }))
       if (!squares.length) return
       ctx.ask({ kind: 'chooseSquare', title: `${u.name} dodge-rolls where?`, data: { squares } }, 'tumble', { targetId: u.id })
     },

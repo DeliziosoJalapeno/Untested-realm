@@ -8,7 +8,7 @@ registerScript('Tactical Move', {
   conts: {
     march: (ctx, c, sq) => {
       const u = ctx.state.units[c.unitId as string]
-      if (u && sq && (sq.x !== u.x || sq.y !== u.y) && Math.abs(sq.x - u.x) + Math.abs(sq.y - u.y) === 1) {
+      if (u && sq && (sq.x !== u.x || sq.y !== u.y) && orthAdjacentWrapped(ctx.state, u.x, u.y).some((s) => s.x === sq.x && s.y === sq.y)) {
         ctx.teleport(u.id, sq.x, sq.y, u.region)
         if ((c.step as number) < 1) return marchStep(ctx, u.id, c.done as string[], (c.step as number) + 1)
       }

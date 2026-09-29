@@ -1,5 +1,5 @@
 import { registerScript } from '../registry'
-import { nearbySquaresW, unitsAt } from '../../../engine/grid'
+import { orthAdjacentWrapped, unitsAt } from '../../../engine/grid'
 import { isLegalStep } from '../../../engine/movement'
 import { beginAttack } from '../../../engine/combat'
 
@@ -11,10 +11,8 @@ registerScript('Bladedancer', {
     if (flow.bladeStep?.[ctx.controller] === ctx.state.turn) return
     flow.bladeStep = { ...(flow.bladeStep ?? {}), [ctx.controller]: ctx.state.turn }
     const from = { x: attacker.x, y: attacker.y, region: attacker.region }
-    const squares = nearbySquaresW(ctx.state, attacker.x, attacker.y).filter(
-      (s) => !(s.x === attacker.x && s.y === attacker.y) &&
-        Math.abs(s.x - attacker.x) + Math.abs(s.y - attacker.y) === 1 &&
-        isLegalStep(ctx.state, attacker, from, { ...s, region: attacker.region }),
+    const squares = orthAdjacentWrapped(ctx.state, attacker.x, attacker.y).filter(
+      (s) => isLegalStep(ctx.state, attacker, from, { ...s, region: attacker.region }),
     )
     if (!squares.length) return
     ctx.ask({ kind: 'chooseSquare', title: 'Bladedancer dances onward — step where? (Esc to stay)', data: { squares } }, 'step')
@@ -23,7 +21,7 @@ registerScript('Bladedancer', {
     step: (ctx, _c, sq) => {
       const self = ctx.state.units[ctx.sourceId]
       if (!self || !sq) return
-      if (Math.abs(sq.x - self.x) + Math.abs(sq.y - self.y) !== 1) return
+      if (!orthAdjacentWrapped(ctx.state, self.x, self.y).some((s) => s.x === sq.x && s.y === sq.y)) return
       ctx.teleport(self.id, sq.x, sq.y, self.region)
       const prey = unitsAt(ctx.state, sq.x, sq.y, self.region).filter((u) => u.controller !== ctx.controller && !u.stealth)
       if (!prey.length) return

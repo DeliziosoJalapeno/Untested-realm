@@ -4,7 +4,7 @@
 import { getCard, getKeywords, findCard } from '../cards/db'
 import { getScript, type DamageSource, type EffectAPI, type TargetRef, type TargetSpec } from '../cards/scripts/registry'
 import type { GameState, PlayerId, Region, UnitState, SiteState, Prompt, DeckName } from './types'
-import { avatarOf, siteAt, unitsAt, edgesConnected, aura2x2Squares, occupiedSquares, inBounds, GRID_W, GRID_H, squareLabel } from './grid'
+import { avatarOf, siteAt, unitsAt, edgesConnected, aura2x2Squares, occupiedSquares, inBounds, GRID_W, GRID_H, squareLabel, nearbySquaresW, orthAdjacentWrapped } from './grid'
 import { effAttack, effDefence, effKeywords, canExistIn, siteSilenced, artifactSilenced, isEvilUnit, isDisabled, isUnmodifiable, footprintAllTerrain, terrainAt, buildStaticGrantIndex } from './statics'
 import { siteEntryAllowed } from './movement' // runtime-only use (teleport closure); import cycle is safe
 import { awardAchievement } from './achievements.catalog' // types-only module → no cycle
@@ -994,7 +994,7 @@ function collectPreventers(
   if (!unit.isAvatar && (state.flow?.shieldWall ?? []).some((w: any) => w.player === unit.controller)) {
     const buddies = Object.values(state.units).filter(
       (u) => u.id !== unit.id && u.controller === unit.controller &&
-        Math.abs(u.x - unit.x) <= 1 && Math.abs(u.y - unit.y) <= 1,
+        nearbySquaresW(state, unit.x, unit.y).some((s) => s.x === u.x && s.y === u.y),
     ).length
     if (buddies > 0) list.push({ kind: 'wall', cardName: 'Shield Wall', label: 'Shield Wall', owner: unit.controller, apply: (n) => ({ amount: n - buddies }) })
   }
@@ -1243,7 +1243,7 @@ export function dealDamageToUnit(
       const champ = state.units[e.unitId]
       if (!champ || champ.id === unit.id || unit.isAvatar) continue
       if (champ.controller !== unit.controller) continue
-      const near = Math.abs(champ.x - unit.x) <= 1 && Math.abs(champ.y - unit.y) <= 1
+      const near = nearbySquaresW(state, champ.x, champ.y).some((s) => s.x === unit.x && s.y === unit.y)
       if (near) {
         pushLog(state, unit.controller, `${champ.name} takes the blow meant for ${unit.name}.`)
         dealDamageToUnit(state, champ, n, sourcePlayer, opts)
@@ -2186,6 +2186,16 @@ export function hushedByStatic(state: GameState, u: UnitState): boolean {
   return false
 }
 
+/** Does a minion ENTERING the realm fire its Genesis? It doesn't when it has no abilities to fire:
+ *  it is silenced, hushed by a static silence (Silent Hills), or already disabled by an OUTSIDE
+ *  source (an area-disable, atop a burrowed Root Spider). This is the SINGLE predicate both entry
+ *  paths must share — a real cast (castSpell) and an effect-summon (effectSummonUnit) — so a
+ *  Slumbering Giantess summoned already-disabled never adds her own sleep on either path. Both callers
+ *  set `flow.entering` first, so an "at rest" disabler (Hillock Basilisk) is correctly skipped here. */
+export function firesGenesisOnEntry(state: GameState, unit: UnitState): boolean {
+  return !unit.silenced && !hushedByStatic(state, unit) && !isDisabled(state, unit)
+}
+
 /** Site-level summon bans (No Man's Land): may a minion be summoned to (x,y,region)? A summon is a
  *  summon whether cast by a player or created by an effect (Boulevard of Bones' Skeleton, reanimation,
  *  conjuring…), so effect-summons consult this too — not just the player-cast validation. */
@@ -2219,7 +2229,7 @@ export function effectSummonUnit(state: GameState, unit: UnitState, genesisTarge
   // Giantess must not add her own "fall asleep" — so lifting the outside condition leaves her active.
   // ("at rest" disables are skipped here via `entering`, so a minion summoned into a Basilisk's zone
   // still fires its Genesis.)
-  if (survived && !survived.silenced && !hushedByStatic(state, survived) && !isDisabled(state, survived)) {
+  if (survived && firesGenesisOnEntry(state, survived)) {
     const genesis = getScript(survived.name)?.genesis
     if (genesis) genesis(makeCtx(state, survived.id, survived.controller, genesisTargets))
   }
@@ -2588,7 +2598,7 @@ export function checkStateBased(state: GameState): void {
     if (!mode) continue
     for (const u of Object.values(state.units)) {
       if (!u.stealth || u.controller === site.controller || u.region !== 'surface') continue
-      const near = Math.abs(u.x - site.x) <= 1 && Math.abs(u.y - site.y) <= 1
+      const near = nearbySquaresW(state, site.x, site.y).some((s) => s.x === u.x && s.y === u.y)
       if ((mode === 'global' || near) && siteAt(state, u.x, u.y)) {
         u.stealth = false
         pushLog(state, site.controller, `${u.name} is spotted from ${site.name}!`)
@@ -2602,7 +2612,7 @@ export function checkStateBased(state: GameState): void {
     if (mode) {
       for (const u of Object.values(state.units)) {
         if (!u.stealth || u.controller === stripper.controller) continue
-        const near = Math.abs(u.x - stripper.x) <= 1 && Math.abs(u.y - stripper.y) <= 1
+        const near = nearbySquaresW(state, stripper.x, stripper.y).some((s) => s.x === u.x && s.y === u.y)
         if (mode === 'global' || near) {
           u.stealth = false
           pushLog(state, stripper.controller, `${u.name} is spotted by ${stripper.name}!`)
@@ -2612,13 +2622,13 @@ export function checkStateBased(state: GameState): void {
     // Ward-stripping statics (Order of the Pale Worm)
     if (getScript(stripper.name)?.stripWard) {
       for (const u of Object.values(state.units)) {
-        if (u.ward && Math.abs(u.x - stripper.x) <= 1 && Math.abs(u.y - stripper.y) <= 1) {
+        if (u.ward && nearbySquaresW(state, stripper.x, stripper.y).some((s) => s.x === u.x && s.y === u.y)) {
           u.ward = false
           pushLog(state, stripper.controller, `${u.name}'s ward gutters out.`)
         }
       }
       for (const s of Object.values(state.sites)) {
-        if (s.ward && Math.abs(s.x - stripper.x) <= 1 && Math.abs(s.y - stripper.y) <= 1) {
+        if (s.ward && nearbySquaresW(state, stripper.x, stripper.y).some((q) => q.x === s.x && q.y === s.y)) {
           s.ward = false
           pushLog(state, stripper.controller, `${s.name}'s ward gutters out.`)
         }

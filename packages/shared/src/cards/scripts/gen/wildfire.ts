@@ -1,6 +1,6 @@
 import { registerScript } from '../registry'
 import { pushLog, checkStateBased, toCemetery } from '../../../engine/effects'
-import { inBounds, nearbySquaresW, siteAt, unitsAt, squareLabel } from '../../../engine/grid'
+import { nearbySquaresW, orthAdjacentWrapped, siteAt, unitsAt, squareLabel } from '../../../engine/grid'
 
 // 'Conjure Wildfire atop a single site nearby. / At the end of each turn, each
 //  unit here takes 3 damage, then move Wildfire to an adjacent location it
@@ -50,11 +50,7 @@ registerScript('Wildfire', {
     const animatedMinion = Object.values(ctx.state.units).find((u) => String(u.counters?.animatedAura ?? '') === live.id)
     // Spread only to an adjacent location that HAS a site the fire hasn't visited — keyed by the
     // site's id, so a site relocated onto a visited coordinate is still eligible (and vice-versa).
-    const next = [
-      { x: here.x + 1, y: here.y }, { x: here.x - 1, y: here.y },
-      { x: here.x, y: here.y + 1 }, { x: here.x, y: here.y - 1 },
-    ]
-      .filter((s) => inBounds(s.x, s.y))
+    const next = orthAdjacentWrapped(ctx.state, here.x, here.y) // adjacent, Magellan-aware
       .map((s) => ({ s, site: siteAt(ctx.state, s.x, s.y) }))
       .filter(({ site }) => site && !live.counters?.[`s:${site.id}`])
       .map(({ s }) => s)

@@ -4,7 +4,7 @@
 import { getCard, findCard, getKeywords, type ParsedKeywords } from '../cards/db'
 import { getScript, type AbilityDef } from '../cards/scripts/registry'
 import type { GameState, UnitState, Region, PlayerId, AuraState, SiteState, ArtifactState } from './types'
-import { siteAt, isWaterSite, nearbySquaresW, occupiedSquares } from './grid'
+import { siteAt, isWaterSite, nearbySquaresW, adjacentSquaresW, orthAdjacentWrapped, occupiedSquares } from './grid'
 
 /** is this site's rules text turned off? (Leadworks, Smokestacks of Gnaak) */
 /** A "carriable artifact" is one whose printed subtypes include NEITHER 'Monument' NOR
@@ -669,7 +669,8 @@ export function projectileCanHit(state: GameState, unit: UnitState): boolean {
   for (const other of Object.values(state.units)) {
     if (other.id === unit.id || other.silenced || disabledByEffect(state, other) || other.controller !== unit.controller) continue
     if (other.name === 'Crawling Congregation') {
-      const adj = Math.abs(other.x - unit.x) + Math.abs(other.y - unit.y) <= 1
+      // adjacent (or co-located), Magellan-aware
+      const adj = adjacentSquaresW(state, other.x, other.y).some((s) => s.x === unit.x && s.y === unit.y)
       if (adj) return false
     }
   }
@@ -860,7 +861,7 @@ export function grantedAbilities(state: GameState, unit: UnitState): AbilityDef[
   for (const b of Object.values(state.units)) {
     if (!b.disabled || b.id === unit.id) continue
     const sameLoc = unit.x === b.x && unit.y === b.y && unit.region === b.region
-    const adjacent = unit.region === b.region && Math.abs(unit.x - b.x) + Math.abs(unit.y - b.y) === 1
+    const adjacent = unit.region === b.region && orthAdjacentWrapped(state, b.x, b.y).some((s) => s.x === unit.x && s.y === unit.y)
     if (b.counters?.bound && adjacent && (unit.isAvatar || effKeywords(state, unit).spellcaster)) {
       out.push({ key: `bind:release:${b.id}`, label: `Tap → Release ${b.name}`, cost: { tap: true }, effect: freeBoundMinion(b.id, 'bound', 'is released from its bindings') })
     }

@@ -1,6 +1,6 @@
 import { registerScript, type EffectAPI } from '../registry'
 import type { GameState } from '../../../engine/types'
-import { nearbySquaresW, adjacentSquaresW, siteAt, aura2x2Squares, edgesConnected, GRID_W, GRID_H } from '../../../engine/grid'
+import { nearbySquaresW, adjacentSquaresW, orthAdjacentWrapped, siteAt, aura2x2Squares, edgesConnected, GRID_W, GRID_H } from '../../../engine/grid'
 import { pushLog } from '../../../engine/effects'
 
 // 'Teleport target minion, artifact, or aura one diagonal step.'
@@ -101,10 +101,8 @@ function offerAuraDestination(ctx: EffectAPI, auraId: string): void {
     const edges: { a: Anchor; b: Anchor }[] = []
     for (const sq of near) {
       if (!siteAt(ctx.state, sq.x, sq.y)) continue // a border needs a site on at least one side
-      for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]] as const) {
-        const nx = sq.x + dx, ny = sq.y + dy
-        if (nx < 0 || ny < 0 || nx >= GRID_W || ny >= GRID_H) continue
-        const e = { a: { x: sq.x, y: sq.y }, b: { x: nx, y: ny } }
+      for (const nb of orthAdjacentWrapped(ctx.state, sq.x, sq.y)) { // border to any wrapped-adjacent square (Magellan)
+        const e = { a: { x: sq.x, y: sq.y }, b: { x: nb.x, y: nb.y } }
         const k = key(e)
         if (k === cur || seen.has(k)) continue
         seen.add(k)

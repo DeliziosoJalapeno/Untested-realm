@@ -1,7 +1,7 @@
 import { registerScript, type EffectAPI } from '../registry'
 import { getCard } from '../../db'
 import { unitsAt } from '../../../engine/grid'
-import { stepDistance } from '../../../engine/movement'
+import { stepDistanceW } from '../../../engine/movement'
 import { pushLog } from '../../../engine/effects'
 import type { GameState, PlayerId } from '../../../engine/types'
 
@@ -46,7 +46,7 @@ registerScript('Corpse Catapult', {
       const art = ctx.state.artifacts[ctx.sourceId]
       const t = ctx.targets[0]
       if (!art || !t || !('square' in t)) return
-      if (stepDistance(art, t.square) > 3) return ctx.log('Out of range.') // "up to three steps away" (def. 1)
+      if (stepDistanceW(ctx.state, art, t.square) > 3) return ctx.log('Out of range.') // "up to three steps away" (def. 1)
       const bearer = art.carriedBy ? ctx.state.units[art.carriedBy] : null
       if (!bearer || bearer.tapped) return ctx.log('The bearer must be untapped.')
       const helpers = unitsAt(ctx.state, art.x, art.y, art.region).filter((u) => u.id !== bearer.id && u.controller === ctx.controller && !u.tapped)

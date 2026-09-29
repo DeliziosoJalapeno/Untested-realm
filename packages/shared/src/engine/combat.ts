@@ -383,6 +383,10 @@ interface FightCtx {
   allocations: Record<string, Record<string, number>>
   /** striker ids already resolved (struck or died) */
   struck: string[]
+  /** enemy unit ids alive when this attack began — the pool "attacks and kills" (onAttackKill)
+   *  scopes over, so an attacker with a splash weapon (Flaming Sword) draws once per enemy its
+   *  attack fells, not just its single struck target, while staying scoped to THIS attack. */
+  enemiesAtStart?: string[]
 }
 
 function openDefendWindow(state: GameState, attacker: UnitState, target: { unitId?: string; siteId?: string }): void {
@@ -462,6 +466,7 @@ function openDefendWindow(state: GameState, attacker: UnitState, target: { unitI
     stage: 'strikeFirst',
     allocations: {},
     struck: [],
+    enemiesAtStart: Object.values(state.units).filter((u) => u.controller !== attacker.controller).map((u) => u.id),
   }
 
   // Combatants are NOT "at rest" until the battle fully resolves, so an at-rest disabler (Hillock
@@ -923,7 +928,15 @@ function runFightPass(state: GameState, ctx: FightCtx): void {
   // trades its life still resolves its ability in this death window.
   const attacker = attackerRef
   if (attacker && ctx.isAttack === true) {
-    const kills = Object.keys(ctx.allocations[attacker.id] ?? {}).filter((id) => !state.units[id])
+    // "attacks and kills" counts EVERY enemy this attack felled and credited to the attacker — its
+    // struck target(s) AND any collateral its weapon splashed (Flaming Sword), which arrives as
+    // effect damage the bearer is credited for. Scope to enemies alive when the attack began, then
+    // keep the ones now dead with the attacker in their kill credit (killerByVictim survives the
+    // post-strike state-based settle; damageCredit does not). Falls back to the attacker's own
+    // allocation when the snapshot is absent (non-openDefendWindow callers never reach here).
+    const killerByVictim = (state.flow?.killerByVictim ?? {}) as Record<string, { id: string }[]>
+    const pool = ctx.enemiesAtStart ?? Object.keys(ctx.allocations[attacker.id] ?? {})
+    const kills = pool.filter((id) => !state.units[id] && (killerByVictim[id] ?? []).some((k) => k.id === attacker.id))
     const script = getScript(attacker.name)
     if (kills.length && script?.onAttackKill && !attacker.silenced) {
       for (const id of kills) {
@@ -1132,18 +1145,29 @@ export function shootProjectile(state: GameState, player: PlayerId, unitId: stri
     const atOrigin = unitsAt(state, unit.x, unit.y, unit.region).filter((u) => u.id !== unitId && u.controller !== player && hittable(u))
     if (atOrigin.length > 0) { impact(atOrigin); return null }
   }
+  // Magellan Globe: a Ranged shot flies around the joined edge (same region), exactly like a spell
+  // projectile's raySquares — wrap the coords on leaving the board, and a `visited` guard stops the
+  // ray if it circles all the way back. Without a Globe it breaks at the edge as before.
+  const wrap = edgesConnected(state)
+  const visited = new Set<string>([`${unit.x},${unit.y}`])
   let x = unit.x
   let y = unit.y
   for (let step = 1; step <= (kw.ranged ?? 1); step++) {
     x += dx
     y += dy
-    if (x < 0 || x > 4 || y < 0 || y > 3) break
+    if (!inBounds(x, y)) {
+      if (!wrap) break
+      x = ((x % GRID_W) + GRID_W) % GRID_W
+      y = ((y % GRID_H) + GRID_H) % GRID_H
+    }
+    if (visited.has(`${x},${y}`)) break // wrapped all the way around the realm → stop
     // Impenetrable Copse: projectiles can't enter from outside
     const cover = Object.values(state.sites).find((s) => s.x === x && s.y === y && !s.isRubble)
     if (cover && getScript(cover.name)?.blocksProjectiles && !siteSilencedC(state, cover)) break
     // Sir Morien: enemy projectiles can't enter his square — but only in the projectile's own region
     // ("here" = his location), so a surface blocker doesn't stop a subsurface shot and vice-versa
     if (unitsAt(state, x, y, unit.region).some((u) => !u.silenced && u.controller !== player && getScript(u.name)?.unitBlocksProjectiles)) break
+    visited.add(`${x},${y}`)
     const here = unitsAt(state, x, y, unit.region).filter(hittable)
     if (here.length > 0) { impact(here); return null }
   }
@@ -1402,9 +1426,22 @@ function gazeLocations(state: GameState, spec: EvilEyeGazeSpec): { x: number; y:
   const dx = spec.dir === 'e' ? 1 : spec.dir === 'w' ? -1 : 0
   const dy = spec.dir === 'n' ? 1 : spec.dir === 's' ? -1 : 0
   const max = spec.maxRange ?? Infinity
+  // Magellan Globe: the gaze is a directional line, so it wraps around the joined edge (a `visited`
+  // guard stops it once it circles back — essential since maxRange may be Infinity). No Globe → it
+  // stops at the board edge as before.
+  const wrap = edgesConnected(state)
   const out: { x: number; y: number; region: Region }[] = []
-  let cx = spec.ox + dx, cy = spec.oy + dy
-  for (let step = 0; step < max && inBounds(cx, cy); step++, cx += dx, cy += dy) {
+  const visited = new Set<string>([`${spec.ox},${spec.oy}`])
+  let cx = spec.ox, cy = spec.oy
+  for (let step = 0; step < max; step++) {
+    cx += dx; cy += dy
+    if (!inBounds(cx, cy)) {
+      if (!wrap) break
+      cx = ((cx % GRID_W) + GRID_W) % GRID_W
+      cy = ((cy % GRID_H) + GRID_H) % GRID_H
+    }
+    if (visited.has(`${cx},${cy}`)) break // wrapped all the way around → stop
+    visited.add(`${cx},${cy}`)
     for (const region of ['surface', 'underground', 'underwater', 'void'] as Region[]) {
       if (regionPresentAt(state, region, cx, cy)) out.push({ x: cx, y: cy, region })
     }

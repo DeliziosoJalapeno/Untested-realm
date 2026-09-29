@@ -21,7 +21,9 @@ registerScript('Whirling Blades', {
       // one step: airborne allies step diagonally too (FAQ: they may use move abilities),
       // so accept Chebyshev-1 for flyers, Manhattan-1 for the grounded.
       const air = !!effKeywords(ctx.state, ally).airborne
-      const oneStep = air ? Math.max(Math.abs(sq?.x - ally.x), Math.abs(sq?.y - ally.y)) === 1 : Math.abs(sq?.x - ally.x) + Math.abs(sq?.y - ally.y) === 1
+      // Magellan-aware, mirroring whirlStep's candidate set: flyers step to any of the 8 wrapped
+      // neighbours, the grounded to the 4 wrapped orthogonal (the own-square case is excluded below).
+      const oneStep = (air ? nearbySquaresW(ctx.state, ally.x, ally.y) : orthAdjacentWrapped(ctx.state, ally.x, ally.y)).some((s) => s.x === sq?.x && s.y === sq?.y)
       if (sq && (sq.x !== ally.x || sq.y !== ally.y) && oneStep) {
         ctx.teleport(ally.id, sq.x, sq.y, ally.region)
         path.push({ x: sq.x, y: sq.y })

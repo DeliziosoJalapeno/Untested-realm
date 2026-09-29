@@ -178,6 +178,16 @@ export function chebyshev(a: { x: number; y: number }, b: { x: number; y: number
   return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y))
 }
 
+/** Chebyshev distance, Magellan-aware: each axis takes the SHORT way round the joined edges when a
+ *  Magellan Globe is in play (opposite edges connected), else plain Chebyshev. Use for "within/up to
+ *  X steps" range gates on diagonal-aware effects so a wrap-close square is reachable (FAQ: adjacency
+ *  and "steps away" span the edges). */
+export function chebyshevW(state: GameState, a: { x: number; y: number }, b: { x: number; y: number }): number {
+  if (!edgesConnected(state)) return chebyshev(a, b)
+  const dx = Math.abs(a.x - b.x), dy = Math.abs(a.y - b.y)
+  return Math.max(Math.min(dx, GRID_W - dx), Math.min(dy, GRID_H - dy))
+}
+
 /** all squares a unit occupies (oversized units span a 2x2 area from their
  *  anchor; growing/stretched bodies add their extraSquares) */
 export function occupiedSquares(unit: UnitState): { x: number; y: number }[] {

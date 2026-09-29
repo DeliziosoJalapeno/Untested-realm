@@ -2,7 +2,7 @@ import { registerScript } from '../registry'
 import { getCard } from '../../db'
 import { unitsAt } from '../../../engine/grid'
 import { effElements } from '../../../engine/statics'
-import { stepDistance } from '../../../engine/movement'
+import { stepDistanceW } from '../../../engine/movement'
 import { pushLog } from '../../../engine/effects'
 
 // 'Banish all fire minions and fire auras occupying target site up to two steps away.'
@@ -13,7 +13,7 @@ registerScript('Extinguish', {
     if (!('site' in t)) return
     const site = ctx.state.sites[t.site]
     const caster = ctx.caster!
-    if (!site || stepDistance(caster, site) > 2) return ctx.log('Too far away.') // "up to two steps away" (def. 1)
+    if (!site || stepDistanceW(ctx.state, caster, site) > 2) return ctx.log('Too far away.') // "up to two steps away" (def. 1)
     for (const u of unitsAt(ctx.state, site.x, site.y)) {
       if (!u.isAvatar && effElements(ctx.state, u).includes('Fire')) ctx.banish(u.id)
     }

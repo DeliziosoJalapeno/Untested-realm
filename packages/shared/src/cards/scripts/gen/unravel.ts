@@ -2,7 +2,7 @@ import { registerScript } from '../registry'
 import { checkStateBased } from '../../../engine/effects'
 import { unitsAt } from '../../../engine/grid'
 import { effSubtypes, isArtifactUnit } from '../../../engine/statics'
-import { stepDistance } from '../../../engine/movement'
+import { stepDistanceW } from '../../../engine/movement'
 
 // 'Destroy all artifacts and Undead minions at a location up to two steps away.'
 registerScript('Unravel', {
@@ -11,7 +11,7 @@ registerScript('Unravel', {
     const t = ctx.targets[0]
     if (!t || !('square' in t)) return
     const caster = ctx.caster!
-    if (stepDistance(caster, t.square) > 2) return ctx.log('Too far away.') // "up to two steps away" (def. 1)
+    if (stepDistanceW(ctx.state, caster, t.square) > 2) return ctx.log('Too far away.') // "up to two steps away" (def. 1)
     const region = t.square.region ?? caster.region
     for (const u of unitsAt(ctx.state, t.square.x, t.square.y, region)) {
       // automatons count as artifacts and unravel with the rest (ward-aware)

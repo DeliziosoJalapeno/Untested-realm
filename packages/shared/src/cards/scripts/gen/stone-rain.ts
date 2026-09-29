@@ -2,7 +2,7 @@ import { registerScript } from '../registry'
 import { getCard } from '../../db'
 import { pushLog } from '../../../engine/effects'
 import { unitsAt } from '../../../engine/grid'
-import { stepDistance } from '../../../engine/movement'
+import { stepDistanceW } from '../../../engine/movement'
 
 // 'Target a site up to two steps away. Deal 1 damage to everything atop it,
 //  repeating for each site in your hand.'
@@ -13,7 +13,7 @@ registerScript('Stone Rain', {
     const caster = ctx.caster!
     if (!t || !('site' in t)) return
     const site = ctx.state.sites[t.site]
-    if (!site || stepDistance(caster, site) > 2) return ctx.log('Too far away.') // "up to two steps away" (def. 1)
+    if (!site || stepDistanceW(ctx.state, caster, site) > 2) return ctx.log('Too far away.') // "up to two steps away" (def. 1)
     const p = ctx.state.players[ctx.controller]
     const reps = 1 + p.hand.filter((id) => getCard(ctx.state.cards[id].name).type === 'Site').length
     for (let i = 0; i < reps; i++) {

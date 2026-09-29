@@ -14,7 +14,10 @@ registerScript('Flaming Sword', {
     for (const u of unitsAt(ctx.state, victim.x, victim.y, victim.region)) {
       if (u.id === victim.id || u.controller === bearer.controller) continue
       dealDamageToUnit(ctx.state, u, amount, bearer.controller, {
-        source: { player: bearer.controller, kind: 'effect', name: 'Flaming Sword' },
+        // credit the BEARER for the splash (sourceUnitId) — it's the unit whose weapon deals it, so a
+        // splash kill counts toward the bearer's "attacks and kills" triggers (Battlemage draws per
+        // enemy its attack fells) and the "(killed by …)" log, exactly like its direct strike.
+        source: { player: bearer.controller, kind: 'effect', name: 'Flaming Sword', sourceUnitId: bearer.id },
       })
       pushLog(ctx.state, ctx.controller, `Flames splash onto ${u.name}!`)
     }

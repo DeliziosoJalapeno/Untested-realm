@@ -3,7 +3,7 @@ import { effKeywords } from '../../../engine/statics'
 import { pushLog, emitUnitMoved } from '../../../engine/effects'
 import { fightUnits } from '../../../engine/combat'
 import { isLegalStep } from '../../../engine/movement'
-import { siteAt, isWaterSite, inBounds, squareLabel } from '../../../engine/grid'
+import { siteAt, isWaterSite, adjacentSquaresW, nearbySquaresW, squareLabel } from '../../../engine/grid'
 import { getCard } from '../../db'
 import { bodyOfWaterAt } from './util'
 import type { EffectAPI } from '../registry'
@@ -26,19 +26,15 @@ const K = (n: Node) => `${n.x},${n.y},${n.region}`
 function waterSteps(state: GameState, shark: UnitState, n: Node): Node[] {
   const air = !!effKeywords(state, shark).airborne
   const out: Node[] = []
-  for (let dx = -1; dx <= 1; dx++) {
-    for (let dy = -1; dy <= 1; dy++) {
-      if (dx !== 0 && dy !== 0 && !air) continue // diagonal only if Airborne
-      const x = n.x + dx
-      const y = n.y + dy
-      if (!inBounds(x, y)) continue
-      const site = siteAt(state, x, y)
-      if (!site || !isWaterSite(state, site, getCard)) continue // Waterbound: water sites only
-      for (const region of ['surface', 'underwater'] as Region[]) {
-        const to = { x, y, region }
-        if (K(to) === K(n)) continue
-        if (isLegalStep(state, shark, n, to)) out.push(to)
-      }
+  // own square + orthogonal (or all 8 if Airborne), Magellan-aware; the own square yields the vertical
+  // surface<->underwater step. isLegalStep enforces the real rules (walls, Iceberg, region legality).
+  for (const { x, y } of air ? nearbySquaresW(state, n.x, n.y) : adjacentSquaresW(state, n.x, n.y)) {
+    const site = siteAt(state, x, y)
+    if (!site || !isWaterSite(state, site, getCard)) continue // Waterbound: water sites only
+    for (const region of ['surface', 'underwater'] as Region[]) {
+      const to = { x, y, region }
+      if (K(to) === K(n)) continue
+      if (isLegalStep(state, shark, n, to)) out.push(to)
     }
   }
   return out
@@ -53,21 +49,17 @@ function distToGoal(state: GameState, shark: UnitState, goal: Node): Map<string,
     const next: Node[] = []
     for (const n of frontier) {
       const d = dist.get(K(n))! + 1
-      // candidate predecessors: the same adjacency set, kept only if a real step m→n is legal
-      for (let dx = -1; dx <= 1; dx++) {
-        for (let dy = -1; dy <= 1; dy++) {
-          const x = n.x + dx
-          const y = n.y + dy
-          if (!inBounds(x, y)) continue
-          const site = siteAt(state, x, y)
-          if (!site || !isWaterSite(state, site, getCard)) continue
-          for (const region of ['surface', 'underwater'] as Region[]) {
-            const m = { x, y, region }
-            if (K(m) === K(n) || dist.has(K(m))) continue
-            if (!isLegalStep(state, shark, m, n)) continue
-            dist.set(K(m), d)
-            next.push(m)
-          }
+      // candidate predecessors: own square + all 8 neighbours (Magellan-aware), kept only if a real
+      // step m→n is legal (isLegalStep prunes diagonals for non-Airborne sharks and everything else).
+      for (const { x, y } of nearbySquaresW(state, n.x, n.y)) {
+        const site = siteAt(state, x, y)
+        if (!site || !isWaterSite(state, site, getCard)) continue
+        for (const region of ['surface', 'underwater'] as Region[]) {
+          const m = { x, y, region }
+          if (K(m) === K(n) || dist.has(K(m))) continue
+          if (!isLegalStep(state, shark, m, n)) continue
+          dist.set(K(m), d)
+          next.push(m)
         }
       }
     }
