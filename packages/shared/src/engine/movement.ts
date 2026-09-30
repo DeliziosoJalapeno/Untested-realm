@@ -2,6 +2,7 @@ import { getCard, type ParsedKeywords } from '../cards/db'
 import type { GameState, PlayerId, Region, Step, UnitState } from './types'
 import { GRID_H, GRID_W, inBounds, isOrthAdjacent, isDiagAdjacent, siteAt, isWaterSite, sameSquare, nearbySquaresW, orthAdjacentWrapped, occupiedSquares, edgesConnected } from './grid'
 import { emitUnitMoved, makeCtx, avatarTrapBlocksMove, recordMoveAnim } from './effects'
+import { detachFromCarrier } from './carrying'
 import { getScript } from '../cards/scripts/registry'
 import { effKeywords, isDisabled, isUnmodifiable, terrainAt, siteSilenced, artifactSilenced } from './statics'
 
@@ -492,6 +493,15 @@ export function resolveMovement(state: GameState, unit: UnitState, path: Step[])
     unit.x = step.x
     unit.y = step.y
     unit.region = step.region
+    // Stepping off your carrier's square ends the ride NOW (rulebook: a carried unit that moves where
+    // its carrier isn't ceases to be carried) — before this step's entry triggers run. Otherwise a
+    // trigger's checkStateBased (flipped-Druid thorns, Briar Patch…) re-syncs the still-"carried" mover
+    // back onto its carrier (syncCarried keeps cargo co-located), stranding the move and whiffing the
+    // attack. Mirrors the forced-move/teleport path, which already detaches mid-step.
+    if (unit.carriedBy) {
+      const carrier = state.units[unit.carriedBy]
+      if (!carrier || carrier.x !== unit.x || carrier.y !== unit.y || carrier.region !== unit.region) detachFromCarrier(state, unit)
+    }
     // walls the step passed through burn/prick the mover (Wall of Fire, Brambles)
     if (from.region === 'surface' && step.region === 'surface') {
       for (const r of Object.values(state.auras)) {
