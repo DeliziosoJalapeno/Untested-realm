@@ -15,7 +15,10 @@ function pudgeDrag(ctx: EffectAPI, targetId: string): void {
   if (!self || !hit) return
   ctx.teleport(hit.id, self.x, self.y, self.region, { push: true }) // forced drag: Cage/push-ban/no-void aware
   pushLog(ctx.state, ctx.controller, `Pudge's hook drags ${hit.name} in!`)
-  if (ctx.state.units[hit.id] && hit.controller !== ctx.controller) {
+  // "may fight it WHEN IT ARRIVES" — if the drag was blocked short (Perilous Bridge / Cage of Sidrak /
+  // Bailey), the prey never reaches Pudge, so there is no fight AND no fight prompt.
+  const arrived = !!ctx.state.units[hit.id] && hit.x === self.x && hit.y === self.y && hit.region === self.region
+  if (arrived && hit.controller !== ctx.controller) {
     ctx.ask({ kind: 'yesNo', title: `Fight ${hit.name}?` }, 'chop', { preyId: hit.id })
   }
 }

@@ -3025,6 +3025,13 @@ export function makeCtx(
   // Missiles, Ball Lightning, any projectile) has a real origin instead of crashing on undefined.
   // Mirrors resolveCaster's synthesis; only kicks in when the source isn't a real unit.
   const caster = state.units[sourceId] ?? artifactCasterUnit(state, sourceId, controller)
+  // A CARRIED artifact's ability acts through its BEARER: that unit is the one dealing the damage, so it
+  // inherits the bearer's Lethal (a Poisonous Dagger makes Ring of Morrigan's bleed lethal) and takes the
+  // kill credit. Ground/uncarried artifacts (and non-artifact sources) have no bearer actor.
+  const actorUnit = state.units[sourceId] ?? ((): UnitState | undefined => {
+    const a = state.artifacts[sourceId]
+    return a?.carriedBy ? state.units[a.carriedBy] : undefined
+  })()
   const sourceName =
     meta?.name ?? state.units[sourceId]?.name ?? state.sites[sourceId]?.name ?? state.artifacts[sourceId]?.name ?? state.auras[sourceId]?.name
   const damageSource: DamageSource = {
@@ -3033,7 +3040,7 @@ export function makeCtx(
     name: sourceName,
     // a UNIT's ability/effect that deals damage gets kill credit (priority 1); a spell's
     // damage does NOT credit the caster-as-damager here (magic is priority 2, via actionCredit).
-    sourceUnitId: meta?.kind !== 'magic' && state.units[sourceId] ? sourceId : undefined,
+    sourceUnitId: meta?.kind !== 'magic' ? actorUnit?.id : undefined,
     elements: meta?.elements,
   }
   return {
@@ -3058,7 +3065,7 @@ export function makeCtx(
           // Lethal keyword: damage a UNIT deals via its own ability (Sparkmage's
           // spark…) is lethal — e.g. a carried Poisonous Dagger. Spells the bearer
           // casts (kind 'magic') are excluded: the spell deals the damage, not the unit.
-          const src = state.units[sourceId]
+          const src = actorUnit
           const lethal = !!src && damageSource.kind !== 'magic' && !u.isAvatar && effKeywords(state, src).lethal
           dealDamageToUnit(state, u, n, controller, { lethal, source: damageSource })
         }
@@ -3089,6 +3096,13 @@ export function makeCtx(
       // "whenever this unit strikes" — fires even at 0 power (a strike still happened)
       const strikeHook = !attacker.silenced ? getScript(attacker.name)?.onStrike : undefined
       if (strikeHook) strikeHook(makeCtx(state, attacker.id, controller, []), tu)
+      // carried artifacts watching their bearer's blows (The Rack) — an EFFECT strike (Grapple Shot
+      // arrival, Hotwheel's roll…) is a real strike, so these fire here exactly as on a combat blow.
+      for (const artId of attacker.carrying) {
+        const bart = state.artifacts[artId]
+        const bhook = bart ? getScript(bart.name)?.bearerOnStrike : undefined
+        if (bart && bhook) bhook(makeCtx(state, bart.id, controller, []), bart.id, tu)
+      }
       const snapshot = { ...tu } // pre-death snapshot for kill hooks (position intact)
       const wasAvatar = tu.isAvatar
       if (power > 0 && state.units[tu.id]) {

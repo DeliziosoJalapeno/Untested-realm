@@ -51,5 +51,8 @@ function hookPull(ctx: EffectAPI, bearerId: string, hitId: string) {
   const hit = ctx.state.units[hitId]
   if (!bearer || !hit) return
   ctx.teleport(hitId, bearer.x, bearer.y, bearer.region, { push: true }) // a hook/pull, not a Teleport (Perilous Bridge / Cage of Sidrak)
-  if (ctx.state.units[hitId]) ctx.ask({ kind: 'yesNo', title: `Fight ${hit.name}?` }, 'gaff', { bearerId, victim: hitId })
+  // "may fight it WHEN IT ARRIVES" — a drag blocked short (Perilous Bridge / Cage / Bailey) lands the
+  // prey nowhere near the bearer, so no fight AND no fight prompt.
+  const arrived = !!ctx.state.units[hitId] && hit.x === bearer.x && hit.y === bearer.y && hit.region === bearer.region
+  if (arrived) ctx.ask({ kind: 'yesNo', title: `Fight ${hit.name}?` }, 'gaff', { bearerId, victim: hitId })
 }

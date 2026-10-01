@@ -391,11 +391,15 @@ interface FightCtx {
 
 function openDefendWindow(state: GameState, attacker: UnitState, target: { unitId?: string; siteId?: string }): void {
   const defenderP = opponent(attacker.controller)
-  // the fight happens at the target's square (matters when the attacker is oversized)
+  // The fight happens where the attacker ENGAGED the target — the square they share — NOT the target's
+  // anchor. These differ when an OVERSIZED or Rack-stretched target is struck on a non-anchor part: the
+  // attacker stands on that part, and defender eligibility is measured from THERE, regardless of the
+  // target's size. (There is no privileged "main body" square.)
   const tUnit = target.unitId ? state.units[target.unitId] : null
   const tSite = target.siteId ? state.sites[target.siteId] : null
+  const engaged = tUnit ? occupiedSquares(attacker).find((a) => occupies(tUnit, a.x, a.y)) : undefined
   const loc: Step = tUnit
-    ? { x: tUnit.x, y: tUnit.y, region: tUnit.region }
+    ? { x: engaged?.x ?? tUnit.x, y: engaged?.y ?? tUnit.y, region: tUnit.region }
     : tSite
       ? { x: tSite.x, y: tSite.y, region: 'surface' }
       : { x: attacker.x, y: attacker.y, region: attacker.region }

@@ -8,7 +8,10 @@ function grappleHit(ctx: EffectAPI, allyId: string, hitId: string) {
   const hit = ctx.state.units[hitId]
   if (!ally || !hit) return
   ctx.teleport(ally.id, hit.x, hit.y, hit.region, { push: true }) // a grapple/pull, not a Teleport (Perilous Bridge / Cage of Sidrak)
-  ctx.ask({ kind: 'yesNo', title: `Strike ${hit.name} on arrival?` }, 'land', { allyId: ally.id, victim: hit.id })
+  // "may strike the hit unit WHEN IT ARRIVES" — if the grapple was blocked short (Perilous Bridge / Cage
+  // of Sidrak / Bailey), the ally never reaches the target, so there is no strike AND no strike prompt.
+  const arrived = !!ctx.state.units[ally.id] && ally.x === hit.x && ally.y === hit.y && ally.region === hit.region
+  if (arrived) ctx.ask({ kind: 'yesNo', title: `Strike ${hit.name} on arrival?` }, 'land', { allyId: ally.id, victim: hit.id })
 }
 
 // 'An ally shoots a projectile. If it hits a unit, the ally is dragged to that
@@ -46,7 +49,12 @@ registerScript('Grapple Shot', {
     },
     land: (ctx, contCtx, choice) => {
       const ally = ctx.state.units[contCtx.allyId]
-      if (choice && ally && ctx.state.units[contCtx.victim]) strikeOnce(ctx, ally, contCtx.victim)
+      const victim = ctx.state.units[contCtx.victim]
+      // defence-in-depth: only strike if the ally actually arrived at the victim's square (a blocked
+      // grapple can't strike from afar). The ask above is already gated on arrival.
+      if (choice && ally && victim && ally.x === victim.x && ally.y === victim.y && ally.region === victim.region) {
+        strikeOnce(ctx, ally, contCtx.victim)
+      }
     },
   },
 })
