@@ -160,7 +160,7 @@ export default function Home({
     <div className="home">
       <h1>Untested Realm</h1>
       <p className="subtitle">
-        An unofficial fan-made simulator for Sorcery: Contested Realm.{' '}
+        100% automated, 99%* verified.{' '}
         <button className="linklike changelog-open" onClick={() => setShowChangelog(true)}>
           📜 What’s new (v{CHANGELOG[0].version})
         </button>
