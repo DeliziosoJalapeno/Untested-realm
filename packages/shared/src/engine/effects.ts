@@ -5,7 +5,7 @@ import { getCard, getKeywords, findCard } from '../cards/db'
 import { getScript, type DamageSource, type EffectAPI, type TargetRef, type TargetSpec } from '../cards/scripts/registry'
 import type { GameState, PlayerId, Region, UnitState, SiteState, Prompt, DeckName } from './types'
 import { avatarOf, siteAt, unitsAt, edgesConnected, aura2x2Squares, occupiedSquares, inBounds, GRID_W, GRID_H, squareLabel, nearbySquaresW, orthAdjacentWrapped } from './grid'
-import { affinity, effAttack, effDefence, effKeywords, canExistIn, siteSilenced, artifactSilenced, isEvilUnit, isDisabled, isUnmodifiable, footprintAllTerrain, terrainAt, buildStaticGrantIndex } from './statics'
+import { affinity, effAttack, effDefence, effKeywords, canExistIn, siteSilenced, artifactSilenced, isEvilUnit, isDisabled, isUnmodifiable, silenceImmune, footprintAllTerrain, terrainAt, buildStaticGrantIndex } from './statics'
 import { siteEntryAllowed } from './movement' // runtime-only use (teleport closure); import cycle is safe
 import { awardAchievement } from './achievements.catalog' // types-only module → no cycle
 
@@ -2577,9 +2577,9 @@ export function checkStateBased(state: GameState): void {
   // silencer leaves
   for (const u of Object.values(state.units)) {
     if (u.isAvatar) continue
-    // an unmodifiable unit (Monks of Kobalsa, Bedrock…) can't be silenced — a silencing static
-    // (Root Spider, Bower of Bliss, Sisters of Silence) simply doesn't touch it.
-    const hush = hushedByStatic(state, u) && !isUnmodifiable(state, u)
+    // a unit that "can't be silenced" (Monks of Kobalsa, Bedrock, an Onslaught'd ally…) — a silencing
+    // static (Root Spider, Bower of Bliss, Sisters of Silence) simply doesn't touch it.
+    const hush = hushedByStatic(state, u) && !silenceImmune(state, u)
     if (hush && !u.silenced) {
       u.silenced = true
       u.counters = { ...u.counters, hushed: 1 }

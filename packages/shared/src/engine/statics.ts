@@ -327,6 +327,10 @@ export function effKeywords(state: GameState, unit: UnitState, seen: Set<string>
   for (const mod of unit.modifiers) {
     if (mod.kind === 'keyword' && mod.keyword && mod.remove) removeKeywordString(kw, mod.keyword)
   }
+  // "can't be immobilized" (Gossamer Ghost, an unmodifiable unit, or an Onslaught grant) strips the
+  // Immobile keyword itself — printed OR granted — so the unit may move. Centralised here so every
+  // reader of kw.immobile (movement legality, the bot, the UI) honours the immunity at once.
+  if (kw.immobile && immobilizeImmune(state, unit)) delete kw.immobile
   // rulebook: "Evil minions can't be warded" — a keyword-granted ward on an Evil
   // minion is void too (an Evil AVATAR is not a minion, so it keeps its ward).
   // isEvilUnit → effSubtypes only (no subtype hook calls effKeywords), so no
@@ -683,6 +687,23 @@ export function isUnmodifiable(state: GameState, unit: UnitState): boolean {
     const a = state.artifacts[id]
     return !!a && !!getScript(a.name)?.bearerUnmodifiable
   })
+}
+
+/** "Can't be immobilized." Sources: an unmodifiable unit (an immobilization IS a modification);
+ *  Gossamer Ghost's `immuneToDisable` (the registry contract defines it as "can't be disabled OR
+ *  immobilized"); or an Onslaught-style `unimmobilizable` grant. effKeywords strips the Immobile
+ *  keyword (printed OR granted) when this holds, so EVERY reader of kw.immobile honours the immunity. */
+export function immobilizeImmune(state: GameState, unit: UnitState): boolean {
+  if (isUnmodifiable(state, unit)) return true
+  if (getScript(unit.name)?.immuneToDisable && !unit.silenced) return true
+  return unit.modifiers.some((m) => m.kind === 'keyword' && m.keyword === 'unimmobilizable')
+}
+
+/** "Can't be silenced." Sources: an unmodifiable unit (a silence IS a modification) or an
+ *  Onslaught-style `unsilenceable` grant. Guards every spot that would set `unit.silenced`. */
+export function silenceImmune(state: GameState, unit: UnitState): boolean {
+  if (isUnmodifiable(state, unit)) return true
+  return unit.modifiers.some((m) => m.kind === 'keyword' && m.keyword === 'unsilenceable')
 }
 
 export function disabledByEffect(state: GameState, unit: UnitState): boolean {

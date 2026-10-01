@@ -4,7 +4,7 @@ import { GRID_H, GRID_W, inBounds, isOrthAdjacent, isDiagAdjacent, siteAt, isWat
 import { emitUnitMoved, makeCtx, avatarTrapBlocksMove, recordMoveAnim } from './effects'
 import { detachFromCarrier } from './carrying'
 import { getScript } from '../cards/scripts/registry'
-import { effKeywords, isDisabled, isUnmodifiable, terrainAt, siteSilenced, artifactSilenced } from './statics'
+import { effKeywords, isDisabled, isUnmodifiable, immobilizeImmune, terrainAt, siteSilenced, artifactSilenced } from './statics'
 
 
 /** Do the SITE / artifact entry restrictions (Gnome Hollows' power cap, Great Wall, walls…) permit
@@ -44,9 +44,9 @@ export function siteEntryAllowed(state: GameState, unit: UnitState, from: Step, 
 export function isLegalStep(state: GameState, unit: UnitState, from: Step, to: Step, kw: ParsedKeywords = effKeywords(state, unit)): boolean {
   if (!inBounds(to.x, to.y)) return false
   if (kw.immobile || isDisabled(state, unit)) return false
-  // Bog: units atop the marked site are Immobile — but an unmodifiable unit (Monks of Kobalsa…)
-  // can't be immobilized, so the Bog doesn't hold it.
-  if (!isUnmodifiable(state, unit)) {
+  // Bog: units atop the marked site are Immobile — but a unit that "can't be immobilized" (Monks of
+  // Kobalsa, Gossamer Ghost, an Onslaught'd ally…) isn't held by it.
+  if (!immobilizeImmune(state, unit)) {
     for (const im of (state.flow?.immobileSites ?? []) as { siteId: string }[]) {
       const s = state.sites[im.siteId]
       if (s && unit.region === 'surface' && from.x === s.x && from.y === s.y) return false

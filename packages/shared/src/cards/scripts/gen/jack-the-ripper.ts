@@ -1,6 +1,6 @@
 import { registerScript, type EffectAPI } from '../registry'
 import { unitsAt } from '../../../engine/grid'
-import { hasSubtype, isDisabled } from '../../../engine/statics'
+import { hasSubtype, isDisabled, silenceImmune } from '../../../engine/statics'
 import { pushLog, checkStateBased, killUnit } from '../../../engine/effects'
 
 // 'Stealth / May be cast to any Mortal, silencing then killing them, without
@@ -41,7 +41,8 @@ registerScript('Jack the Ripper', {
 function ripperSlay(ctx: EffectAPI, id: string) {
   const prey = ctx.state.units[id]
   if (!prey || prey.isAvatar) return
-  prey.silenced = true
+  // a prey that "can't be silenced" keeps its death triggers — Jack still slays, but can't hush it.
+  if (!silenceImmune(ctx.state, prey)) prey.silenced = true
   killUnit(ctx.state, prey.id)
   pushLog(ctx.state, ctx.controller, `${prey.name} never saw the blade.`)
 }
