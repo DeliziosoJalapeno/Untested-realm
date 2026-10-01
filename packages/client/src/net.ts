@@ -147,6 +147,10 @@ export class Net {
   rematchDeck(deck: DeckList): void {
     this.send({ t: 'rematchDeck', deck })
   }
+  /** send a canned chat phrase; the server relays it to both seats + spectators. */
+  chat(msg: string): void {
+    this.send({ t: 'chat', msg })
+  }
   close(): void {
     this.deliberate = true
     if (this.timer) { clearTimeout(this.timer); this.timer = null }

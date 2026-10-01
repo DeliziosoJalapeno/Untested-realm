@@ -1,4 +1,5 @@
-import { Children, cloneElement, isValidElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Children, cloneElement, isValidElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { createPortal } from 'react-dom'
 import {
   GRID_H,
   GRID_W,
@@ -65,6 +66,7 @@ import { loadDecks, type Session } from '../App'
 import CardImg, { CardHover, CardBack } from './CardImg'
 import { QuakeArrange } from './QuakeArrange'
 import { hasFaq, faqFor } from '../faq'
+import { CHAT_PHRASES } from '../chatPhrases'
 import {
   presentViews,
   viewLabel,
@@ -236,6 +238,18 @@ function RematchPrompt({ deadline, you, opp, onVote }: { deadline: number; you: 
   )
 }
 
+/** Fixed-viewport position for the portalled chat picker: pop to the right of the chat button,
+ *  clamped so the phrase list stays fully on-screen. getBoundingClientRect gives true viewport
+ *  coords (already accounting for the scaled board), which plain CSS can't reach from inside the
+ *  transformed .game element. */
+function chatPickerPos(btn: HTMLButtonElement | null): CSSProperties {
+  const r = btn?.getBoundingClientRect()
+  if (!r) return { position: 'fixed', left: 12, bottom: 12 }
+  const left = Math.min(r.right + 8, window.innerWidth - 210)
+  const top = Math.max(8, Math.min(r.top, window.innerHeight - 360))
+  return { position: 'fixed', left, top }
+}
+
 export default function Game({
   session,
   view,
@@ -342,6 +356,8 @@ function GameInner({
   const [routeHover, setRouteHover] = useState<Step[] | null>(null) // pathChoice: preview a route
   const [dirHover, setDirHover] = useState<string | null>(null) // direction picker: preview a direction's conveyor lane
   const [handOpen, setHandOpen] = useState(false) // mobile: the hand overlay is toggled over the board
+  const [chatOpen, setChatOpen] = useState(false) // the canned-phrase chat picker popover (online only)
+  const chatBtnRef = useRef<HTMLButtonElement | null>(null) // anchors the portalled picker to the chat button
   const [hover, setHover] = useState<string | null>(null)
   const [hoveredDefender, setHoveredDefender] = useState<string | null>(null) // combat: which defender option is hovered
   const [hoveredChoice, setHoveredChoice] = useState<number | null>(null) // move/attack menu: which option is hovered
@@ -2925,6 +2941,19 @@ function GameInner({
             // where the grid stops (they'd otherwise stretch across the scroll gutter).
             ['--board-w' as any]: `${GRID_W * (SQ_W + GAP) * boardScale}px`,
           }}>
+      {/* Quick-chat phrase picker — portalled to <body> so it escapes the rail's overflow clip and
+          the scaled board's transform; anchored to the right of the chat button. */}
+      {chatOpen && session.sendChat && createPortal(
+        <>
+          <div className="chat-backdrop" onClick={() => setChatOpen(false)} />
+          <div className="chat-picker" style={chatPickerPos(chatBtnRef.current)}>
+            {CHAT_PHRASES.map((p) => (
+              <button key={p} className="chat-phrase" onClick={() => { session.sendChat!(p); setChatOpen(false) }}>{p}</button>
+            ))}
+          </div>
+        </>,
+        document.body,
+      )}
       <header className="topbar">
         {/* mobile: the two clickable player-info bars live in the top bar */}
         {mobile ? (
@@ -3010,6 +3039,11 @@ function GameInner({
           <button className={`railbtn ${stView ? 'selected' : ''}`} title="Subtype view — pick a subtype (Spellcasters, Evil, Beasts, Deserts…); its cards glow, all else dims. Z to toggle, ←/→ to cycle" onClick={toggleSubtype}>
             <span className="ri">🏷</span><span className="rl">Subtypes</span>
           </button>
+          {session.sendChat && (
+            <button ref={chatBtnRef} className={`railbtn ${chatOpen ? 'selected' : ''}`} title="Chat — send a quick phrase to your opponent" onClick={() => setChatOpen((v) => !v)}>
+              <span className="ri">💬</span><span className="rl">Chat</span>
+            </button>
+          )}
           {!isSpectator && view.phase !== 'over' && (
             <>
               {session.requestUndo && (
@@ -3054,6 +3088,9 @@ function GameInner({
           <button title="What do the symbols mean?" className={showSymbols ? 'selected' : ''} onClick={() => setShowSymbols((v) => !v)}>❔</button>
           <button title="FAQ view — tap a glowing card to read its rulings" className={faqView ? 'selected' : ''} onClick={toggleFaq}>📖</button>
           <button title="Subtype view — a subtype's cards glow, all else dims (tap to open, use the top bar to pick)" className={stView ? 'selected' : ''} onClick={toggleSubtype}>🏷</button>
+          {session.sendChat && (
+            <button ref={chatBtnRef} title="Chat — send a quick phrase" className={chatOpen ? 'selected' : ''} onClick={() => setChatOpen((v) => !v)}>💬</button>
+          )}
           <button title="Log" className={logsOpen ? 'selected' : ''} onClick={() => setLogsOpen((v) => !v)}>📜</button>
           {view.activePlayer !== me && view.phase === 'main' && !view.interject && !prompt && view.turn >= 2 && (
             <button title="Wait, I forgot!" onClick={() => send({ t: 'requestInterject' })}>✋</button>

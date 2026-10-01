@@ -357,6 +357,38 @@ h1, h2, h3 { font-weight: 600; }
 .railbtn.railturn { margin-top: auto; background: #2f6f3a; }
 .railbtn.railturn:disabled { background: #2a3140; color: #6a7290; }
 
+/* ---------- quick chat (online) ---------- */
+/* The picker is portalled to <body> (escapes the rail's overflow clip + the scaled board's
+   transform) and positioned to the right of the chat button via an inline fixed left/top. */
+.chat-backdrop { position: fixed; inset: 0; z-index: 299; }
+.chat-picker {
+  z-index: 300; display: flex; flex-direction: column; gap: 4px; min-width: 190px; max-width: 220px;
+  padding: 8px; background: #1d2130; border: 1px solid #39405a; border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(0,0,0,.55);
+}
+.chat-phrase {
+  text-align: left; padding: 8px 12px; border-radius: 7px; font-size: 14px;
+  background: #2a3042; color: #e8ecf7; border: none; cursor: pointer; white-space: nowrap;
+}
+.chat-phrase:hover { background: #3a4663; }
+
+/* Incoming phrases: bubbles stacked at the top-center of the board, auto-removed after 5s. */
+.chat-overlay {
+  position: fixed; top: 54px; left: 50%; transform: translateX(-50%);
+  z-index: 240; display: flex; flex-direction: column; align-items: center; gap: 8px;
+  pointer-events: none; max-width: 96vw;
+}
+.chat-bubble {
+  display: flex; align-items: baseline; gap: 8px; padding: 9px 16px; border-radius: 16px;
+  background: rgba(25,29,45,.94); border: 1px solid #4a557e;
+  box-shadow: 0 4px 14px rgba(0,0,0,.5); color: #f1f4ff; max-width: 90vw;
+  animation: chatPop .25s ease-out, chatFade .5s ease-in 4.5s forwards;
+}
+.chat-from { font-size: 11px; font-weight: 700; color: #9fb0e0; text-transform: uppercase; letter-spacing: .03em; }
+.chat-text { font-size: 16px; font-weight: 600; }
+@keyframes chatPop { from { opacity: 0; transform: translateY(-8px) scale(.96); } to { opacity: 1; transform: none; } }
+@keyframes chatFade { to { opacity: 0; } }
+
 /* GUI symbol legend modal (❔ Symbols / Q). The compound `.modal.symbols-modal` selector wins the
    z-index cascade over the base `.modal` (z:50) so the legend, opened deliberately, sits ABOVE an
    active prompt on both desktop and the mobile phone-frame. */

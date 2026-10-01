@@ -32,6 +32,7 @@ import { loadCollection, ownedCopies, ripEriksCuriosa, syncCollectionOnSignIn, c
 import { markUnlocked, syncAchievementsOnSignIn, clearAchievementsOnLogout } from './achievements'
 import { AchievementToasts } from './components/Achievements'
 import * as auth from './auth'
+import { CHAT_BUBBLE_MS } from './chatPhrases'
 
 export interface Session {
   kind: 'online' | 'hotseat' | 'bot'
@@ -43,6 +44,8 @@ export interface Session {
   requestUndo?: () => void
   /** online: ask the opponent for permission to use the editor (game-state tools) */
   requestEditor?: () => void
+  /** online: send a canned chat phrase (relayed to both seats + spectators) */
+  sendChat?: (msg: string) => void
   /** online creator, before an opponent joins: change your deck and/or the room clock */
   updateRoom?: (deck: DeckList, clock: ClockConfig | null) => void
   /** online: has the opponent granted this seat editor access? (always true offline) */
@@ -216,6 +219,14 @@ export default function App() {
   const [undoAsk, setUndoAsk] = useState<string | null>(null)
   const [editorAsk, setEditorAsk] = useState<string | null>(null)
   const [sealed, setSealed] = useState<SealedStateMsg | null>(null) // sealed deckbuild phase
+  // live chat bubbles: a player's canned phrase shows on the board for CHAT_BUBBLE_MS then self-removes
+  const [chatMsgs, setChatMsgs] = useState<{ id: number; from: string; text: string }[]>([])
+  const chatIdRef = useRef(0)
+  const pushChat = (from: string, text: string) => {
+    const id = ++chatIdRef.current
+    setChatMsgs((cur) => [...cur, { id, from, text }])
+    setTimeout(() => setChatMsgs((cur) => cur.filter((c) => c.id !== id)), CHAT_BUBBLE_MS)
+  }
   const netRef = useRef<Net | null>(null)
   const leavingRef = useRef(false) // true while deliberately leaving a room (suppresses reconnect toast)
   // a shared /room link opened without a matching seat token → prefill Home's join box.
@@ -636,7 +647,9 @@ export default function App() {
     if (msg.t === 'undoAsk') setUndoAsk(msg.from)
     if (msg.t === 'editorAsk') setEditorAsk(msg.from)
     if (msg.t === 'editorGranted') setSession((cur) => (cur ? { ...cur, editorAllowed: true } : cur))
-    if (msg.t === 'chat') setError(`${msg.from}: ${msg.msg}`)
+    // system notices (undo/editor/rematch/room) stay as a dismissable toast; a real player's or
+    // spectator's canned phrase shows as a board bubble for a few seconds.
+    if (msg.t === 'chat') { if (msg.from === 'system') setError(msg.msg); else pushChat(msg.from ?? '', msg.msg) }
     if (msg.t === 'joined') {
       setSearching(false)
       setRoomUrl(msg.id) // the URL uses the opaque UUID; the short code is for typing/sharing
@@ -659,6 +672,7 @@ export default function App() {
         send: (action: Action) => { armGoBack(action); net.action(action) },
         requestUndo: () => net.send({ t: 'undoRequest' }),
         requestEditor: () => net.send({ t: 'editorRequest' }),
+        sendChat: (msg: string) => net.chat(msg),
         updateRoom: (deck: DeckList, clock: ClockConfig | null) => net.roomConfig(withCollection(deck), clock),
         sealedSubmit: (deck: DeckList, ready: boolean) => net.sealedDeck(deck, ready),
         rematchVote: (yes: boolean) => net.rematchVote(yes),
@@ -1024,6 +1038,16 @@ export default function App() {
             // opponent (created room / matchmaking) can browse the rest of the site meanwhile.
             onBrowse={session.kind === 'online' && !session.view ? () => setPage('home') : undefined}
           />
+          {chatMsgs.length > 0 && (
+            <div className="chat-overlay">
+              {chatMsgs.map((c) => (
+                <div key={c.id} className="chat-bubble">
+                  {c.from && <span className="chat-from">{c.from}</span>}
+                  <span className="chat-text">{c.text}</span>
+                </div>
+              ))}
+            </div>
+          )}
           {!mm.mobile && session.kind === 'bot' && localRef.current && (session.stepBot ? botNeedsToAct(localRef.current, 1) : true) && (
             <div className="botstepbar">
               {session.stepBot ? (
