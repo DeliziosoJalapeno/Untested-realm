@@ -1,17 +1,13 @@
 import { registerScript } from '../registry'
-import { getCard } from '../../db'
 import { pushLog } from '../../../engine/effects'
 import { avatarOf, siteAt } from '../../../engine/grid'
-import { castFromCollection, affordable } from '../../../engine/casting'
+import { castFromCollection, affordable, affinity } from '../../../engine/casting'
 
 // '(F)(F) — Genesis → You may cast a Hellhounds from your collection to this site.'
 registerScript('Molten Maar', {
   genesis: (ctx) => {
-    let fire = 0
-    for (const s of Object.values(ctx.state.sites)) {
-      if (s.controller === ctx.controller && !s.isRubble) fire += getCard(s.name).thresholds.fire
-    }
-    if (fire < 2) return
+    // (F)(F) is a true-affinity gate (Maar's own Fire + bonuses), not just printed Fire on your sites.
+    if (affinity(ctx.state, ctx.controller).fire < 2) return
     // "you may CAST a Hellhounds from your collection to this site" — only offer it
     // if owned and payable (the cast pays its cost; see castFromCollection)
     if ((ctx.state.players[ctx.controller].collection['Hellhounds'] ?? 0) <= 0) return

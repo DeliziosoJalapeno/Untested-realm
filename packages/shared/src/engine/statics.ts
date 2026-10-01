@@ -3,8 +3,153 @@
 
 import { getCard, findCard, getKeywords, type ParsedKeywords } from '../cards/db'
 import { getScript, type AbilityDef } from '../cards/scripts/registry'
-import type { GameState, UnitState, Region, PlayerId, AuraState, SiteState, ArtifactState } from './types'
-import { siteAt, isWaterSite, nearbySquaresW, adjacentSquaresW, orthAdjacentWrapped, occupiedSquares } from './grid'
+import type { GameState, UnitState, Region, PlayerId, AuraState, SiteState, ArtifactState, Thresholds } from './types'
+import { siteAt, isWaterSite, nearbySquaresW, adjacentSquaresW, orthAdjacentWrapped, occupiedSquares, sitesOf } from './grid'
+
+// ---- affinity ----
+// A player's elemental threshold = everything they have "in play": controlled sites (with all the
+// site modifiers — Drought/flood/Atlantean Fate/suppression/conditional provision), transformed
+// sites walking as minions, "provides for everyone" sites under enemy control, and scripted bonuses
+// (Elementalist/Cores/Vivien/judge/temp blooms). This is the single source of truth every
+// threshold GATE must read — re-summing printed site thresholds by hand silently under-counts the
+// bonus sources. Lives here (not casting.ts) so static/replacement gates in effects.ts & this file
+// (Kor Crematory, Wormelow Tump) can reach it without an import cycle. Re-exported from casting.ts.
+export function affinity(state: GameState, player: PlayerId): Thresholds {
+  const total: Thresholds = { air: 0, earth: 0, fire: 0, water: 0 }
+  // persistent judge override (manual scenario setup) — unlike tempThresh this is
+  // never auto-wiped at end of turn; may be negative to shave affinity below the
+  // sites' natural provision. Final total is clamped to ≥0 before returning.
+  const jt = state.flow?.judgeThresh?.[player]
+  if (jt) {
+    total.air += jt.air ?? 0
+    total.earth += jt.earth ?? 0
+    total.fire += jt.fire ?? 0
+    total.water += jt.water ?? 0
+  }
+  // one-turn boosts (Algae/Autumn/Desert Bloom, Annual Fair)
+  const temp = state.flow?.tempThresh?.[player]
+  if (temp) {
+    total.air += temp.air ?? 0
+    total.earth += temp.earth ?? 0
+    total.fire += temp.fire ?? 0
+    total.water += temp.water ?? 0
+  }
+  // transformed sites walking around as minions still provide their affinity
+  // (Horns of Behemoth, Island Leviathan — FAQ: the golden rule)
+  for (const u of Object.values(state.units)) {
+    if (u.controller !== player || u.silenced) continue
+    const def = getCard(u.name)
+    if (def.type !== 'Site') continue
+    total.air += def.thresholds.air
+    total.earth += def.thresholds.earth
+    total.fire += def.thresholds.fire
+    total.water += def.thresholds.water
+  }
+  // sites that provide for everyone (Avalon), even under enemy control
+  for (const site of Object.values(state.sites)) {
+    if (site.isRubble || site.controller === player || site.controller === null) continue
+    if (!getScript(site.name)?.providesForEveryone || siteDisabledByArtifact(state, site)) continue
+    const th = getCard(site.name).thresholds
+    // Drought dries even "provides for everyone" water sites — no water threshold while covered
+    const dried = Object.values(state.auras).some(
+      (r) => getScript(r.name)?.driesSites && r.squares.some((s) => s.x === site.x && s.y === site.y),
+    )
+    total.air += th.air
+    total.earth += th.earth
+    total.fire += th.fire
+    total.water += dried ? 0 : th.water
+  }
+  for (const site of sitesOf(state, player)) {
+    if (site.isRubble || siteDisabledByArtifact(state, site)) continue
+    // conditional sites (Glastonbury Tor: back row only) and threshold
+    // suppression by units atop (Granary Rats)
+    const gate = getScript(site.name)?.siteProvides
+    if (gate && !siteSilenced(state, site) && !gate(state, site)) continue
+    const suppressed = Object.values(state.units).some(
+      (u) =>
+        (!u.silenced && u.x === site.x && u.y === site.y && getScript(u.name)?.suppressSiteThreshold) ||
+        (!u.silenced && getScript(u.name)?.unitSuppressesSiteThreshold?.(state, u.id, site)),
+    )
+    if (suppressed) continue
+    const th = getCard(site.name).thresholds
+    // Drought: covered sites provide no water threshold (and no flood bonus)
+    const dried = Object.values(state.auras).some(
+      (r) => getScript(r.name)?.driesSites && r.squares.some((s) => s.x === site.x && s.y === site.y),
+    )
+    // Atlantean Fate: covered non-Ordinary sites only provide water
+    const drowned = Object.values(state.auras).some(
+      (r) => getScript(r.name)?.auraLimitsToWaterThreshold &&
+        getCard(site.name).rarity !== 'Ordinary' &&
+        r.squares.some((s) => s.x === site.x && s.y === site.y),
+    )
+    total.air += drowned ? 0 : th.air
+    total.earth += drowned ? 0 : th.earth
+    total.fire += drowned ? 0 : th.fire
+    total.water += dried ? 0 : th.water
+    if (!dried && site.flooded && th.water === 0) total.water += 1
+    // per-instance extra threshold (Valley of Delight, Sow the Earth)
+    const extraTh = getScript(site.name)?.siteExtraThreshold?.(state, site)
+    if (extraTh) {
+      total.air += extraTh.air ?? 0
+      total.earth += extraTh.earth ?? 0
+      total.fire += extraTh.fire ?? 0
+      total.water += extraTh.water ?? 0
+    }
+    for (const r of Object.values(state.auras)) {
+      const more = getScript(r.name)?.auraSiteExtraThreshold?.(state, r, site)
+      if (more) {
+        total.air += more.air ?? 0
+        total.earth += more.earth ?? 0
+        total.fire += more.fire ?? 0
+        total.water += more.water ?? 0
+      }
+    }
+  }
+  // scripted affinity bonuses (avatars like Elementalist, elemental Cores...)
+  const addBonus = (bonus?: Partial<Thresholds>) => {
+    if (!bonus) return
+    total.air += bonus.air ?? 0
+    total.earth += bonus.earth ?? 0
+    total.fire += bonus.fire ?? 0
+    total.water += bonus.water ?? 0
+  }
+  for (const unit of Object.values(state.units)) {
+    // a disabled source has no abilities → provides no affinity
+    if (unit.controller === player && !unit.silenced && !disabledByEffect(state, unit)) {
+      // a masked Imposter provides its MASK's affinity bonus (Elementalist → +🜁🜃🜂🜄). affinityBonus is a
+      // data field read by name, so unlike the function hooks it isn't auto-forwarded through the mask.
+      const effName = unit.name === 'Imposter' ? state.flow?.imposterMask?.[unit.controller] ?? unit.name : unit.name
+      addBonus(getScript(effName)?.affinityBonus)
+      // Vivien has "the printed abilities of all Avatars and Spellcasters in the realm", so she also
+      // provides their affinityBonus (an Elementalist avatar → +🜁🜃🜂🜄 for VIVIEN's controller, even
+      // when the Elementalist belongs to the opponent). Same data-field-not-a-hook gap as the Imposter:
+      // her ability-copying hooks forward functions, but affinityBonus is read by name. Dedup by source
+      // name (each printed ability once, however many copies are in play); a silenced/disabled source
+      // has no abilities to lend.
+      if (unit.name === 'Vivien the Enchantress') {
+        const seen = new Set<string>()
+        for (const src of Object.values(state.units)) {
+          if (src.id === unit.id || src.silenced || src.name === 'Vivien the Enchantress' || seen.has(src.name)) continue
+          if (disabledByEffect(state, src)) continue
+          if (!src.isAvatar && !effKeywords(state, src).spellcaster) continue
+          seen.add(src.name)
+          addBonus(getScript(src.name)?.affinityBonus)
+        }
+      }
+    }
+  }
+  for (const art of Object.values(state.artifacts)) {
+    const controller = art.carriedBy ? state.units[art.carriedBy]?.controller : art.conjuredBy
+    if (controller === player) addBonus(getScript(art.name)?.affinityBonus)
+  }
+  // a negative judge override (or any future negative source) can't drop affinity
+  // below zero — thresholds are natural numbers.
+  total.air = Math.max(0, total.air)
+  total.earth = Math.max(0, total.earth)
+  total.fire = Math.max(0, total.fire)
+  total.water = Math.max(0, total.water)
+  return total
+}
 
 /** is this site's rules text turned off? (Leadworks, Smokestacks of Gnaak) */
 /** A "carriable artifact" is one whose printed subtypes include NEITHER 'Monument' NOR
@@ -41,11 +186,8 @@ export function cemeteryProtected(state: GameState, owner: PlayerId, actor: Play
   if (actor === null || actor === owner) return false
   for (const site of Object.values(state.sites)) {
     if (site.name !== 'Wormelow Tump' || site.isRubble || site.controller !== owner || siteSilenced(state, site)) continue
-    let earth = 0
-    for (const s of Object.values(state.sites)) {
-      if (s.controller === owner && !s.isRubble) earth += getCard(s.name).thresholds.earth
-    }
-    if (earth >= 3) return true
+    // (E)(E)(E) is a true-affinity gate (Tump's own Earth plus Elementalist/Cores/blooms), not just printed Earth on sites.
+    if (affinity(state, owner).earth >= 3) return true
   }
   return false
 }

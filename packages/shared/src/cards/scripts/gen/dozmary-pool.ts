@@ -1,10 +1,14 @@
 import { registerScript } from '../registry'
 import { getCard } from '../../db'
 import { pushLog } from '../../../engine/effects'
+import { affinity } from '../../../engine/casting'
 
 // '(W)(W)(W) – Genesis → You may submerge an artifact from your hand here.'
+// The "(W)(W)(W)" prefix is an AFFINITY requirement (3 Water, counting the pool's own Water plus
+// any bonuses). It was ungated — the sink was offered regardless of your Water threshold.
 registerScript('Dozmary Pool', {
   genesis: (ctx) => {
+    if (affinity(ctx.state, ctx.controller).water < 3) return
     const p = ctx.state.players[ctx.controller]
     const arts = [...new Set(p.hand.map((id) => ctx.state.cards[id].name).filter((n) => getCard(n).type === 'Artifact'))]
     if (!arts.length) return

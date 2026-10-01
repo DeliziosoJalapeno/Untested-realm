@@ -5,7 +5,7 @@ import { getCard, getKeywords, findCard } from '../cards/db'
 import { getScript, type DamageSource, type EffectAPI, type TargetRef, type TargetSpec } from '../cards/scripts/registry'
 import type { GameState, PlayerId, Region, UnitState, SiteState, Prompt, DeckName } from './types'
 import { avatarOf, siteAt, unitsAt, edgesConnected, aura2x2Squares, occupiedSquares, inBounds, GRID_W, GRID_H, squareLabel, nearbySquaresW, orthAdjacentWrapped } from './grid'
-import { effAttack, effDefence, effKeywords, canExistIn, siteSilenced, artifactSilenced, isEvilUnit, isDisabled, isUnmodifiable, footprintAllTerrain, terrainAt, buildStaticGrantIndex } from './statics'
+import { affinity, effAttack, effDefence, effKeywords, canExistIn, siteSilenced, artifactSilenced, isEvilUnit, isDisabled, isUnmodifiable, footprintAllTerrain, terrainAt, buildStaticGrantIndex } from './statics'
 import { siteEntryAllowed } from './movement' // runtime-only use (teleport closure); import cycle is safe
 import { awardAchievement } from './achievements.catalog' // types-only module → no cycle
 
@@ -875,11 +875,8 @@ export function toCemetery(state: GameState, cardId: string): void {
   // Kor Crematory: with (F)(F)(F)(F), cards headed for a cemetery are banished instead
   for (const site of Object.values(state.sites)) {
     if (site.name !== 'Kor Crematory' || site.isRubble || site.controller === null || siteSilenced(state, site)) continue
-    let fire = 0
-    for (const s of Object.values(state.sites)) {
-      if (s.controller === site.controller && !s.isRubble) fire += getCard(s.name).thresholds.fire
-    }
-    if (fire >= 4) {
+    // (F)(F)(F)(F) is a true-affinity gate (counts the Crematory's own Fire plus Elementalist/Cores/blooms), not just printed Fire on sites.
+    if (affinity(state, site.controller).fire >= 4) {
       state.players[card.owner].banished.push(cardId)
       pushLog(state, null, `${card.name} is consumed by the Kor Crematory's flames.`)
       return
