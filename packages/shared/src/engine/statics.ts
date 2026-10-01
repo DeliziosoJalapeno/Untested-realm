@@ -689,13 +689,14 @@ export function isUnmodifiable(state: GameState, unit: UnitState): boolean {
   })
 }
 
-/** "Can't be immobilized." Sources: an unmodifiable unit (an immobilization IS a modification);
- *  Gossamer Ghost's `immuneToDisable` (the registry contract defines it as "can't be disabled OR
- *  immobilized"); or an Onslaught-style `unimmobilizable` grant. effKeywords strips the Immobile
- *  keyword (printed OR granted) when this holds, so EVERY reader of kw.immobile honours the immunity. */
+/** "Can't be immobilized." Sources: an unmodifiable unit (an immobilization IS a modification); a card
+ *  whose text grants it (`immuneToImmobilize` — Gossamer Ghost); or an Onslaught-style `unimmobilizable`
+ *  grant. effKeywords strips the Immobile keyword (printed OR granted) when this holds, so EVERY reader
+ *  of kw.immobile honours the immunity. Kept SEPARATE from disable-immunity — a card grants whichever
+ *  its own text names, never both by implication. */
 export function immobilizeImmune(state: GameState, unit: UnitState): boolean {
   if (isUnmodifiable(state, unit)) return true
-  if (getScript(unit.name)?.immuneToDisable && !unit.silenced) return true
+  if (getScript(unit.name)?.immuneToImmobilize && !unit.silenced) return true
   return unit.modifiers.some((m) => m.kind === 'keyword' && m.keyword === 'unimmobilizable')
 }
 

@@ -257,8 +257,12 @@ export interface CardScript {
   siteProvides?: (state: GameState, site: { id: string; x: number; y: number; controller: PlayerId | null }) => boolean
   /** unit atop a site suppresses that site's threshold (e.g. Granary Rats) */
   suppressSiteThreshold?: boolean
-  /** unit can't be disabled or immobilized (e.g. Gossamer Ghost) */
+  /** unit can't be disabled (e.g. Gossamer Ghost, Iron Man Talus) */
   immuneToDisable?: boolean
+  /** unit can't be immobilized — its Immobile keyword (printed or granted) is stripped, and area
+   *  immobilizers (the Bog) don't hold it (e.g. Gossamer Ghost). Distinct from immuneToDisable:
+   *  a card grants whichever of the two its own text names, never both-by-implication. */
+  immuneToImmobilize?: boolean
   /** this unit's attacks can't be defended (e.g. Harassing Ruffians) */
   cantBeDefended?: boolean
   /** minion must be summoned at a position passing this check (e.g. Forsaken → outer column) */

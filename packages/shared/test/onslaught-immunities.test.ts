@@ -2,7 +2,7 @@
 // The reported bug: it granted only disable-immunity, so an allied Pudge Butcher (printed Immobile)
 // still couldn't move. It's the general immobilize/silence-immunity class — modelled centrally now:
 //   • effKeywords strips the Immobile keyword (printed or granted) when the unit can't be immobilized
-//   • Gossamer Ghost / Iron Man Talus `immuneToDisable` now confers immobilize-immunity (per its contract)
+//   • Gossamer Ghost carries a dedicated `immuneToImmobilize` flag (distinct from immuneToDisable)
 //   • silence effects skip a unit that "can't be silenced"
 import { describe, it, expect } from 'vitest'
 import { newGame, keepBoth, summonCard, placeSite, waiveThreshold, castMagic } from './helpers'
@@ -50,7 +50,7 @@ describe('Onslaught grants silence-immunity', () => {
   })
 })
 
-describe("Gossamer Ghost's immuneToDisable also means it can't be immobilized", () => {
+describe("Gossamer Ghost's dedicated immuneToImmobilize means it can't be immobilized", () => {
   it('a granted Immobile keyword is stripped by the immunity', () => {
     const g = newGame(42, 0) as GameState; keepBoth(g)
     const ghost = summonCard(g, 0, 'Gossamer Ghost', 2, 2); ghost.enteredTurn = -1
