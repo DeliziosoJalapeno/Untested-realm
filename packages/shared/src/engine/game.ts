@@ -1,5 +1,5 @@
 import { getCard } from '../cards/db'
-import { getScript } from '../cards/scripts/registry'
+import { getScript, type AbilityDef, type EffectAPI } from '../cards/scripts/registry'
 import type { Action, ActionResult, GameState, PlayerId, UnitState } from './types'
 import { doMulligan, keepHand } from './setup'
 import { endTurn } from './turn'
@@ -315,6 +315,29 @@ export function isTentativeActivate(state: GameState, action: Action): boolean {
   return !!ability?.tentativePlay
 }
 
+/** The one-shot "spring" ability of a face-down site TRAP, synthesized from the real card's
+ *  `siteTrapAbility`. Activating it reveals the true site (name ← real, `trap` cleared, so its real
+ *  threshold/passives/abilities come online) and fires the trap's effect. Surfaced with the SITE as
+ *  source (sourceId = siteId) so it anchors at the site and the reveal glows there; the client's
+ *  siteActions offers it while the owner still holds the secret. Returns undefined if not a trap. */
+function trapSpringAbility(state: GameState, siteId: string): AbilityDef | undefined {
+  const realName = state.sites[siteId]?.trap?.realName
+  const ta = realName ? getScript(realName)?.siteTrapAbility : undefined
+  if (!realName || !ta) return undefined
+  return {
+    key: 'trap:spring',
+    label: ta.label,
+    cost: ta.cost,
+    threshold: ta.threshold,
+    targets: ta.targets,
+    effect: (ctx: EffectAPI) => {
+      const s = ctx.state.sites[siteId]
+      if (s?.trap?.realName) { s.name = s.trap.realName; delete s.trap } // reveal: it is now its real self
+      ta.effect(ctx)
+    },
+  }
+}
+
 export function canActivate(
   state: GameState,
   player: PlayerId,
@@ -329,6 +352,7 @@ export function canActivate(
   if (!ability && unit) {
     ability = grantedAbilities(state, unit).find((a) => a.key === abilityKey)
   }
+  if (!ability && abilityKey === 'trap:spring' && state.sites[sourceId]?.trap) ability = trapSpringAbility(state, sourceId)
   if (!ability) return `${source.name} has no such ability.`
   // context-gated abilities (Realm-Eater's Digest only with a meal to digest)
   if (ability.available && !ability.available(state, sourceId)) return `${source.name} can't use that right now.`
@@ -393,6 +417,7 @@ function activateAbility(
     // abilities granted by artifacts/auras/sites (Battering Ram, Homecoming...)
     ability = grantedAbilities(state, state.units[action.sourceId]).find((a) => a.key === action.ability)
   }
+  if (!ability && action.ability === 'trap:spring' && state.sites[action.sourceId]?.trap) ability = trapSpringAbility(state, action.sourceId)
   if (!ability) return `${source.name} has no such ability.`
 
   // precondition check (controller, disabled, silenced, costs) — single source of truth
@@ -550,7 +575,10 @@ function activateAbility(
   restoreActionCredit(state, prevCredit)
   // Animate the ability like a spell cast (golden caster + writing + site glow), shown to BOTH
   // players. Base caption is "<card>'s ability"; a projectile ability reads "<card> shoots!".
-  const cardNm = abilitySrc?.name ?? source.name
-  sealAbilityReveal(state, state.flow?.areaReveal?.shoots ? `${cardNm} shoots!` : `${cardNm}'s ability`)
+  const cardNm = abilitySrc?.name ?? source.name // for a sprung trap, source.name is now the revealed real name
+  const caption = action.ability === 'trap:spring'
+    ? `trap activates: ${cardNm}`
+    : state.flow?.areaReveal?.shoots ? `${cardNm} shoots!` : `${cardNm}'s ability`
+  sealAbilityReveal(state, caption)
   return null
 }

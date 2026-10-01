@@ -125,6 +125,12 @@ export interface SiteState {
   ward?: boolean
   /** flooded sites gain ≥1 water affinity and count as water sites */
   flooded?: boolean
+  /** A face-down SITE TRAP. While set, `name` is the basic site of `element` (Spire/Valley/
+   *  Wasteland/Stream) and the site masquerades as it for every purpose; the true card is revealed
+   *  (name ← realName, this field cleared) only when the trap is sprung or destroyed. `realName` /
+   *  `realCardId` are redacted for everyone but the owner in viewFor — the opponent never receives
+   *  the real identity. */
+  trap?: { element: Element; realName?: string; realCardId?: string }
   counters?: Record<string, number>
 }
 

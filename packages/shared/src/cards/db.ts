@@ -70,6 +70,19 @@ const TOKENS: CardDef[] = [
 for (const t of TOKENS) byName.set(t.name.toLowerCase(), t)
 // 'Lance' and 'Rubble' printed cards already exist in the dataset under their exact names.
 
+// ---- SITE TRAP reference card (see engine/traps.ts + gen/ember-ambush.ts) ----
+// One example trap so the mechanic is exercisable end-to-end; the real traps ship with the
+// Frostmage-vs-Lavamancer expansion. Like a token it lives in byName but NOT allCards, so it never
+// enters the collectible pool / deckbuilder / boosters — it's a reference fixture, not a pack card.
+const EXAMPLE_TRAPS: CardDef[] = [
+  {
+    name: 'Ember Ambush', type: 'Site', rarity: 'Ordinary', cost: null, attack: null, defence: null, life: null,
+    elements: ['Fire'], subtypes: [], thresholds: { air: 0, earth: 0, fire: 1, water: 0 },
+    text: 'Trap (disguised as a Wasteland). Spring: deal 3 damage to target nearby enemy.', sets: [], img: null,
+  },
+]
+for (const t of EXAMPLE_TRAPS) byName.set(t.name.toLowerCase(), t)
+
 export const allCards: CardDef[] = normalizedCards
 
 export function getCard(name: string): CardDef {

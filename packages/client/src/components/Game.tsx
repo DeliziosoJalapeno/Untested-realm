@@ -3461,6 +3461,7 @@ function GameInner({
                           {site.ward && <span className="kw siteward" title="Warded">🛡</span>}
                           {siteSilenced(st, site) && <span className="kw sitesilenced" title="Silenced — its abilities are removed">🤐</span>}
                           {site.flooded && <span className="kw siteflood" title="Flooded">🌊</span>}
+                          {(site as any).trap && <span className="kw sitetrap" title={(site as any).trap.realName ? `Your hidden trap: ${(site as any).trap.realName}` : 'A hidden trap lurks here'}>🪤</span>}
                           {scorchedSquares.has(`${x},${y}`) && <span className="kw sitescorched" title="Scorched — a roaming Wildfire has burned here">🔥</span>}
                           {flameVisitedSquares.has(`${x},${y}`) && <span className="kw siteflamevisited" title="Kindled — the Flame of the First Ones has already burned at this site">🔥</span>}
                         </div>
@@ -6455,7 +6456,14 @@ function siteActions(st: any, view: PlayerView, me: PlayerId, mode: Mode, setMod
   if (mode.m !== 'site') return null
   const site = (view.sites as any)[mode.siteId]
   if (!site || site.controller !== me) return null
-  const abilities = getScript(site.name)?.abilities ?? []
+  const baseAbilities = getScript(site.name)?.abilities ?? []
+  // a face-down TRAP surfaces its spring ability from the REAL card — which only the owner's view carries
+  // (trap.realName). Activating it (sourceId = site.id, key 'trap:spring') reveals + fires it engine-side.
+  const trapReal = site.trap?.realName as string | undefined
+  const trapAb = trapReal ? getScript(trapReal)?.siteTrapAbility : undefined
+  const abilities = trapAb
+    ? [...baseAbilities, { key: 'trap:spring', label: trapAb.label, targets: trapAb.targets, cost: trapAb.cost }]
+    : baseAbilities
   if (!abilities.length) return null
   const activate = (ability: { key: string; targets?: any[]; cost?: any }) => {
     const specs = ability.targets ?? []

@@ -1595,6 +1595,8 @@ button.autobattle:hover:not(:disabled) { background: #4a5cc0; }
 /* silenced 🤐 — bottom-left corner on a site (clear of ward/flood), tiny on artifact thumbs */
 .sitecard .sitesilenced { bottom: 2px; left: 2px; top: auto; right: auto; font-size: 13px; padding: 1px 2px; z-index: 2; }
 .artsilenced { font-size: 8px; padding: 0 1px; }
+/* 🪤 site trap — bottom-right corner; a face-down trap disguised as its element's basic site */
+.sitecard .sitetrap { bottom: 2px; right: 2px; top: auto; left: auto; font-size: 13px; padding: 1px 2px; z-index: 2; filter: drop-shadow(0 0 2px rgba(0,0,0,.85)); }
 /* buried ⛏ / submerged 🌊 badge on a subsurface ground artifact — bottom-left, clear of 🤐 */
 .artregion { position: absolute; bottom: 1px; left: 1px; top: auto; right: auto; font-size: 10px; padding: 0 1px; line-height: 1; z-index: 4; text-shadow: 0 0 3px #000, 0 0 3px #000; }
 .marker {

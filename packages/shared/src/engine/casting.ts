@@ -5,6 +5,7 @@ import { adjacentSquares, adjacentSquaresW, avatarOf, chebyshev, chebyshevW, ort
 import { newId, pushLog, makeCtx, checkStateBased, opponent, emitUnitEnters, emitEvent, isMagicProtected, loseLife, checkWard, pushPrompt, registerCont, runCont, toCemetery, bumpManaSpent, beginAreaReveal, recordAffectedSites, snapshotRealm, recordTouchedSites, sealSpellReveal, setActionCredit, restoreActionCredit, firesGenesisOnEntry, recordManaGain, deferTurnStep, settleEntering, runDamageEvent } from './effects'
 import { effKeywords, isDisabled, disabledByEffect, canExistIn, siteSilenced, siteDisabledByArtifact, artifactSilenced, zoneAccessToll, applyKeywordString, isArtifactUnit, isEvilUnit, isEvilCardName, isEvilCardNameFor, cardSubtypesFor, collectionBanned, payZoneToll, takeFromCollection, carriedInside, isBlanked, isCarriableArtifact } from './statics'
 import { siteEntryAllowed } from './movement'
+import { TRAP_DISGUISE, trapElementOf } from './traps'
 
 // ---- affinity ----
 
@@ -302,24 +303,32 @@ export function enterSite(
   const p = state.players[player]
   const card = state.cards[cardId]
   const def = getCard(card.name)
+  const script = getScript(card.name)
+  // SITE TRAP: played FACE-DOWN, stored AS the basic site of its single element (Spire/Valley/…). The
+  // real identity lives in `trap` (revealed to the owner only), and because everything keys off
+  // `site.name` the trap masquerades as that basic site until it is sprung — no per-hook gating.
+  const trapElement = script?.siteTrap ? trapElementOf(def.thresholds) : undefined
+  const displayName = trapElement ? TRAP_DISGUISE[trapElement] : card.name
   const siteId = newId(state, 's')
   state.sites[siteId] = {
     id: siteId,
     cardId,
-    name: card.name,
+    name: displayName,
     owner: player,
     controller: inheritController ?? player,
     x,
     y,
     tapped: false,
     isRubble: false,
-    // printed Ward enters with the site (Blessed Well, Pilgrim's Shrine...)
-    ward: getKeywords(def.name).ward || undefined,
+    // printed Ward enters with the site (Blessed Well, Pilgrim's Shrine...); a face-down trap shows
+    // the basic site's face, which is an Ordinary site with no Ward
+    ward: trapElement ? undefined : (getKeywords(def.name).ward || undefined),
+    ...(trapElement ? { trap: { element: trapElement, realName: card.name, realCardId: cardId } } : {}),
   }
-  // a site provides one mana the moment it enters the realm (aura boosts like
-  // Abundance apply immediately per the FAQ)
-  if (!getScript(card.name)?.noMana) {
-    let gain = 1 + (getScript(card.name)?.siteExtraMana ?? 0)
+  // a site provides one mana the moment it enters the realm (aura boosts like Abundance apply
+  // immediately per the FAQ). A face-down trap gives the basic site's 1 (its real mana mods stay hidden).
+  if (trapElement || !script?.noMana) {
+    let gain = 1 + (trapElement ? 0 : (script?.siteExtraMana ?? 0))
     for (const r of Object.values(state.auras)) {
       const extra = getScript(r.name)?.auraSiteExtraMana
       if (extra && r.squares.some((q) => q.x === x && q.y === y)) gain += extra
@@ -327,8 +336,9 @@ export function enterSite(
     p.mana += gain
     recordManaGain(state, x, y, 'surface', gain) // float "+n 🔮" over the freshly-played site
   }
-  pushLog(state, player, `${p.name} plays ${card.name} at (${x + 1},${y + 1}).`)
-  state.lastPlay = { name: card.name, player, n: (state.lastPlay?.n ?? 0) + 1 }
+  // log/lastPlay carry the DISGUISE name — the shared log must never leak a face-down trap's real card
+  pushLog(state, player, `${p.name} plays ${displayName} at (${x + 1},${y + 1}).`)
+  state.lastPlay = { name: displayName, player, n: (state.lastPlay?.n ?? 0) + 1 }
 
   // a square with a site has no void: any units that were in the void here are placed
   // atop the new site (rulebook: "Any cards in that void are now placed atop the site").
@@ -344,10 +354,10 @@ export function enterSite(
     }
   }
 
-  const script = getScript(card.name)
-  // a site that enters already silenced (e.g. played directly in front of
-  // Fields of Phyxis) has no abilities — its Genesis does not fire
-  if (script?.genesis && !siteSilenced(state, { x, y })) script.genesis(makeCtx(state, siteId, player, []))
+  // a site that enters already silenced (e.g. played directly in front of Fields of Phyxis) has no
+  // abilities — its Genesis does not fire. Nor does a face-down TRAP fire its real Genesis: it is
+  // masquerading as a basic site, so its own effects wait until it is sprung.
+  if (!trapElement && script?.genesis && !siteSilenced(state, { x, y })) script.genesis(makeCtx(state, siteId, player, []))
   const placed = state.sites[siteId]
   if (placed) emitEvent(state, 'onSitePlayed', player, { id: placed.id, x: placed.x, y: placed.y, name: placed.name })
   checkStateBased(state)
@@ -1546,11 +1556,11 @@ export function effectCastSpell(
   }
   const free = opts?.free !== false
   // A REAL cast-from-collection/spellbook (Silver Bullet, Toolbox, the Malleus, Troubled Town, Doomsday
-  // Cult…) pays the card's cost and puts a REAL card into play: a Minion/Artifact/Aura that dies must go
-  // to the CEMETERY, not vanish. Only FREE copies (Chaoswish) and Magic (a spell, consumed after it
-  // resolves) stay tokens. So: token iff free OR a Magic. This is what routes a slain collection-cast
-  // permanent to the cemetery (toCemetery bails on isToken) — the generic fix for the whole family.
-  const asToken = free || def.type === 'Magic'
+  // Cult…) pays the card's cost and puts a REAL card into play — a Minion/Artifact/Aura that dies, AND a
+  // Magic that resolves, must go to the CEMETERY, not vanish. Only a FREE copy (Chaoswish) is a token
+  // that vanishes. So: token iff free. This routes a slain collection-cast permanent AND a resolved
+  // collection-cast Magic to the cemetery (toCemetery bails on isToken) — the fix for the whole family.
+  const asToken = free
   const cardId = `c${state.nextId++}`
   state.cards[cardId] = { id: cardId, name: cardName, owner: player, isToken: asToken } as any
   state.players[player].hand.push(cardId)
@@ -1564,9 +1574,10 @@ export function effectCastSpell(
     state.flow.lockedCards = [...(state.flow.lockedCards ?? []), { cardId, casterId: opts.caster, casterName: state.units[opts.caster]?.name ?? state.artifacts[opts.caster]?.name, grantsCasting: true }]
   }
   if (opts?.tag) state.flow[opts.tag] = [...(state.flow[opts.tag] ?? []), cardId]
-  // Magic copies must never end up in the cemetery (FAQ: a copy is a token) —
-  // route them to banished, then delete outright once resolved.
-  if (def.type === 'Magic') state.flow.banishAfterCast = [...(state.flow.banishAfterCast ?? []), cardId]
+  // A FREE Magic COPY must never end up in the cemetery (FAQ: a copy is a token) — route it to banished,
+  // then delete it once resolved. A PAID collection-cast Magic is the real card: it goes to the cemetery
+  // via castSpell like any hand cast, so it is NOT banished here.
+  if (def.type === 'Magic' && free) state.flow.banishAfterCast = [...(state.flow.banishAfterCast ?? []), cardId]
   // safety net: an uncast token vanishes at end of turn (never lingers in hand)
   state.flow.lends = [...(state.flow.lends ?? []), { cardId, holder: player, returnTo: 'vanish', owner: player }]
   const caster = opts?.caster && canCast(state, player, cardId, opts.caster).ok ? opts.caster : pickEffectCaster(state, player, cardId)
@@ -1661,8 +1672,10 @@ function finishEffectCast(state: GameState, cardId: string, at?: { x: number; y:
     // a REAL hand card that fails to cast stays in hand (only drop the one-shot free credit); a token copy vanishes
     if (pc.realCard) { dropCastCredit(state, cardId); pushLog(state, pc.player, `${name} can't be cast — ${err}`) }
     else { pushLog(state, pc.player, pc.isCopy ? `The copy fizzles — ${err}` : `${name} can't be cast — ${err}`); removeCastToken(state, cardId) }
-  } else if (wasMagic && !pc.realCard) {
-    // resolved: a Magic COPY is a token — it vanishes, never to the cemetery (a real Magic went there via castSpell)
+  } else if (wasMagic && pc.isCopy) {
+    // resolved: only a FREE Magic COPY is a token — it vanishes, never to the cemetery. A PAID
+    // collection-cast Magic (Silver Bullet / Toolbox / Malleus) is the real card and castSpell already
+    // sent it to the cemetery, so it is left alone here.
     removeCastToken(state, cardId)
   }
   fireAfter(state, pc)

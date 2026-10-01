@@ -296,6 +296,21 @@ export interface CardScript {
   auraGrantsAbilities?: (state: GameState, aura: { id: string; squares: { x: number; y: number }[] }, unit: UnitState) => AbilityDef[]
   /** site grants activated abilities to units */
   siteGrantsAbilities?: (state: GameState, site: { id: string; x: number; y: number }, unit: UnitState) => AbilityDef[]
+  /** This Site is a TRAP: it is played FACE-DOWN, disguised as the basic site of its single element
+   *  (Spire/Valley/Wasteland/Stream), and masquerades as that basic site for every purpose until sprung.
+   *  The framework (enterSite / viewFor / activateAbility) handles the disguise, the owner-only reveal
+   *  so the opponent never receives the real card, and the "trap activates: …" reveal animation. */
+  siteTrap?: boolean
+  /** the trap's "spring" ability — surfaced to the CONTROLLER while the trap is face-down. Activating it
+   *  reveals the true site (its name/threshold/passives come online) and fires `effect`; the site then
+   *  stays in play as its real self. Cost / threshold / targets behave like any activated ability. */
+  siteTrapAbility?: {
+    label: string
+    cost: AbilityDef['cost']
+    threshold?: Partial<Thresholds>
+    targets?: TargetSpec[]
+    effect: (ctx: EffectAPI) => void
+  }
   /** fires at the start of EVERY turn (any player); second arg is the player whose turn begins */
   startOfEachTurn?: (ctx: EffectAPI, activePlayer: PlayerId) => void
   /** on a site: anyone may summon (matching) minions here (Donnybrook Inn;

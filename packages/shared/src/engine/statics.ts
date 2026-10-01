@@ -904,7 +904,9 @@ export function grantedAbilities(state: GameState, unit: UnitState): AbilityDef[
 /** the distinct card names still available in a player's collection (count > 0) */
 export function collectionNames(state: GameState, player: PlayerId): string[] {
   const col = state.players[player]?.collection ?? {}
-  return Object.keys(col).filter((n) => col[n] > 0)
+  // a card the Legion of Gall banished from this collection is GONE — it drops out of every fetch pool
+  // (Silver Bullet, Toolbox, Malleus, Imposter, Erik's Curiosa…), not just the cast-time reject.
+  return Object.keys(col).filter((n) => col[n] > 0 && !collectionBanned(state, player, n))
 }
 
 /** consume one copy of a card from a player's collection (fetched into play) */

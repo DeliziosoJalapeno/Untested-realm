@@ -4,7 +4,9 @@ import { orthAdjacentWrapped, siteAt, unitsAt } from '../../../engine/grid'
 import { selfStepsCloser } from '../../../engine/movement'
 
 // 'At the start of your turn, if Unland Angler is submerged, force each enemy
-//  minion atop adjacent sites to take a step toward this one.' (the enemy picks on ties)
+//  minion atop adjacent sites to take a step toward this one.'
+// The EFFECT's controller (the Angler's) picks the direction on ties — the general forced-"take a step"
+// agency rule (FAQ: Crave Golem "controller's choice if tied"), matching Coy Nixie / Guile Sirens / etc.
 registerScript('Unland Angler', {
   startOfTurn: (ctx) => anglerNext(ctx, []),
   conts: {
@@ -32,7 +34,7 @@ function anglerNext(ctx: EffectAPI, done: string[]): void {
     return anglerNext(ctx, [...done, prey.id])
   }
   ctx.ask(
-    { kind: 'chooseSquare', title: `${prey.name} is lured toward the Angler — which way does it stumble?`, data: { squares: steps }, player: prey.controller },
+    { kind: 'chooseSquare', title: `${prey.name} is lured toward the Angler — which way does it stumble?`, data: { squares: steps }, player: ctx.controller },
     'lure',
     { unitId: prey.id, done },
   )

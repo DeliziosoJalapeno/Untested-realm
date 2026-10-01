@@ -57,6 +57,22 @@ export function viewFor(state: GameState, player: PlayerId | null): PlayerView {
     if (c) cards[id] = c
   }
 
+  // SITE TRAPS (anti-cheat): a face-down trap is stored AS its disguise basic site (site.name) with the
+  // real identity in site.trap. Reveal the real card ONLY to the trap's owner. For everyone else — the
+  // opponent AND spectators — trim site.trap to { element } and overwrite the card entry behind
+  // site.cardId with the disguise, so the real name/art never crosses the wire. site.name is already the
+  // basic site, so the board renders the disguise for all; only the owner's client learns realName.
+  const sites: Record<string, GameState['sites'][string]> = {}
+  for (const [id, s] of Object.entries(state.sites)) {
+    if (s.trap && !(player !== null && player === s.owner)) {
+      sites[id] = { ...s, trap: { element: s.trap.element } }
+      const disguise = cards[s.cardId]
+      if (disguise) cards[s.cardId] = { ...disguise, name: s.name, art: undefined }
+    } else {
+      sites[id] = s
+    }
+  }
+
   const players = state.players.map((p) => {
     const mine = player !== null && p.id === player
     return {
@@ -108,7 +124,7 @@ export function viewFor(state: GameState, player: PlayerId | null): PlayerView {
     players,
     cards,
     units: state.units,
-    sites: state.sites,
+    sites,
     artifacts: state.artifacts,
     auras: state.auras,
     prompts: prompts as any,
