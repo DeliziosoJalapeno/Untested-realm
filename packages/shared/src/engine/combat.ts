@@ -572,7 +572,8 @@ function afterDefenders(state: GameState, ctx: FightCtx): void {
         player: target.controller,
         kind: 'stayInFight',
         title: `Does ${target.name} remain in the fight?`,
-        data: { unitId: target.id },
+        // attacker + committed defenders exposed so a bot (or UI) can weigh whether staying is safe
+        data: { unitId: target.id, attackerId: ctx.attackerId, defenderIds: [...ctx.defenderIds] },
         cont: 'combat:stay',
         ctx,
       })

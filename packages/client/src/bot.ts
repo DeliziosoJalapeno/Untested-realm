@@ -415,9 +415,22 @@ function answerPrompt(state: GameState, me: PlayerId, prompt: any): Action {
       return answer(picks)
     }
     case 'stayInFight': {
+      // A defender has ALREADY joined, so the originally-attacked unit no longer has to take the hit.
+      // RETIRE IT BY DEFAULT — that's the point of defending. Keep it in only when the attacker dies
+      // *only if* it stays: i.e. its own blow is needed to finish the attacker (the committed defenders
+      // can't on their own). Never risk the Avatar for a kill.
       const u = state.units[prompt.data?.unitId]
-      if (!u) return answer(false)
-      return answer(effAttack(state, u) >= 2 || effDefence(state, u) - u.damage >= 3)
+      if (!u || u.isAvatar) return answer(false)
+      const attacker = state.units[prompt.data?.attackerId]
+      if (!attacker) return answer(false)
+      const defPow = (prompt.data?.defenderIds ?? [])
+        .map((id: string) => state.units[id])
+        .filter(Boolean)
+        .reduce((s: number, d: UnitState) => s + effAttack(state, d), 0)
+      const atkLife = effDefence(state, attacker) - attacker.damage
+      const killsIfStays = defPow + effAttack(state, u) >= atkLife
+      const killsIfRetreats = defPow >= atkLife
+      return answer(killsIfStays && !killsIfRetreats)
     }
     case 'intercept': {
       const mover = state.units[prompt.data?.moverId]
