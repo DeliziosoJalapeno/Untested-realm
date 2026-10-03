@@ -85,6 +85,29 @@ h1, h2, h3 { font-weight: 600; }
     radial-gradient(ellipse at 50% 28%, rgba(20,22,31,0) 0%, rgba(20,22,31,0.22) 60%, rgba(20,22,31,0.55) 100%),
     linear-gradient(to bottom, rgba(20,22,31,0.12), rgba(20,22,31,0.42) 55%, rgba(20,22,31,0.82) 100%);
 }
+/* desktop-only card-art showcase: two columns in each side margin, flanking the 640px centered content.
+   Confined to the margin (width = half the leftover width), so it never overlaps the text. */
+.home-artrail {
+  position: fixed; top: 0; bottom: 0; z-index: 0;
+  width: calc((100vw - 680px) / 2);
+  display: flex; gap: 12px; padding: 16px 14px; box-sizing: border-box;
+  align-items: center; justify-content: center;
+  pointer-events: none; overflow: hidden; opacity: 0.82;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 88%, transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 88%, transparent);
+}
+.home-artrail.left { left: 0; }
+.home-artrail.right { right: 0; }
+.home-artcol {
+  flex: 1 1 0; min-width: 0; max-width: 150px;
+  display: flex; flex-direction: column; gap: 12px; justify-content: center;
+}
+.home-artrail .showcase-card {
+  width: 100%; height: auto; border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.55); border: 1px solid rgba(0,0,0,0.45);
+}
+/* need room for the central content AND both rails — otherwise hide them */
+@media (max-width: 1200px) { .home-artrail { display: none; } }
 .home h1 {
   font-family: 'Cinzel', serif;
   font-weight: 900;
@@ -97,10 +120,22 @@ h1, h2, h3 { font-weight: 600; }
   -webkit-background-clip: text; background-clip: text; color: transparent;
   filter: drop-shadow(0 2px 10px rgba(0,0,0,0.85));
 }
+/* cursive author byline, right-aligned so it signs off under "Realm" (the title's last word) */
+.byline {
+  font-family: 'Great Vibes', cursive;
+  text-align: right;
+  font-size: 20px;
+  line-height: 1;
+  margin: -6px 0 14px;
+  padding-right: 64px;
+  color: #d8b45c;
+  letter-spacing: 1px;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+}
 .subtitle {
   font-family: 'Cormorant Garamond', serif;
   font-style: italic; font-size: 23px; text-align: center;
-  color: #c9cee0; margin: 0 0 14px;
+  color: #c9cee0; margin: -24px 0 14px;
   text-shadow: 0 1px 6px rgba(0,0,0,0.8);
 }
 .disclaimer { margin: 12px auto 18px; max-width: 520px; text-align: center; }
@@ -388,6 +423,28 @@ h1, h2, h3 { font-weight: 600; }
 .chat-text { font-size: 16px; font-weight: 600; }
 @keyframes chatPop { from { opacity: 0; transform: translateY(-8px) scale(.96); } to { opacity: 1; transform: none; } }
 @keyframes chatFade { to { opacity: 0; } }
+
+/* ---------- replay viewer ---------- */
+.replay-root { position: relative; }
+.replay-bar {
+  position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%);
+  z-index: 400; display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; border-radius: 12px;
+  background: rgba(20,22,31,0.94); border: 1px solid #39405a;
+  box-shadow: 0 6px 22px rgba(0,0,0,0.6); max-width: 96vw; flex-wrap: wrap;
+}
+.replay-btn {
+  background: #2a3042; color: #e8ecf7; border: none; cursor: pointer;
+  border-radius: 7px; padding: 6px 10px; font-size: 15px; line-height: 1;
+}
+.replay-btn:hover:not(:disabled) { background: #3a4663; }
+.replay-btn:disabled { opacity: 0.4; cursor: default; }
+.replay-btn.selected { background: #d8b45c; color: #1d2130; }
+.replay-btn.replay-play { font-size: 18px; min-width: 40px; }
+.replay-btn.replay-exit { background: #6b2732; }
+.replay-scrub { width: clamp(140px, 28vw, 340px); accent-color: #d8b45c; cursor: pointer; }
+.replay-count { font-size: 13px; color: #c9cee0; min-width: 76px; text-align: center; }
+.replay-speeds { display: flex; gap: 4px; }
 
 /* GUI symbol legend modal (❔ Symbols / Q). The compound `.modal.symbols-modal` selector wins the
    z-index cascade over the base `.modal` (z:50) so the legend, opened deliberately, sits ABOVE an

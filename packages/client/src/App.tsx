@@ -28,6 +28,8 @@ import CollectionPage from './components/CollectionPage'
 import ScenariosPage from './components/ScenariosPage'
 import SealedDeckbuild from './components/SealedDeckbuild'
 import Game from './components/Game'
+import ReplayViewer from './components/ReplayViewer'
+import { startReplay, downloadReplay, parseReplay, type ReplayRecord } from './replay'
 import { loadCollection, ownedCopies, ripEriksCuriosa, syncCollectionOnSignIn, clearCollectionOnLogout, keepSealedPool } from './collection'
 import { markUnlocked, syncAchievementsOnSignIn, clearAchievementsOnLogout } from './achievements'
 import { AchievementToasts } from './components/Achievements'
@@ -47,6 +49,8 @@ export interface Session {
   requestEditor?: () => void
   /** online: send a canned chat phrase (relayed to both seats + spectators) */
   sendChat?: (msg: string) => void
+  /** local games (hotseat / vs-computer): download a replay of the game so far */
+  onSaveReplay?: () => void
   /** online creator, before an opponent joins: change your deck and/or the room clock */
   updateRoom?: (deck: DeckList, clock: ClockConfig | null) => void
   /** online: has the opponent granted this seat editor access? (always true offline) */
@@ -212,7 +216,8 @@ function fmtRestart(ms: number): string {
 }
 
 export default function App() {
-  const [page, setPage] = useState<'home' | 'decks' | 'game' | 'collection' | 'scenarios'>('home')
+  const [page, setPage] = useState<'home' | 'decks' | 'game' | 'collection' | 'scenarios' | 'replay'>('home')
+  const [replayData, setReplayData] = useState<ReplayRecord | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [username, setUsername] = useState<string | null>(auth.getUsername())
   const [error, setError] = useState<string | null>(null)
@@ -304,6 +309,8 @@ export default function App() {
   // double-invokes them in dev, which double-applied every action and produced
   // spurious "That is not the active prompt" errors on the phantom second run.)
   const localRef = useRef<GameState | null>(null)
+  // live replay recording for the current LOCAL game (hotseat / vs-computer); null online or when off
+  const recordingRef = useRef<ReplayRecord | null>(null)
 
   // ── "Thinking" bot: the strong search runs in a Web Worker so its (up to 30s) planning never blocks
   //    the UI. A persistent worker keeps the search's turn-plan cache warm across messages. ──
@@ -364,6 +371,7 @@ export default function App() {
     const scoreBefore = botScore(local)
     const snapshot = JSON.stringify(local)
     const res = applyAction(local, 1, action)
+    let applied: Action = action // the action actually applied — recorded for replay fidelity
     if (!res.ok) {
       const fallback: Action = local.prompts[0]?.player === 1
         ? { t: 'prompt', promptId: local.prompts[0].id, choice: null }
@@ -371,8 +379,10 @@ export default function App() {
           ? { t: 'keepHand' }
           : { t: 'endTurn' }
       const res2 = applyAction(local, 1, fallback)
-      if (!res2.ok) applyAction(local, 1, { t: 'concede' })
+      applied = fallback
+      if (!res2.ok) { applyAction(local, 1, { t: 'concede' }); applied = { t: 'concede' } }
     }
+    recordingRef.current?.actions.push({ seat: 1, action: applied }) // for replay
     // if this main action didn't move the bot's score, BAN it from the bot's search for the rest of
     // the turn (so it isn't re-picked in a loop). endTurn clears the ban set for the next turn.
     if (action.t === 'endTurn') botBannedRef.current.clear()
@@ -415,6 +425,7 @@ export default function App() {
       return false
     }
     if (!session?.noAchv) { try { applyAchievements(JSON.parse(snapshot), local, actor, action) } catch { /* cosmetic */ } }
+    recordingRef.current?.actions.push({ seat: actor, action }) // for replay
     pushLocalHistory0(snapshot)
     bumpSession()
     return true
@@ -449,6 +460,7 @@ export default function App() {
     if (!localRef.current || localHistory.current.length === 0) return
     invalidateBotThink() // a rolled-back position must not be answered by a stale worker reply
     const restored = JSON.parse(localHistory.current.pop()!) as GameState
+    recordingRef.current?.actions.pop() // keep the replay log in step with the rolled-back state
     localRef.current = restored
     setSession((cur) => (cur?.local ? { ...cur, local: restored } : cur))
   }
@@ -469,6 +481,7 @@ export default function App() {
    *  a fresh game (startHotseat) and a loaded scenario (startScenario). */
   function beginHotseatState(state: GameState, noAchv = false) {
     localHistory.current = []
+    recordingRef.current = null // scenarios (which reuse this) don't record; startHotseat sets it after
     localClockTick.current = Date.now()
     const sess: Session = {
       kind: 'hotseat',
@@ -477,6 +490,7 @@ export default function App() {
       view: null,
       noAchv,
       requestUndo: localUndo, // both players share the screen: undo is by consent
+      onSaveReplay: saveReplay,
       send: (action: Action) => {
         // in hotseat the acting player is whoever the UI says is acting
         armGoBack(action)
@@ -504,15 +518,12 @@ export default function App() {
 
   function startHotseat(deckA: DeckList, deckB: DeckList, clock: ClockConfig | null = null, secondSeer = false) {
     myDeckFromCollection.current = !!deckA.fromCollection || !!deckB.fromCollection
-    const state = createGame(
-      [withCollection(deckA), withCollection(deckB)],
-      ['Player 1', 'Player 2'],
-      Math.floor(Math.random() * 0xffffffff),
-      Math.random() < 0.5 ? 0 : 1,
-      clock,
-      { secondSeer },
-    )
+    const seed = Math.floor(Math.random() * 0xffffffff)
+    const first: PlayerId = Math.random() < 0.5 ? 0 : 1
+    const decks: [DeckList, DeckList] = [withCollection(deckA), withCollection(deckB)]
+    const state = createGame(decks, ['Player 1', 'Player 2'], seed, first, clock, { secondSeer })
     beginHotseatState(state)
+    recordingRef.current = startReplay('hotseat', decks, ['Player 1', 'Player 2'], seed, first, clock, secondSeer)
   }
 
   /** load a saved scenario snapshot into a fresh local hotseat game. Deep-cloned so
@@ -537,18 +548,42 @@ export default function App() {
     if (localHistory.current.length > 80) localHistory.current.shift()
   }
 
+  /** download a replay of the current local game (stamped with its result). */
+  function saveReplay() {
+    const r = recordingRef.current
+    if (!r) { setError('No replay available for this game.'); return }
+    r.winner = localRef.current?.winner ?? null
+    downloadReplay(r)
+  }
+
+  /** pick a .json replay file and open it in the replay viewer. */
+  function loadReplayFile() {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'application/json,.json'
+    input.onchange = () => {
+      const file = input.files?.[0]
+      if (!file) return
+      const reader = new FileReader()
+      reader.onload = () => {
+        const r = parseReplay(String(reader.result ?? ''))
+        if (!r) { setError('That file is not a valid replay.'); return }
+        setReplayData(r)
+        setPage('replay')
+      }
+      reader.readAsText(file)
+    }
+    input.click()
+  }
+
   function startVsBot(myDeck: DeckList, botDeck: DeckList, clock: ClockConfig | null = null, stepBot = false, difficulty: 'fast' | 'thinking' = 'fast', secondSeer = false) {
     myDeckFromCollection.current = !!myDeck.fromCollection
     localHistory.current = []
     disposeBotWorker() // fresh worker (and plan cache) for the new game
-    const state = createGame(
-      [withCollection(myDeck), withCollection(botDeck)],
-      ['You', 'Computer'],
-      Math.floor(Math.random() * 0xffffffff),
-      Math.random() < 0.5 ? 0 : 1,
-      clock,
-      { secondSeer },
-    )
+    const seed = Math.floor(Math.random() * 0xffffffff)
+    const first: PlayerId = Math.random() < 0.5 ? 0 : 1
+    const decks: [DeckList, DeckList] = [withCollection(myDeck), withCollection(botDeck)]
+    const state = createGame(decks, ['You', 'Computer'], seed, first, clock, { secondSeer })
     localClockTick.current = Date.now()
     const sess: Session = {
       kind: 'bot',
@@ -558,6 +593,7 @@ export default function App() {
       stepBot,
       botDifficulty: difficulty,
       requestUndo: localUndo, // the computer is a gracious opponent
+      onSaveReplay: saveReplay,
       send: (action: Action) => {
         armGoBack(action)
         runLocal(0, action)
@@ -566,6 +602,7 @@ export default function App() {
     localRef.current = state
     setSession(sess)
     setPage('game')
+    recordingRef.current = startReplay('bot', decks, ['You', 'Computer'], seed, first, clock, secondSeer)
   }
 
   // apply exactly ONE bot action (seat 1). Shared by the auto-timer and the
@@ -734,6 +771,7 @@ export default function App() {
 
   function startOnline(mode: 'create' | 'join' | 'spectate' | 'matchmake' | 'rejoin', name: string, deck: DeckList | null, code?: string, clock?: ClockConfig | null, isPublic?: boolean, secondSeer?: boolean) {
     myDeckFromCollection.current = !!deck?.fromCollection
+    recordingRef.current = null // online games aren't recorded for replay (v1 is local-only)
     leavingRef.current = false
     const net = new Net()
     netRef.current = net
@@ -974,7 +1012,15 @@ export default function App() {
           onDecks={() => setPage('decks')}
           onCollection={() => setPage('collection')}
           onScenarios={() => setPage('scenarios')}
+          onWatchReplay={loadReplayFile}
           initialRoomCode={pendingJoin}
+        />
+      )}
+      {page === 'replay' && replayData && (
+        <ReplayViewer
+          replay={replayData}
+          mobile={mm.mobile}
+          onLeave={() => { setReplayData(null); setPage('home') }}
         />
       )}
       {page === 'decks' && <DeckBuilder onBack={() => setPage('home')} />}

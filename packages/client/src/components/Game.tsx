@@ -3183,6 +3183,9 @@ function GameInner({
               onVote={session.rematchVote}
             />
           )}
+          {session.onSaveReplay && (
+            <button onClick={() => session.onSaveReplay!()}>⬇ Save replay</button>
+          )}
           <button onClick={onLeave}>Back to menu</button>
         </div>
       )}

@@ -5,10 +5,24 @@ import { loadDecks } from '../App'
 import * as auth from '../auth'
 import type { RoomInfo } from '../auth'
 import DeckPreview from './DeckPreview'
+import CardImg from './CardImg'
+import { useMobileMode } from '../mobile'
 import { CHANGELOG } from '../changelog'
 import { ACHIEVEMENTS } from '@sorcery/shared'
 import { unlockedCount } from '../achievements'
 import { AchievementsModal } from './Achievements'
+
+// Decorative card-art showcase flanking the home page on desktop (hidden on mobile). Four columns —
+// two per side — of the TRICKIEST non-site cards: the ones carrying the most engine tests (a proxy for
+// how hard their effect was to get right). No Ordinary cards, and vanilla combat-dummy fixtures excluded.
+// Each column is top→bottom; row 1 (and the last row) fade under the rail's top/bottom mask, so the
+// marquee cards sit in row 2 and a sacrificial card takes the cropped row 1. Edit to re-curate.
+const SHOWCASE_COLUMNS: string[][] = [
+  ['Fireball', 'Vivien the Enchantress', 'Wildfire', 'Conqueror Worm'],     // left, outer
+  ['Giant Shark', 'Magellan Globe', 'Enchantress', 'Crusade'],              // left, inner
+  ['Eclipse', 'Hillock Basilisk', 'Chaos Twister', 'Locusts of Illyria'],   // right, inner
+  ['Pudge Butcher', 'Imposter', 'Mephistopheles', 'Poisonous Dagger'],      // right, outer
+]
 
 /** "25+30" for a base+increment clock, or "untimed" */
 function fmtClockCfg(c: { base: number; inc: number } | null): string {
@@ -46,6 +60,7 @@ export default function Home({
   onDecks,
   onCollection,
   onScenarios,
+  onWatchReplay,
   initialRoomCode,
 }: {
   username: string | null
@@ -57,9 +72,11 @@ export default function Home({
   onDecks: () => void
   onCollection: () => void
   onScenarios: () => void
+  onWatchReplay: () => void
   initialRoomCode?: string | null
 }) {
   const decks = loadDecks()
+  const { mobile } = useMobileMode()
   const [name, setName] = useState(localStorage.getItem('sorcery-name') ?? username ?? '')
   // account form
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
@@ -158,7 +175,27 @@ export default function Home({
 
   return (
     <div className="home">
+      {/* desktop-only decorative card-art showcase in the empty side margins (4 columns, 2 per side) */}
+      {!mobile && (
+        <>
+          <aside className="home-artrail left" aria-hidden="true">
+            {SHOWCASE_COLUMNS.slice(0, 2).map((col, i) => (
+              <div className="home-artcol" key={i}>
+                {col.map((n) => <CardImg key={n} name={n} className="showcase-card" />)}
+              </div>
+            ))}
+          </aside>
+          <aside className="home-artrail right" aria-hidden="true">
+            {SHOWCASE_COLUMNS.slice(2, 4).map((col, i) => (
+              <div className="home-artcol" key={i}>
+                {col.map((n) => <CardImg key={n} name={n} className="showcase-card" />)}
+              </div>
+            ))}
+          </aside>
+        </>
+      )}
       <h1>Untested Realm</h1>
+      <p className="byline">by Jalapeno</p>
       <p className="subtitle">
         100% automated, 99%* verified!
         <br />
@@ -323,6 +360,7 @@ export default function Home({
         <button onClick={onDecks}>Deck builder</button>
         <button onClick={onCollection}>🎴 Collection & packs</button>
         <button onClick={onScenarios}>🎬 Scenarios</button>
+        <button onClick={onWatchReplay}>▶ Watch a replay</button>
         {achvGot > 0 && (
           <button onClick={() => setShowAchv(true)}>🏆 Achievements {achvGot}/{achvTotal}</button>
         )}

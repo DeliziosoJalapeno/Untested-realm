@@ -15,7 +15,7 @@ export interface PlayerView extends Omit<GameState, 'players' | 'cards' | 'seed'
   you: PlayerId | null
 }
 
-export function viewFor(state: GameState, player: PlayerId | null): PlayerView {
+export function viewFor(state: GameState, player: PlayerId | null, opts?: { revealAll?: boolean }): PlayerView {
   const visibleCardIds = new Set<string>()
 
   // realm objects are public
@@ -37,6 +37,8 @@ export function viewFor(state: GameState, player: PlayerId | null): PlayerView {
       for (const id of p.hand) if (state.handReveals?.[id]?.includes(player)) visibleCardIds.add(id)
     }
   }
+  // replay / god view (a finished game being watched back): every hand is public
+  if (opts?.revealAll) for (const p of state.players) for (const id of p.hand) visibleCardIds.add(id)
 
   // Doomsday Cult — "Players play with the top card of their spellbook revealed." While any live
   // (un-silenced, un-disabled) Cult sits in the realm, BOTH players' spellbook-top cards are PUBLIC.
@@ -64,7 +66,7 @@ export function viewFor(state: GameState, player: PlayerId | null): PlayerView {
   // basic site, so the board renders the disguise for all; only the owner's client learns realName.
   const sites: Record<string, GameState['sites'][string]> = {}
   for (const [id, s] of Object.entries(state.sites)) {
-    if (s.trap && !(player !== null && player === s.owner)) {
+    if (s.trap && !opts?.revealAll && !(player !== null && player === s.owner)) {
       sites[id] = { ...s, trap: { element: s.trap.element } }
       const disguise = cards[s.cardId]
       if (disguise) cards[s.cardId] = { ...disguise, name: s.name, art: undefined }
@@ -84,7 +86,7 @@ export function viewFor(state: GameState, player: PlayerId | null): PlayerView {
       keptHand: p.keptHand,
       cemetery: p.cemetery,
       banished: p.banished,
-      hand: mine ? p.hand : p.hand.map((id) => (player !== null && state.handReveals?.[id]?.includes(player) ? id : 'hidden')),
+      hand: (mine || opts?.revealAll) ? p.hand : p.hand.map((id) => (player !== null && state.handReveals?.[id]?.includes(player) ? id : 'hidden')),
       handCounts: countHand(state, p.hand, p.id),
       // per-hand-card UNCONDITIONAL mana-cost delta (effective − printed, computed with NO cast
       // location so location-conditional discounts are excluded — e.g. Court of Equity's +1/+2).
