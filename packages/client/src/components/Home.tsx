@@ -160,7 +160,7 @@ export default function Home({
     <div className="home">
       <h1>Untested Realm</h1>
       <p className="subtitle">
-        100% automated, 99%* verified.
+        100% automated, 99%* verified!
         <br />
         <button className="linklike changelog-open" onClick={() => setShowChangelog(true)}>
           📜 What’s new (v{CHANGELOG[0].version})

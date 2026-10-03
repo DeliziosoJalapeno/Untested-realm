@@ -1,0 +1,8 @@
+Sound effects in this directory are from Cockatrice, the open-source virtual tabletop
+(https://github.com/Cockatrice/Cockatrice), licensed under the GNU GPL v2.
+
+Files: Passturn.wav, cuckoo.wav, draw.wav, error.wav, playcard.wav, rolldie.wav,
+shuffle.wav, stagechangeoldnotification.wav, tap.wav, untap.wav
+
+They are used here as in-game card sound effects. See the Cockatrice repository for the
+original source and full license terms.

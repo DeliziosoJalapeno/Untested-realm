@@ -33,6 +33,7 @@ import { markUnlocked, syncAchievementsOnSignIn, clearAchievementsOnLogout } fro
 import { AchievementToasts } from './components/Achievements'
 import * as auth from './auth'
 import { CHAT_BUBBLE_MS } from './chatPhrases'
+import { sfx } from './sfx'
 
 export interface Session {
   kind: 'online' | 'hotseat' | 'bot'
@@ -215,6 +216,7 @@ export default function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [username, setUsername] = useState<string | null>(auth.getUsername())
   const [error, setError] = useState<string | null>(null)
+  useEffect(() => { if (error) sfx('error') }, [error]) // the red message gets the error chime
   const [searching, setSearching] = useState(false) // autobattle: waiting for an opponent
   const [undoAsk, setUndoAsk] = useState<string | null>(null)
   const [editorAsk, setEditorAsk] = useState<string | null>(null)

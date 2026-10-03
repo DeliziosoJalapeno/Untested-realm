@@ -67,6 +67,7 @@ import CardImg, { CardHover, CardBack } from './CardImg'
 import { QuakeArrange } from './QuakeArrange'
 import { hasFaq, faqFor } from '../faq'
 import { CHAT_PHRASES } from '../chatPhrases'
+import { sfx, sfxMuted, setSfxMuted, preloadSfx, type SfxKey } from '../sfx'
 import {
   presentViews,
   viewLabel,
@@ -358,6 +359,11 @@ function GameInner({
   const [handOpen, setHandOpen] = useState(false) // mobile: the hand overlay is toggled over the board
   const [chatOpen, setChatOpen] = useState(false) // the canned-phrase chat picker popover (online only)
   const chatBtnRef = useRef<HTMLButtonElement | null>(null) // anchors the portalled picker to the chat button
+  const [sfxMuteOn, setSfxMuteOn] = useState(sfxMuted()) // 🔊/🔇 sound-effects toggle (persisted)
+  // sound-cue tracking: last-seen turn / play-counter / tapped-count, so each change fires once
+  const sfxTurn = useRef(view.turn)
+  const sfxPlayN = useRef(view.lastPlay?.n ?? 0)
+  const sfxTapped = useRef(0)
   const [hover, setHover] = useState<string | null>(null)
   const [hoveredDefender, setHoveredDefender] = useState<string | null>(null) // combat: which defender option is hovered
   const [hoveredChoice, setHoveredChoice] = useState<number | null>(null) // move/attack menu: which option is hovered
@@ -1011,9 +1017,43 @@ function GameInner({
         const timer = setTimeout(() => setToasts((prev) => prev.filter((x) => x.id !== t.id)), 3000)
         toastTimers.current.push(timer)
       }
+      // sound cues the board state can't tell apart: draw / shuffle / random outcome. Dedupe per
+      // batch so a multi-line combo doesn't stack three copies of the same clip.
+      const cues = new Set<SfxKey>()
+      for (const msg of fresh) {
+        if (/shuffle/i.test(msg)) cues.add('shuffle')
+        else if (/\bdraws?\b[^.]*\b(card|cards|spell)\b/i.test(msg)) cues.add('draw')
+        else if (/at random|randomly|\bcoin\b|\blucky\b/i.test(msg)) cues.add('rolldie')
+      }
+      for (const c of cues) sfx(c)
     }
     lastLogLen.current = len
   }, [view.log.length])
+
+  // sound cues read straight from board state: start of turn (cuckoo), a card played (lastPlay
+  // counter), and tap/untap (change in the number of tapped units+sites+artifacts). Refs are seeded
+  // from the first view so nothing fires on mount / reconnect. A turn flip mass-untaps everything —
+  // that's swallowed (cuckoo already marks the turn) so you don't get a burst of untap clips.
+  const tappedNow = useMemo(() => {
+    let n = 0
+    for (const u of Object.values(view.units)) if (u.tapped) n++
+    for (const s of Object.values(view.sites)) if (s.tapped) n++
+    for (const a of Object.values(view.artifacts)) if (a.tapped) n++
+    return n
+  }, [view])
+  useEffect(() => { sfxTapped.current = tappedNow }, []) // seed once (avoid a mount-time untap)
+  useEffect(() => {
+    const turnChanged = view.turn !== sfxTurn.current
+    if (turnChanged) { sfxTurn.current = view.turn; sfx('cuckoo') }
+    const pn = view.lastPlay?.n ?? 0
+    if (pn !== sfxPlayN.current) { sfxPlayN.current = pn; sfx('play') }
+    if (tappedNow !== sfxTapped.current) {
+      if (!turnChanged) sfx(tappedNow > sfxTapped.current ? 'tap' : 'untap')
+      sfxTapped.current = tappedNow
+    }
+  }, [view.turn, view.lastPlay?.n, tappedNow])
+  // warm the audio cache once
+  useEffect(() => { preloadSfx() }, [])
 
   // clear any pending toast timers on unmount
   useEffect(() => () => { for (const t of toastTimers.current) clearTimeout(t) }, [])
@@ -3039,6 +3079,9 @@ function GameInner({
           <button className={`railbtn ${stView ? 'selected' : ''}`} title="Subtype view — pick a subtype (Spellcasters, Evil, Beasts, Deserts…); its cards glow, all else dims. Z to toggle, ←/→ to cycle" onClick={toggleSubtype}>
             <span className="ri">🏷</span><span className="rl">Subtypes</span>
           </button>
+          <button className="railbtn" title={sfxMuteOn ? 'Sound off — click to enable sound effects' : 'Sound on — click to mute'} onClick={() => { const m = !sfxMuteOn; setSfxMuted(m); setSfxMuteOn(m); if (!m) sfx('cuckoo') }}>
+            <span className="ri">{sfxMuteOn ? '🔇' : '🔊'}</span><span className="rl">Sound</span>
+          </button>
           {session.sendChat && (
             <button ref={chatBtnRef} className={`railbtn ${chatOpen ? 'selected' : ''}`} title="Chat — send a quick phrase to your opponent" onClick={() => setChatOpen((v) => !v)}>
               <span className="ri">💬</span><span className="rl">Chat</span>
@@ -3088,6 +3131,7 @@ function GameInner({
           <button title="What do the symbols mean?" className={showSymbols ? 'selected' : ''} onClick={() => setShowSymbols((v) => !v)}>❔</button>
           <button title="FAQ view — tap a glowing card to read its rulings" className={faqView ? 'selected' : ''} onClick={toggleFaq}>📖</button>
           <button title="Subtype view — a subtype's cards glow, all else dims (tap to open, use the top bar to pick)" className={stView ? 'selected' : ''} onClick={toggleSubtype}>🏷</button>
+          <button title={sfxMuteOn ? 'Sound off' : 'Sound on'} className={sfxMuteOn ? 'selected' : ''} onClick={() => { const m = !sfxMuteOn; setSfxMuted(m); setSfxMuteOn(m); if (!m) sfx('cuckoo') }}>{sfxMuteOn ? '🔇' : '🔊'}</button>
           {session.sendChat && (
             <button ref={chatBtnRef} title="Chat — send a quick phrase" className={chatOpen ? 'selected' : ''} onClick={() => setChatOpen((v) => !v)}>💬</button>
           )}
