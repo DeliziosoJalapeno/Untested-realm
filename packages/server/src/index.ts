@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync, existsSync, statSync } from 'node:fs'
 import { join, extname, resolve } from 'node:path'
 import { WebSocketServer, WebSocket } from 'ws'
-import { users, sessions, decks as deckStore, collections as collectionStore, scenarios as scenarioStore, achievements as achievementStore, type UserRow } from './db'
+import { users, sessions, decks as deckStore, collections as collectionStore, scenarios as scenarioStore, replays as replayStore, achievements as achievementStore, type UserRow } from './db'
 import {
   hashPassword, verifyPassword, newSessionToken, sha256,
   validateUsername, validatePassword, rateAllow, rateReset, SESSION_TTL_MS,
@@ -1066,6 +1066,16 @@ function validScenarioState(s: any): boolean {
     && JSON.stringify(s).length <= 500_000
 }
 
+/** a replay payload must look like a replay record (see client replay.ts). */
+function validReplayData(r: any): boolean {
+  return !!r && typeof r === 'object'
+    && Array.isArray(r.actions)
+    && Array.isArray(r.decks) && r.decks.length === 2
+    && typeof r.seed === 'number'
+    && (r.firstPlayer === 0 || r.firstPlayer === 1)
+    && JSON.stringify(r).length <= 2_000_000
+}
+
 // seed the public built-in scenarios (the DOM/audit fixtures) once at startup;
 // stable ids mean a reseed updates in place rather than duplicating.
 try {
@@ -1127,6 +1137,23 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, path: string
         scenario: {
           id: row.id, name: row.name, isPublic: !!row.is_public,
           builtin: row.owner_id === null, mine: user != null && row.owner_id === user.id,
+          data: JSON.parse(row.data),
+        },
+      })
+    }
+
+    // --- replays: browsing/loading public replays needs NO sign-in ---
+    if (path === '/api/replays' && method === 'GET')
+      return sendJson(res, 200, { replays: replayStore.listVisible(user?.id ?? null) })
+    if (path.startsWith('/api/replays/') && method === 'GET') {
+      const id = decodeURIComponent(path.slice('/api/replays/'.length))
+      const row = id ? replayStore.get(id) : undefined
+      if (!row) return sendJson(res, 404, { error: 'No such replay.' })
+      if (!row.is_public && row.owner_id !== (user?.id ?? -1)) return sendJson(res, 403, { error: 'That replay is private.' })
+      return sendJson(res, 200, {
+        replay: {
+          id: row.id, name: row.name, isPublic: !!row.is_public,
+          mine: user != null && row.owner_id === user.id,
           data: JSON.parse(row.data),
         },
       })
@@ -1325,6 +1352,30 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, path: string
         const existing = scenarioStore.get(id)
         if (existing && existing.owner_id !== user.id) return sendJson(res, 403, { error: 'That scenario is not yours.' })
         scenarioStore.remove(user.id, id)
+        return sendJson(res, 200, { ok: true })
+      }
+      return sendJson(res, 405, { error: 'Method not allowed.' })
+    }
+
+    // --- replays: save / delete your own ---
+    if (path.startsWith('/api/replays/')) {
+      const id = decodeURIComponent(path.slice('/api/replays/'.length))
+      if (!id) return sendJson(res, 400, { error: 'Missing replay id.' })
+      if (method === 'PUT') {
+        const body = await readJsonBody(req, 4 * 1024 * 1024)
+        const name = String(body.name ?? '').trim()
+        if (!name) return sendJson(res, 400, { error: 'A replay needs a name.' })
+        if (name.length > 120) return sendJson(res, 400, { error: 'Replay name too long.' })
+        if (!validReplayData(body.data)) return sendJson(res, 400, { error: 'Invalid replay data.' })
+        const existing = replayStore.get(id)
+        if (existing && existing.owner_id !== user.id) return sendJson(res, 403, { error: 'That replay is not yours.' })
+        replayStore.upsert(user.id, id, name, body.isPublic === true, body.data)
+        return sendJson(res, 200, { ok: true })
+      }
+      if (method === 'DELETE') {
+        const existing = replayStore.get(id)
+        if (existing && existing.owner_id !== user.id) return sendJson(res, 403, { error: 'That replay is not yours.' })
+        replayStore.remove(user.id, id)
         return sendJson(res, 200, { ok: true })
       }
       return sendJson(res, 405, { error: 'Method not allowed.' })

@@ -1,6 +1,7 @@
 // Client-side account state + API. The session token lives in localStorage and
 // is sent as a Bearer header; decks sync to the server when signed in.
 import type { DeckList, GameState } from '@sorcery/shared'
+import type { ReplayRecord } from './replay'
 
 /** list-facing metadata for a saved scenario (no heavy state blob) */
 export interface ScenarioMeta { id: string; name: string; isPublic: boolean; builtin: boolean; mine: boolean; updatedAt: number }
@@ -95,6 +96,28 @@ export async function pushScenario(s: { id: string; name: string; isPublic: bool
 }
 export async function deleteScenario(id: string): Promise<void> {
   await api(`/api/scenarios/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+// ---- replays (DB-backed action logs; public browse needs no sign-in) ----
+export interface ReplayMeta { id: string; name: string; isPublic: boolean; mine: boolean; updatedAt: number }
+export interface ReplayFull extends Omit<ReplayMeta, 'updatedAt'> { data: ReplayRecord }
+export async function fetchReplays(): Promise<ReplayMeta[]> {
+  const r = await api('/api/replays')
+  return (r.replays ?? []) as ReplayMeta[]
+}
+export async function fetchReplay(id: string): Promise<ReplayFull> {
+  const r = await api(`/api/replays/${encodeURIComponent(id)}`)
+  return r.replay as ReplayFull
+}
+/** create/update one of your own replays (requires sign-in) */
+export async function pushReplay(s: { id: string; name: string; isPublic: boolean; data: ReplayRecord }): Promise<void> {
+  await api(`/api/replays/${encodeURIComponent(s.id)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ name: s.name, isPublic: s.isPublic, data: s.data }),
+  })
+}
+export async function deleteReplay(id: string): Promise<void> {
+  await api(`/api/replays/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
 // ---- public lobby (browse active public rooms + battles; no sign-in needed) ----

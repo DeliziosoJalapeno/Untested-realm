@@ -75,32 +75,3 @@ export function replayStateAt(r: ReplayRecord, n: number): GameState {
   for (let i = 0; i < end; i++) replayStep(r, state, i)
   return state
 }
-
-/** Trigger a browser download of the replay as a .json file. */
-export function downloadReplay(r: ReplayRecord): void {
-  const stamp = new Date(r.createdAt).toISOString().slice(0, 19).replace(/[:T]/g, '-')
-  const blob = new Blob([JSON.stringify(r)], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `untested-realm-replay-${stamp}.json`
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
-}
-
-/** Parse + validate a replay file's contents. Returns null if it isn't a usable replay. */
-export function parseReplay(json: string): ReplayRecord | null {
-  try {
-    const r = JSON.parse(json) as ReplayRecord
-    if (
-      r && typeof r === 'object' &&
-      Array.isArray(r.actions) && Array.isArray(r.decks) && r.decks.length === 2 &&
-      typeof r.seed === 'number' && (r.firstPlayer === 0 || r.firstPlayer === 1)
-    ) {
-      return r
-    }
-  } catch { /* not JSON */ }
-  return null
-}

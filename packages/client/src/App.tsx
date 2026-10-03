@@ -29,7 +29,8 @@ import ScenariosPage from './components/ScenariosPage'
 import SealedDeckbuild from './components/SealedDeckbuild'
 import Game from './components/Game'
 import ReplayViewer from './components/ReplayViewer'
-import { startReplay, downloadReplay, parseReplay, type ReplayRecord } from './replay'
+import ReplaysPage from './components/ReplaysPage'
+import { startReplay, type ReplayRecord } from './replay'
 import { loadCollection, ownedCopies, ripEriksCuriosa, syncCollectionOnSignIn, clearCollectionOnLogout, keepSealedPool } from './collection'
 import { markUnlocked, syncAchievementsOnSignIn, clearAchievementsOnLogout } from './achievements'
 import { AchievementToasts } from './components/Achievements'
@@ -49,8 +50,8 @@ export interface Session {
   requestEditor?: () => void
   /** online: send a canned chat phrase (relayed to both seats + spectators) */
   sendChat?: (msg: string) => void
-  /** local games (hotseat / vs-computer): download a replay of the game so far */
-  onSaveReplay?: () => void
+  /** local games (hotseat / vs-computer): save a replay of the game to your account */
+  onSaveReplay?: (name: string, isPublic: boolean) => Promise<void>
   /** online creator, before an opponent joins: change your deck and/or the room clock */
   updateRoom?: (deck: DeckList, clock: ClockConfig | null) => void
   /** online: has the opponent granted this seat editor access? (always true offline) */
@@ -216,7 +217,7 @@ function fmtRestart(ms: number): string {
 }
 
 export default function App() {
-  const [page, setPage] = useState<'home' | 'decks' | 'game' | 'collection' | 'scenarios' | 'replay'>('home')
+  const [page, setPage] = useState<'home' | 'decks' | 'game' | 'collection' | 'scenarios' | 'replays' | 'replay'>('home')
   const [replayData, setReplayData] = useState<ReplayRecord | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [username, setUsername] = useState<string | null>(auth.getUsername())
@@ -311,6 +312,7 @@ export default function App() {
   const localRef = useRef<GameState | null>(null)
   // live replay recording for the current LOCAL game (hotseat / vs-computer); null online or when off
   const recordingRef = useRef<ReplayRecord | null>(null)
+  const savedReplayIdRef = useRef<string | null>(null) // reused across re-saves so one game = one DB entry
 
   // ── "Thinking" bot: the strong search runs in a Web Worker so its (up to 30s) planning never blocks
   //    the UI. A persistent worker keeps the search's turn-plan cache warm across messages. ──
@@ -482,6 +484,7 @@ export default function App() {
   function beginHotseatState(state: GameState, noAchv = false) {
     localHistory.current = []
     recordingRef.current = null // scenarios (which reuse this) don't record; startHotseat sets it after
+    savedReplayIdRef.current = null
     localClockTick.current = Date.now()
     const sess: Session = {
       kind: 'hotseat',
@@ -548,37 +551,20 @@ export default function App() {
     if (localHistory.current.length > 80) localHistory.current.shift()
   }
 
-  /** download a replay of the current local game (stamped with its result). */
-  function saveReplay() {
+  /** save a replay of the current local game to your account (public or private). */
+  async function saveReplay(name: string, isPublic: boolean): Promise<void> {
     const r = recordingRef.current
-    if (!r) { setError('No replay available for this game.'); return }
+    if (!r) throw new Error('No replay available for this game.')
+    if (!auth.isSignedIn()) throw new Error('Sign in (on the home screen) to save replays.')
     r.winner = localRef.current?.winner ?? null
-    downloadReplay(r)
-  }
-
-  /** pick a .json replay file and open it in the replay viewer. */
-  function loadReplayFile() {
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.accept = 'application/json,.json'
-    input.onchange = () => {
-      const file = input.files?.[0]
-      if (!file) return
-      const reader = new FileReader()
-      reader.onload = () => {
-        const r = parseReplay(String(reader.result ?? ''))
-        if (!r) { setError('That file is not a valid replay.'); return }
-        setReplayData(r)
-        setPage('replay')
-      }
-      reader.readAsText(file)
-    }
-    input.click()
+    const id = savedReplayIdRef.current ?? (savedReplayIdRef.current = newDeckId())
+    await auth.pushReplay({ id, name, isPublic, data: r })
   }
 
   function startVsBot(myDeck: DeckList, botDeck: DeckList, clock: ClockConfig | null = null, stepBot = false, difficulty: 'fast' | 'thinking' = 'fast', secondSeer = false) {
     myDeckFromCollection.current = !!myDeck.fromCollection
     localHistory.current = []
+    savedReplayIdRef.current = null
     disposeBotWorker() // fresh worker (and plan cache) for the new game
     const seed = Math.floor(Math.random() * 0xffffffff)
     const first: PlayerId = Math.random() < 0.5 ? 0 : 1
@@ -1012,15 +998,22 @@ export default function App() {
           onDecks={() => setPage('decks')}
           onCollection={() => setPage('collection')}
           onScenarios={() => setPage('scenarios')}
-          onWatchReplay={loadReplayFile}
+          onWatchReplay={() => setPage('replays')}
           initialRoomCode={pendingJoin}
+        />
+      )}
+      {page === 'replays' && (
+        <ReplaysPage
+          username={username}
+          onBack={() => setPage('home')}
+          onWatch={(r) => { setReplayData(r); setPage('replay') }}
         />
       )}
       {page === 'replay' && replayData && (
         <ReplayViewer
           replay={replayData}
           mobile={mm.mobile}
-          onLeave={() => { setReplayData(null); setPage('home') }}
+          onLeave={() => { setReplayData(null); setPage('replays') }}
         />
       )}
       {page === 'decks' && <DeckBuilder onBack={() => setPage('home')} />}

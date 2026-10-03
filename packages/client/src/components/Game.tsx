@@ -359,6 +359,12 @@ function GameInner({
   const [handOpen, setHandOpen] = useState(false) // mobile: the hand overlay is toggled over the board
   const [chatOpen, setChatOpen] = useState(false) // the canned-phrase chat picker popover (online only)
   const chatBtnRef = useRef<HTMLButtonElement | null>(null) // anchors the portalled picker to the chat button
+  // game-over "save replay" form
+  const [replaySaveOpen, setReplaySaveOpen] = useState(false)
+  const [replayName, setReplayName] = useState('')
+  const [replaySaving, setReplaySaving] = useState(false)
+  const [replayPublic, setReplayPublic] = useState(false)
+  const [replayMsg, setReplayMsg] = useState<string | null>(null)
   const [sfxMuteOn, setSfxMuteOn] = useState(sfxMuted()) // 🔊/🔇 sound-effects toggle (persisted)
   // sound-cue tracking: last-seen turn / play-counter / tapped-count, so each change fires once
   const sfxTurn = useRef(view.turn)
@@ -3184,8 +3190,34 @@ function GameInner({
             />
           )}
           {session.onSaveReplay && (
-            <button onClick={() => session.onSaveReplay!()}>⬇ Save replay</button>
+            replaySaveOpen ? (
+              <div className="replay-save">
+                <input
+                  value={replayName}
+                  onChange={(e) => setReplayName(e.target.value)}
+                  placeholder="Replay name"
+                  autoFocus
+                  maxLength={120}
+                />
+                <label title="Public replays are watchable by everyone; private ones only by you.">
+                  <input type="checkbox" checked={replayPublic} onChange={(e) => setReplayPublic(e.target.checked)} /> public
+                </label>
+                <button
+                  disabled={!replayName.trim() || replaySaving}
+                  onClick={async () => {
+                    setReplaySaving(true); setReplayMsg(null)
+                    try { await session.onSaveReplay!(replayName.trim(), replayPublic); setReplayMsg('Saved ✓'); setReplaySaveOpen(false) }
+                    catch (e: any) { setReplayMsg(e?.message ?? 'Could not save.') }
+                    finally { setReplaySaving(false) }
+                  }}
+                >{replaySaving ? 'Saving…' : 'Save'}</button>
+                <button onClick={() => setReplaySaveOpen(false)}>Cancel</button>
+              </div>
+            ) : (
+              <button onClick={() => { setReplaySaveOpen(true); setReplayMsg(null) }}>💾 Save replay</button>
+            )
           )}
+          {replayMsg && <p className="replay-savemsg">{replayMsg}</p>}
           <button onClick={onLeave}>Back to menu</button>
         </div>
       )}

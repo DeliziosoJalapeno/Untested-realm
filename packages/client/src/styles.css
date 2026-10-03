@@ -445,6 +445,9 @@ h1, h2, h3 { font-weight: 600; }
 .replay-scrub { width: clamp(140px, 28vw, 340px); accent-color: #d8b45c; cursor: pointer; }
 .replay-count { font-size: 13px; color: #c9cee0; min-width: 76px; text-align: center; }
 .replay-speeds { display: flex; gap: 4px; }
+.replay-save { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.replay-save input[type="text"], .replay-save input:not([type]) { padding: 6px 8px; border-radius: 6px; border: 1px solid #39405a; background: #12141d; color: #e8ecf7; }
+.replay-savemsg { font-size: 13px; color: #c9cee0; margin: 2px 0 0; }
 
 /* GUI symbol legend modal (❔ Symbols / Q). The compound `.modal.symbols-modal` selector wins the
    z-index cascade over the base `.modal` (z:50) so the legend, opened deliberately, sits ABOVE an

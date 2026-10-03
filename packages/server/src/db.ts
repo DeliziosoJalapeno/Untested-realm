@@ -64,6 +64,18 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_scenarios_owner ON scenarios(owner_id);
   CREATE INDEX IF NOT EXISTS idx_scenarios_public ON scenarios(is_public);
+  -- saved game replays: a compact { decks, seed, firstPlayer, actions[] } record (see client replay.ts).
+  -- is_public rows are visible to everyone (like scenarios); private rows only to their owner.
+  CREATE TABLE IF NOT EXISTS replays (
+    id         TEXT PRIMARY KEY,
+    owner_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    is_public  INTEGER NOT NULL DEFAULT 0,
+    data       TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_replays_owner ON replays(owner_id);
+  CREATE INDEX IF NOT EXISTS idx_replays_public ON replays(is_public);
 `)
 
 export interface UserRow { id: number; username: string; pass_hash: string; pass_salt: string; created_at: number }
@@ -102,6 +114,15 @@ const q = {
   scenSeedBuiltin: db.prepare(`
     INSERT INTO scenarios (id, owner_id, name, is_public, data, updated_at) VALUES (?, NULL, ?, 1, ?, ?)
     ON CONFLICT(id) DO UPDATE SET name = excluded.name, data = excluded.data, updated_at = excluded.updated_at`),
+  // replays: list all public + the caller's own (pass -1 for a signed-out caller)
+  repListVisible: db.prepare(`
+    SELECT id, owner_id, name, is_public, updated_at FROM replays
+    WHERE is_public = 1 OR owner_id = ? ORDER BY updated_at DESC`),
+  repById: db.prepare('SELECT * FROM replays WHERE id = ?'),
+  repUpsert: db.prepare(`
+    INSERT INTO replays (id, owner_id, name, is_public, data, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET name = excluded.name, is_public = excluded.is_public, data = excluded.data, updated_at = excluded.updated_at`),
+  repDelete: db.prepare('DELETE FROM replays WHERE id = ? AND owner_id = ?'),
 }
 
 export interface ScenarioRow { id: string; owner_id: number | null; name: string; is_public: number; data: string; updated_at: number }
@@ -177,4 +198,23 @@ export const scenarios = {
   /** upsert a public, owner-less built-in (seeded from the audit fixtures). */
   seedBuiltin: (id: string, name: string, data: unknown) =>
     q.scenSeedBuiltin.run(id, name, JSON.stringify(data), Date.now()),
+}
+
+export interface ReplayRow { id: string; owner_id: number; name: string; is_public: number; data: string; updated_at: number }
+export interface ReplayMeta { id: string; name: string; isPublic: boolean; mine: boolean; updatedAt: number }
+
+export const replays = {
+  /** metadata for every replay the caller may see (all public + their own). */
+  listVisible: (userId: number | null): ReplayMeta[] =>
+    (q.repListVisible.all(userId ?? -1) as unknown as ReplayRow[]).map((r) => ({
+      id: r.id,
+      name: r.name,
+      isPublic: !!r.is_public,
+      mine: userId != null && r.owner_id === userId,
+      updatedAt: r.updated_at,
+    })),
+  get: (id: string): ReplayRow | undefined => q.repById.get(id) as unknown as ReplayRow | undefined,
+  upsert: (ownerId: number, id: string, name: string, isPublic: boolean, data: unknown) =>
+    q.repUpsert.run(id, ownerId, name, isPublic ? 1 : 0, JSON.stringify(data), Date.now()),
+  remove: (ownerId: number, id: string) => q.repDelete.run(id, ownerId),
 }
