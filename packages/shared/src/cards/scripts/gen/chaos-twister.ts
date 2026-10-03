@@ -1,6 +1,6 @@
 import { registerScript } from '../registry'
 import { pushLog, randomDeterminer, isLucky } from '../../../engine/effects'
-import { squareLabel } from '../../../engine/grid'
+import { squareLabel, GRID_W, GRID_H } from '../../../engine/grid'
 import type { GameState } from '../../../engine/types'
 import { coneSquares, rollLanding, landingLabel, applyLanding } from './special-helpers'
 
@@ -22,7 +22,11 @@ registerScript('Chaos Twister', {
     // Kythera Mechanism / Black Cat: a player determines the outcome instead
     const det = randomDeterminer(state, ctx.controller)
     if (det !== null) {
-      const options = [...Object.values(state.sites).map((s) => `lands at ${squareLabel(s.x, s.y)}`), 'flies off the board']
+      // the crash can land on ANY square — a site (damage) or a void square (banished unless Voidwalk) —
+      // or off the board, so the determiner may pick any of them (matches rollLanding's full outcome set).
+      const squares: string[] = []
+      for (let x = 0; x < GRID_W; x++) for (let y = 0; y < GRID_H; y++) squares.push(`lands at ${squareLabel(x, y)}`)
+      const options = [...squares, 'flies off the board']
       ctx.ask({ kind: 'chooseOption', title: 'Fate bends: determine where the minion lands.', data: { options }, player: det }, 'land', { minionId: minion.id })
       return
     }

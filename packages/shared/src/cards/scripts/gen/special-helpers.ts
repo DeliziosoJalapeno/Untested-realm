@@ -28,22 +28,28 @@ export function coneSquares(origin: { x: number; y: number }, dir: BlowDirection
   return out
 }
 
-/** one 50/20/30 roll → landing square or null (off the board) */
+/** one 50/20/30 roll → landing square or null (off the board).
+ *  The minion crashes down on ANY square — a site (it deals damage there) OR a void square (a siteless
+ *  square: FAQ says it deals no damage and is banished unless it has Voidwalk) — or it sails clean off
+ *  the board (null). Was sites-only, so a minion could never be blown into the void. */
 export function rollLanding(state: GameState, cone: { x: number; y: number }[]): { x: number; y: number } | null {
-  const inConeSites = cone.map((s) => siteAt(state, s.x, s.y)).filter(Boolean)
-  const outConeSites = Object.values(state.sites).filter((s) => !cone.some((c) => c.x === s.x && c.y === s.y))
+  const inCone = cone // every downwind square, whether or not it holds a site
+  const outCone: { x: number; y: number }[] = []
+  for (let x = 0; x < GRID_W; x++) {
+    for (let y = 0; y < GRID_H; y++) {
+      if (!cone.some((c) => c.x === x && c.y === y)) outCone.push({ x, y })
+    }
+  }
   const rnd = mulberry32(state.seed)
   const roll = rnd()
   let landing: { x: number; y: number } | null = null
-  if (roll < 0.5 && inConeSites.length > 0) {
-    const pick = inConeSites[Math.floor(rnd() * inConeSites.length)]!
-    landing = { x: pick.x, y: pick.y }
-  } else if (roll < 0.7 && outConeSites.length > 0) {
-    const pick = outConeSites[Math.floor(rnd() * outConeSites.length)]
-    landing = { x: pick.x, y: pick.y }
+  if (roll < 0.5 && inCone.length > 0) {
+    landing = inCone[Math.floor(rnd() * inCone.length)]!
+  } else if (roll < 0.7 && outCone.length > 0) {
+    landing = outCone[Math.floor(rnd() * outCone.length)]!
   }
   state.seed = Math.floor(rnd() * 0xffffffff)
-  return landing
+  return landing ? { x: landing.x, y: landing.y } : null
 }
 
 export function landingLabel(landing: { x: number; y: number } | null): string {
@@ -57,6 +63,17 @@ export function applyLanding(ctx: EffectAPI, minionId: string, landing: { x: num
   if (!landing) {
     pushLog(state, null, `${minion.name} tumbles off the realm entirely and is banished!`)
     ctx.banish(minion.id)
+    return
+  }
+  // Lands in the VOID — a square with no site. FAQ: "It deals no damage (even to itself). Since it's
+  // now in the void, it is banished (unless it has Voidwalk)." A genuine teleport onto a siteless square
+  // drops the unit into the void region; checkStateBased then banishes it (or Voidwalk lets it drift there).
+  if (!siteAt(state, landing.x, landing.y)) {
+    ctx.teleport(minion.id, landing.x, landing.y, 'surface')
+    const survived = !!state.units[minion.id]
+    pushLog(state, null, survived
+      ? `${minion.name} is flung into the void at ${squareLabel(landing.x, landing.y)} and drifts there.`
+      : `${minion.name} is flung into the void at ${squareLabel(landing.x, landing.y)} — with no ground beneath it, it is banished!`)
     return
   }
   const power = effAttack(state, minion)
