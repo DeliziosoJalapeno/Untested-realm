@@ -2022,9 +2022,9 @@ button.autobattle:hover:not(:disabled) { background: #4a5cc0; }
 .game.scaled .modal.mulligan h3 { margin: 4px 0 26px; }
 .game.scaled .modal.mulligan .mullhand { gap: 26px; margin: 26px 0 30px; }
 .game.scaled .modal.mulligan .mullrow { gap: 62px; }
-.game.scaled .modal.mulligan .handcard { width: 314px; }
+.game.scaled .modal.mulligan .handcard { width: 298px; }
 /* a crowded opening hand (>6 cards) uses smaller cards so both rows still fit comfortably */
-.game.scaled .modal.mulligan.crowded .handcard { width: 250px; }
+.game.scaled .modal.mulligan.crowded .handcard { width: 238px; }
 .mull-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 /* inline "keep this hand?" confirmation (mulligan panel only; mulligan itself is immediate) */
 .mull-confirm { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
