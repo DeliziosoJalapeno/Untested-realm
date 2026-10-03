@@ -56,7 +56,8 @@ export default function ReplaysPage({
   }
 
   const mine = (list ?? []).filter((s) => s.mine)
-  const community = (list ?? []).filter((s) => !s.mine)
+  // Community lists ALL public replays — including your own, so you can confirm they're shared
+  const community = (list ?? []).filter((s) => s.isPublic)
 
   const row = (s: ReplayMeta) => (
     <div key={s.id} className="scenario-row">
