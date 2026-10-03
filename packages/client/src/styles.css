@@ -445,7 +445,10 @@ h1, h2, h3 { font-weight: 600; }
 .replay-scrub { width: clamp(140px, 28vw, 340px); accent-color: #d8b45c; cursor: pointer; }
 .replay-count { font-size: 13px; color: #c9cee0; min-width: 76px; text-align: center; }
 .replay-speeds { display: flex; gap: 4px; }
-.replay-save { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; }
+/* the gameover overlay is pointer-events:none (board stays reachable) and only re-enables buttons —
+   so the save form's text input + checkbox need pointer-events re-enabled explicitly. */
+.replay-save { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; pointer-events: auto; }
+.replay-save input, .replay-save label { pointer-events: auto; }
 .replay-save input[type="text"], .replay-save input:not([type]) { padding: 6px 8px; border-radius: 6px; border: 1px solid #39405a; background: #12141d; color: #e8ecf7; }
 .replay-savemsg { font-size: 13px; color: #c9cee0; margin: 2px 0 0; }
 
