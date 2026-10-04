@@ -37,6 +37,14 @@ describe('magic protection blocks magic projectiles (Firebolts) but not unit sho
     expect(fm.damage, 'non-magic damage is unaffected by magic protection').toBe(1)
   })
 
+  it('Magic Missiles (default filter) also cannot hit a Failed Mutation', () => {
+    const g = laneGame()
+    const fm = summonCard(g, 1, 'Failed Mutation', 2, 1); fm.enteredTurn = -1
+    volley(g, 'Magic Missiles', 3)
+    expect(fm.damage, 'magic-protected minion takes no damage from Magic Missiles').toBe(0)
+    expect(g.prompts.length).toBe(0)
+  })
+
   it('Firebolts still hits an unprotected enemy', () => {
     const g = laneGame()
     const enemy = summonCard(g, 1, 'Escyllion Cyclops', 2, 1); enemy.enteredTurn = -1
