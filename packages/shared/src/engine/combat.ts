@@ -1191,16 +1191,16 @@ export function shootProjectile(state: GameState, player: PlayerId, unitId: stri
 
 export type ProjFilterKind = 'canHit' | 'notStealth'
 
-/** A projectile counts as MAGIC when its source card is a Magic (Firebolts, Fireball, Ice Lance…). A
- *  unit/artifact/ability shot (Ranged strikes, Sparkmage, Balor's gaze, Meat Hook…) is NOT magic. Used
- *  to honour "can't be targeted or damaged by magic" (Failed Mutation) — magic projectiles can't pick a
- *  magic-protected unit as a target, so they fly right past it. */
+/** A projectile counts as MAGIC when its source card is a Magic (Firebolts, Magic Missiles, Fireball,
+ *  Ice Lance…). A unit/artifact/ability shot (Ranged strikes, Sparkmage, Balor's gaze, Meat Hook…) is
+ *  NOT magic. A magic-protected minion (Failed Mutation) BLOCKS a magic projectile at its square —
+ *  absorbing the shot, taking no damage, and stopping anything beyond from being hit (magicBlockedAt) —
+ *  while remaining an ordinary target for non-magic shots. */
 function projSrcIsMagic(srcName?: string): boolean {
   return !!srcName && findCard(srcName)?.type === 'Magic'
 }
 
-function projHittable(kind: ProjFilterKind, state: GameState, u: UnitState, srcMagic = false): boolean {
-  if (srcMagic && isMagicProtected(state, u)) return false
+function projHittable(kind: ProjFilterKind, state: GameState, u: UnitState): boolean {
   return kind === 'notStealth' ? !u.stealth : projectileCanHit(state, u)
 }
 
@@ -1258,12 +1258,20 @@ function projCandidates(
   excludeId?: string,
   avatarImmune?: boolean,
   excludeIds?: string[],
-  srcMagic = false,
 ): string[] {
-  let here = unitsAt(state, sq.x, sq.y, region).filter((u) => u.id !== excludeId && !excludeIds?.includes(u.id) && projHittable(filter, state, u, srcMagic))
+  let here = unitsAt(state, sq.x, sq.y, region).filter((u) => u.id !== excludeId && !excludeIds?.includes(u.id) && projHittable(filter, state, u))
   if (sq.origin) here = here.filter((u) => u.controller !== player)
   if (avatarImmune) here = here.filter((u) => !u.isAvatar)
   return here.map((u) => u.id)
+}
+
+/** Does a magic-protected minion (Failed Mutation) occupy this square and BLOCK a magic projectile?
+ *  It absorbs the shot — no damage, and nothing at or beyond this square is hit. Mirrors projCandidates'
+ *  origin rule (allies at the caster's own square are ignored; the caster never blocks its own shot). */
+function magicBlockedAt(state: GameState, sq: { x: number; y: number; origin: boolean }, region: Region, player: PlayerId, excludeId?: string): boolean {
+  let here = unitsAt(state, sq.x, sq.y, region).filter((u) => u.id !== excludeId && isMagicProtected(state, u))
+  if (sq.origin) here = here.filter((u) => u.controller !== player)
+  return here.length > 0
 }
 
 /** serializable — rides the choice prompt so the volley loop resumes after it */
@@ -1293,7 +1301,13 @@ export function fireVolleyProjectiles(state: GameState, spec: VolleyProjectileSp
   const filter = spec.filter ?? 'canHit'
   const srcMagic = projSrcIsMagic(spec.srcName)
   for (const sq of projectilePath(state, spec.region, spec.ox, spec.oy, spec.dir, range, spec.player)) {
-    const here = projCandidates(state, sq, spec.region, spec.player, filter, spec.excludeId, undefined, undefined, srcMagic)
+    // a magic-protected body (Failed Mutation) absorbs a magic projectile here — no damage, shot spent,
+    // nothing beyond is hit; this projectile ends and the next volley (if any) fires.
+    if (srcMagic && magicBlockedAt(state, sq, spec.region, spec.player, spec.excludeId)) {
+      pushLog(state, spec.player, `${spec.srcName} fizzles against a magic-immune minion.`)
+      return fireVolleyProjectiles(state, { ...spec, volleys: spec.volleys - 1 })
+    }
+    const here = projCandidates(state, sq, spec.region, spec.player, filter, spec.excludeId)
     if (here.length === 0) continue
     if (here.length === 1) return applyVolleyHit(state, spec, here[0])
     // 2+ share the impact square → the shooter chooses which is hit (rulebook)
@@ -1380,7 +1394,11 @@ export function firePerSquareProjectile(state: GameState, spec: PerSquareProject
     : raySquares(state, spec.region, spec.ox, spec.oy, spec.dir, spec.damages.length, spec.player).map((s) => ({ x: s.x, y: s.y, origin: false }))
   const srcMagic = projSrcIsMagic(spec.srcName)
   for (let i = spec.idx ?? 0; i < path.length && i < spec.damages.length; i++) {
-    const here = projCandidates(state, path[i], spec.region, spec.player, filter, spec.excludeId, undefined, undefined, srcMagic)
+    if (srcMagic && magicBlockedAt(state, path[i], spec.region, spec.player, spec.excludeId)) {
+      pushLog(state, spec.player, `${spec.srcName} fizzles against a magic-immune minion.`)
+      return // the piercing shot is stopped dead by the blocker
+    }
+    const here = projCandidates(state, path[i], spec.region, spec.player, filter, spec.excludeId)
     if (here.length === 0) continue
     if (here.length === 1) {
       applyPerSquareHit(state, spec, i, here[0])
@@ -1468,12 +1486,11 @@ function gazeLocations(state: GameState, spec: EvilEyeGazeSpec): { x: number; y:
 
 export function fireEvilEyeGaze(state: GameState, spec: EvilEyeGazeSpec): void {
   const filter = spec.filter ?? 'notStealth'
-  const srcMagic = projSrcIsMagic(spec.srcName)
   const locations = spec.locations ?? gazeLocations(state, spec)
   for (let i = spec.idx ?? 0; i < locations.length; i++) {
     const loc = locations[i]
     const here = unitsAt(state, loc.x, loc.y, loc.region)
-      .filter((u) => u.id !== spec.excludeId && projHittable(filter, state, u, srcMagic))
+      .filter((u) => u.id !== spec.excludeId && projHittable(filter, state, u))
       .map((u) => u.id)
     if (here.length === 0) continue
     if (here.length === 1) { applyGazeHit(state, spec, loc, here[0]); continue }
@@ -1493,6 +1510,7 @@ export function fireEvilEyeGaze(state: GameState, spec: EvilEyeGazeSpec): void {
 function applyGazeHit(state: GameState, spec: EvilEyeGazeSpec, loc: { x: number; y: number; region: Region }, targetId: string): void {
   const u = state.units[targetId]
   if (!u) return
+  if (projSrcIsMagic(spec.srcName) && isMagicProtected(state, u)) return // a magic gaze can't damage a protected unit
   recordAreaReveal(state, [{ x: loc.x, y: loc.y, dmg: spec.damage }])
   dealDamageToUnit(state, u, spec.damage, spec.player, {
     lethal: projectileShotIsLethal(state, spec.excludeId, spec.srcName, u),
@@ -1536,7 +1554,11 @@ export function firePiercingProjectile(state: GameState, spec: PiercingProjectil
   const srcMagic = projSrcIsMagic(spec.srcName)
   const path = projectilePath(state, spec.region, spec.ox, spec.oy, spec.dir, spec.maxRange ?? Infinity, spec.player)
   for (let i = spec.pathIdx ?? 0; i < path.length; i++) {
-    const here = projCandidates(state, path[i], spec.region, spec.player, filter, spec.excludeId, spec.avatarImmune, undefined, srcMagic)
+    if (srcMagic && magicBlockedAt(state, path[i], spec.region, spec.player, spec.excludeId)) {
+      pushLog(state, spec.player, `${spec.srcName} fizzles against a magic-immune minion.`)
+      return // the piercing ray is stopped dead by the blocker
+    }
+    const here = projCandidates(state, path[i], spec.region, spec.player, filter, spec.excludeId, spec.avatarImmune)
     if (here.length === 0) continue
     if (here.length === 1) { applyPiercingHit(state, spec, here[0]); continue }
     // 2+ share this location → the shooter chooses which one the ray burns here
