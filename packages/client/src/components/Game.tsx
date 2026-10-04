@@ -1101,6 +1101,34 @@ function GameInner({
   // hovering any card ends the takeover — after you move away the panel clears
   // rather than snapping back to the opponent's card.
   useEffect(() => { if (hover) setOppPlay(null) }, [hover])
+
+  // ── grid-lock: a hard post-SPAWN clamp so no in-game popup appears partly outside the board grid.
+  // Each popup is corrected ONCE, the first laid-out frame after it mounts (then left alone, so the
+  // existing drag/movement locks stay in charge). Only popups SMALLER than the grid are moved; bigger
+  // overlays (game-over, the VS splash) and edge-docked banners are untouched. The nudge uses the CSS
+  // `translate` property so it COMPOSES with each popup's own transform; screen delta ÷ canvas scale
+  // (same maths as the drag code) keeps it exact under the uniform board scaling.
+  const gridLocked = useRef<WeakSet<HTMLElement>>(new WeakSet())
+  const gridLockPopups = useCallback(() => {
+    const root = gameRef.current
+    const grid = root?.querySelector('.boardviewport') as HTMLElement | null
+    if (!root || !grid) return
+    const g = grid.getBoundingClientRect()
+    if (!g.width) return
+    const s = dragScale.current || 1
+    for (const el of root.querySelectorAll<HTMLElement>('.modal, .reveal-pop, .battle-pop, .oppplay-stack')) {
+      if (gridLocked.current.has(el)) continue // already spawn-locked — don't fight dragging
+      const r = el.getBoundingClientRect()
+      if (!r.width || !r.height) continue // not laid out yet — try again next frame
+      gridLocked.current.add(el)
+      let dx = 0, dy = 0
+      if (r.width <= g.width) { if (r.left < g.left) dx = g.left - r.left; else if (r.right > g.right) dx = g.right - r.right }
+      if (r.height <= g.height) { if (r.top < g.top) dy = g.top - r.top; else if (r.bottom > g.bottom) dy = g.bottom - r.bottom }
+      if (dx || dy) el.style.setProperty('translate', `${dx / s}px ${dy / s}px`)
+    }
+  }, [])
+  useLayoutEffect(() => { gridLockPopups() })
+
   const isSpectator = session.kind === 'online' && session.seat === null
   const st = view as any // engine helpers accept the view (realm data is complete)
   // chess clock display: seat currently on the clock + per-seat remaining ms.
