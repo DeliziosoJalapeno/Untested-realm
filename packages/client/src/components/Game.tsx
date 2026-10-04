@@ -67,7 +67,9 @@ import CardImg, { CardHover, CardBack } from './CardImg'
 import { QuakeArrange } from './QuakeArrange'
 import { hasFaq, faqFor } from '../faq'
 import { CHAT_PHRASES } from '../chatPhrases'
-import { sfx, sfxMuted, setSfxMuted, preloadSfx, type SfxKey } from '../sfx'
+import { sfx, preloadSfx, type SfxKey } from '../sfx'
+import { getSetting } from '../settings'
+import SettingsModal from './SettingsModal'
 import {
   presentViews,
   viewLabel,
@@ -365,7 +367,7 @@ function GameInner({
   const [replaySaving, setReplaySaving] = useState(false)
   const [replayPublic, setReplayPublic] = useState(false)
   const [replayMsg, setReplayMsg] = useState<string | null>(null)
-  const [sfxMuteOn, setSfxMuteOn] = useState(sfxMuted()) // 🔊/🔇 sound-effects toggle (persisted)
+  const [showSettings, setShowSettings] = useState(false) // ⚙ settings dialog (sound, popups…)
   // sound-cue tracking: last-seen turn / play-counter / tapped-count, so each change fires once
   const sfxTurn = useRef(view.turn)
   const sfxPlayN = useRef(view.lastPlay?.n ?? 0)
@@ -1088,11 +1090,11 @@ function GameInner({
       lastPlayN.current = lp.n
       if (lp.player !== me) {
         setOppPlay(lp.name); showHover(null)
-        // Every card the opponent PLAYS gets the big pop-up (minions, sites,
-        // artifacts, auras AND magics — magics especially). `lastPlay` is set only
-        // by casting/playing a card, never by attacks / moves / activated abilities,
-        // so those are naturally excluded.
-        setBigPops((prev) => [...prev, { name: lp.name, n: lp.n }].slice(-4)) // keep up to 4 stacked
+        // Optional (off by default; toggle in ⚙ Settings): the big center pop-up for every card the
+        // opponent PLAYS. `lastPlay` is set only by casting/playing a card, never by attacks / moves /
+        // activated abilities, so those are naturally excluded. The card still slides into the detail
+        // panel (setOppPlay above) regardless of this setting.
+        if (getSetting('opponentPlayPopup')) setBigPops((prev) => [...prev, { name: lp.name, n: lp.n }].slice(-4)) // keep up to 4 stacked
       }
     }
   }, [lp, me])
@@ -3085,8 +3087,8 @@ function GameInner({
           <button className={`railbtn ${stView ? 'selected' : ''}`} title="Subtype view — pick a subtype (Spellcasters, Evil, Beasts, Deserts…); its cards glow, all else dims. Z to toggle, ←/→ to cycle" onClick={toggleSubtype}>
             <span className="ri">🏷</span><span className="rl">Subtypes</span>
           </button>
-          <button className="railbtn" title={sfxMuteOn ? 'Sound off — click to enable sound effects' : 'Sound on — click to mute'} onClick={() => { const m = !sfxMuteOn; setSfxMuted(m); setSfxMuteOn(m); if (!m) sfx('cuckoo') }}>
-            <span className="ri">{sfxMuteOn ? '🔇' : '🔊'}</span><span className="rl">Sound</span>
+          <button className={`railbtn ${showSettings ? 'selected' : ''}`} title="Settings — sound, popups…" onClick={() => setShowSettings((v) => !v)}>
+            <span className="ri">⚙</span><span className="rl">Settings</span>
           </button>
           {session.sendChat && (
             <button ref={chatBtnRef} className={`railbtn ${chatOpen ? 'selected' : ''}`} title="Chat — send a quick phrase to your opponent" onClick={() => setChatOpen((v) => !v)}>
@@ -3137,7 +3139,7 @@ function GameInner({
           <button title="What do the symbols mean?" className={showSymbols ? 'selected' : ''} onClick={() => setShowSymbols((v) => !v)}>❔</button>
           <button title="FAQ view — tap a glowing card to read its rulings" className={faqView ? 'selected' : ''} onClick={toggleFaq}>📖</button>
           <button title="Subtype view — a subtype's cards glow, all else dims (tap to open, use the top bar to pick)" className={stView ? 'selected' : ''} onClick={toggleSubtype}>🏷</button>
-          <button title={sfxMuteOn ? 'Sound off' : 'Sound on'} className={sfxMuteOn ? 'selected' : ''} onClick={() => { const m = !sfxMuteOn; setSfxMuted(m); setSfxMuteOn(m); if (!m) sfx('cuckoo') }}>{sfxMuteOn ? '🔇' : '🔊'}</button>
+          <button title="Settings" className={showSettings ? 'selected' : ''} onClick={() => setShowSettings((v) => !v)}>⚙</button>
           {session.sendChat && (
             <button ref={chatBtnRef} title="Chat — send a quick phrase" className={chatOpen ? 'selected' : ''} onClick={() => setChatOpen((v) => !v)}>💬</button>
           )}
@@ -3221,6 +3223,8 @@ function GameInner({
           <button onClick={onLeave}>Back to menu</button>
         </div>
       )}
+
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
 
       {/* concede confirmation — it immediately hands the win to the opponent */}
       {confirmConcede && (

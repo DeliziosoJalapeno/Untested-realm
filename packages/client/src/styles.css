@@ -452,6 +452,14 @@ h1, h2, h3 { font-weight: 600; }
 .replay-save input[type="text"], .replay-save input:not([type]) { padding: 6px 8px; border-radius: 6px; border: 1px solid #39405a; background: #12141d; color: #e8ecf7; }
 .replay-savemsg { font-size: 13px; color: #c9cee0; margin: 2px 0 0; }
 
+/* ---------- settings dialog ---------- */
+.settings-backdrop { position: fixed; inset: 0; z-index: 110; background: rgba(0,0,0,0.45); }
+.modal.settings-modal { z-index: 120; min-width: 300px; }
+.modal.settings-modal h3 { margin: 0 0 12px; }
+.settings-row { display: flex; align-items: center; gap: 10px; margin: 12px 0; font-size: 15px; cursor: pointer; }
+.settings-row input[type="checkbox"] { width: 18px; height: 18px; flex: 0 0 auto; cursor: pointer; }
+.settings-actions { margin-top: 16px; display: flex; justify-content: flex-end; }
+
 /* GUI symbol legend modal (❔ Symbols / Q). The compound `.modal.symbols-modal` selector wins the
    z-index cascade over the base `.modal` (z:50) so the legend, opened deliberately, sits ABOVE an
    active prompt on both desktop and the mobile phone-frame. */

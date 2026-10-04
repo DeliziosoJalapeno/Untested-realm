@@ -11,6 +11,7 @@ import { CHANGELOG } from '../changelog'
 import { ACHIEVEMENTS } from '@sorcery/shared'
 import { unlockedCount } from '../achievements'
 import { AchievementsModal } from './Achievements'
+import SettingsModal from './SettingsModal'
 
 // Decorative card-art showcase flanking the home page on desktop (hidden on mobile). Four columns —
 // two per side — of the TRICKIEST non-site cards: the ones carrying the most engine tests (a proxy for
@@ -86,6 +87,7 @@ export default function Home({
   const [authBusy, setAuthBusy] = useState(false)
   const [showChangelog, setShowChangelog] = useState(false)
   const [showAchv, setShowAchv] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   // gate the Achievements entry: it stays hidden until you've earned at least one
   const achvGot = unlockedCount()
   const achvTotal = ACHIEVEMENTS.length
@@ -205,6 +207,7 @@ export default function Home({
       </p>
 
       {showAchv && <AchievementsModal onClose={() => setShowAchv(false)} />}
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
 
       {showRoomOpts && (
         <div className="changelog-overlay" data-overlay="roomopts" onClick={() => setShowRoomOpts(false)}>
@@ -361,6 +364,7 @@ export default function Home({
         <button onClick={onCollection}>🎴 Collection & packs</button>
         <button onClick={onScenarios}>🎬 Scenarios</button>
         <button onClick={onWatchReplay}>▶ Watch a replay</button>
+        <button onClick={() => setShowSettings(true)}>⚙ Settings</button>
         {achvGot > 0 && (
           <button onClick={() => setShowAchv(true)}>🏆 Achievements {achvGot}/{achvTotal}</button>
         )}
