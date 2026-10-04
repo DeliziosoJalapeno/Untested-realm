@@ -4,7 +4,7 @@ import { getScript } from '../cards/scripts/registry'
 import { findCard } from '../cards/db'
 import { pickUpUnits, dropUnits, syncCarried, detachFromCarrier } from './carrying'
 import type { GameState, PlayerId, Region, Step, UnitState, AttackTarget } from './types'
-import { pushLog, pushPrompt, registerCont, dealDamageToUnit, dealDamage, checkStateBased, opponent, makeCtx, emitUnitMoved, gainLife, tapUnit, emitEvent, drawCards, askDrawCard, recordAreaReveal, markRevealShoots, beginAreaReveal, sealAbilityReveal, beginBattleCapture, finishBattleCapture, avatarTrappedAt } from './effects'
+import { pushLog, pushPrompt, registerCont, dealDamageToUnit, dealDamage, checkStateBased, opponent, makeCtx, emitUnitMoved, gainLife, tapUnit, emitEvent, drawCards, askDrawCard, recordAreaReveal, markRevealShoots, beginAreaReveal, sealAbilityReveal, beginBattleCapture, finishBattleCapture, avatarTrappedAt, isMagicProtected } from './effects'
 import { effAttack, effKeywords, isDisabled, canTap, projectileCanHit, attackBlockedAt, interceptBlockedAt, siteSilenced as siteSilencedC, regionPresentAt, carriedInside, isBlanked, isCarriableArtifact } from './statics'
 import { findPath, isFreeStep, isLegalStep, maxSteps, reachableLocations, reachableWithPaths, resolveMovement } from './movement'
 import { unitsAt, occupies, occupiedSquares, inBounds, edgesConnected, GRID_W, GRID_H, squareLabel } from './grid'
@@ -1191,7 +1191,16 @@ export function shootProjectile(state: GameState, player: PlayerId, unitId: stri
 
 export type ProjFilterKind = 'canHit' | 'notStealth'
 
-function projHittable(kind: ProjFilterKind, state: GameState, u: UnitState): boolean {
+/** A projectile counts as MAGIC when its source card is a Magic (Firebolts, Fireball, Ice Lance…). A
+ *  unit/artifact/ability shot (Ranged strikes, Sparkmage, Balor's gaze, Meat Hook…) is NOT magic. Used
+ *  to honour "can't be targeted or damaged by magic" (Failed Mutation) — magic projectiles can't pick a
+ *  magic-protected unit as a target, so they fly right past it. */
+function projSrcIsMagic(srcName?: string): boolean {
+  return !!srcName && findCard(srcName)?.type === 'Magic'
+}
+
+function projHittable(kind: ProjFilterKind, state: GameState, u: UnitState, srcMagic = false): boolean {
+  if (srcMagic && isMagicProtected(state, u)) return false
   return kind === 'notStealth' ? !u.stealth : projectileCanHit(state, u)
 }
 
@@ -1249,8 +1258,9 @@ function projCandidates(
   excludeId?: string,
   avatarImmune?: boolean,
   excludeIds?: string[],
+  srcMagic = false,
 ): string[] {
-  let here = unitsAt(state, sq.x, sq.y, region).filter((u) => u.id !== excludeId && !excludeIds?.includes(u.id) && projHittable(filter, state, u))
+  let here = unitsAt(state, sq.x, sq.y, region).filter((u) => u.id !== excludeId && !excludeIds?.includes(u.id) && projHittable(filter, state, u, srcMagic))
   if (sq.origin) here = here.filter((u) => u.controller !== player)
   if (avatarImmune) here = here.filter((u) => !u.isAvatar)
   return here.map((u) => u.id)
@@ -1281,8 +1291,9 @@ export function fireVolleyProjectiles(state: GameState, spec: VolleyProjectileSp
   markRevealShoots(state) // an ability firing this reads "<card> shoots!" (ignored for spells)
   const range = spec.maxRange ?? Infinity
   const filter = spec.filter ?? 'canHit'
+  const srcMagic = projSrcIsMagic(spec.srcName)
   for (const sq of projectilePath(state, spec.region, spec.ox, spec.oy, spec.dir, range, spec.player)) {
-    const here = projCandidates(state, sq, spec.region, spec.player, filter, spec.excludeId)
+    const here = projCandidates(state, sq, spec.region, spec.player, filter, spec.excludeId, undefined, undefined, srcMagic)
     if (here.length === 0) continue
     if (here.length === 1) return applyVolleyHit(state, spec, here[0])
     // 2+ share the impact square → the shooter chooses which is hit (rulebook)
@@ -1367,8 +1378,9 @@ export function firePerSquareProjectile(state: GameState, spec: PerSquareProject
   const path = spec.includeOrigin
     ? projectilePath(state, spec.region, spec.ox, spec.oy, spec.dir, spec.damages.length - 1, spec.player)
     : raySquares(state, spec.region, spec.ox, spec.oy, spec.dir, spec.damages.length, spec.player).map((s) => ({ x: s.x, y: s.y, origin: false }))
+  const srcMagic = projSrcIsMagic(spec.srcName)
   for (let i = spec.idx ?? 0; i < path.length && i < spec.damages.length; i++) {
-    const here = projCandidates(state, path[i], spec.region, spec.player, filter, spec.excludeId)
+    const here = projCandidates(state, path[i], spec.region, spec.player, filter, spec.excludeId, undefined, undefined, srcMagic)
     if (here.length === 0) continue
     if (here.length === 1) {
       applyPerSquareHit(state, spec, i, here[0])
@@ -1456,11 +1468,12 @@ function gazeLocations(state: GameState, spec: EvilEyeGazeSpec): { x: number; y:
 
 export function fireEvilEyeGaze(state: GameState, spec: EvilEyeGazeSpec): void {
   const filter = spec.filter ?? 'notStealth'
+  const srcMagic = projSrcIsMagic(spec.srcName)
   const locations = spec.locations ?? gazeLocations(state, spec)
   for (let i = spec.idx ?? 0; i < locations.length; i++) {
     const loc = locations[i]
     const here = unitsAt(state, loc.x, loc.y, loc.region)
-      .filter((u) => u.id !== spec.excludeId && projHittable(filter, state, u))
+      .filter((u) => u.id !== spec.excludeId && projHittable(filter, state, u, srcMagic))
       .map((u) => u.id)
     if (here.length === 0) continue
     if (here.length === 1) { applyGazeHit(state, spec, loc, here[0]); continue }
@@ -1520,9 +1533,10 @@ export interface PiercingProjectileSpec {
 
 export function firePiercingProjectile(state: GameState, spec: PiercingProjectileSpec): void {
   const filter = spec.filter ?? 'canHit'
+  const srcMagic = projSrcIsMagic(spec.srcName)
   const path = projectilePath(state, spec.region, spec.ox, spec.oy, spec.dir, spec.maxRange ?? Infinity, spec.player)
   for (let i = spec.pathIdx ?? 0; i < path.length; i++) {
-    const here = projCandidates(state, path[i], spec.region, spec.player, filter, spec.excludeId, spec.avatarImmune)
+    const here = projCandidates(state, path[i], spec.region, spec.player, filter, spec.excludeId, spec.avatarImmune, undefined, srcMagic)
     if (here.length === 0) continue
     if (here.length === 1) { applyPiercingHit(state, spec, here[0]); continue }
     // 2+ share this location → the shooter chooses which one the ray burns here
