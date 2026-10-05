@@ -5,7 +5,7 @@ import { communityDecks } from './communityDecks'
 
 const baseDecks: DeckList[] = [
   {
-    name: 'Earthfire Warband',
+    name: 'Earthfire Warband (Beginner)',
     avatar: 'Avatar of Earth',
     atlas: {
       'Humble Village': 4,
@@ -40,7 +40,7 @@ const baseDecks: DeckList[] = [
     },
   },
   {
-    name: "Tidecaller's Grimoire",
+    name: "Tidecaller's Grimoire (Beginner)",
     avatar: 'Sorcerer',
     atlas: {
       'Autumn River': 4,

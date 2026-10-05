@@ -3,6 +3,7 @@ import { viewFor, type GameState, type PlayerId } from '@sorcery/shared'
 import type { Session } from '../App'
 import Game from './Game'
 import { replayInitialState, replayStateAt, replayStep, type ReplayRecord } from '../replay'
+import { getSetting } from '../settings'
 
 const SPEEDS = [
   { label: '1×', ms: 2000 },
@@ -20,6 +21,24 @@ export default function ReplayViewer({ replay, onLeave, mobile }: { replay: Repl
   const [playing, setPlaying] = useState(false)
   const [speedMs, setSpeedMs] = useState(2000)
   const [perspective, setPerspective] = useState<PlayerId>(0)
+
+  // the control bar is draggable by its grip. Offset is applied via the CSS `translate` property so it
+  // composes with the bar's own centering `transform: translateX(-50%)` instead of overwriting it.
+  const [drag, setDrag] = useState({ x: 0, y: 0 })
+  const dragRef = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null)
+  const onGripDown = (e: React.PointerEvent) => {
+    e.preventDefault()
+    ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
+    dragRef.current = { sx: e.clientX, sy: e.clientY, ox: drag.x, oy: drag.y }
+  }
+  const onGripMove = (e: React.PointerEvent) => {
+    const d = dragRef.current
+    if (d) setDrag({ x: d.ox + (e.clientX - d.sx), y: d.oy + (e.clientY - d.sy) })
+  }
+  const onGripUp = (e: React.PointerEvent) => {
+    dragRef.current = null
+    ;(e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId)
+  }
 
   const rebuildTo = (n: number) => {
     const clamped = Math.max(0, Math.min(n, total))
@@ -45,7 +64,17 @@ export default function ReplayViewer({ replay, onLeave, mobile }: { replay: Repl
   }, [playing, index, speedMs])
 
   const atEnd = index >= total
-  const view = useMemo(() => viewFor(workRef.current, perspective, { revealAll: true }), [index, perspective])
+  // replay visibility (⚙ Settings): 'off' = spectator (both hands + collections hidden), 'perspective'
+  // = watch from one player's side (their cards shown, opponent's hidden; 👁 flips sides), 'on' = reveal
+  // the whole game. Spectator uses viewFor(null) so neither hand leaks.
+  const replayVis = getSetting('replayVisibility')
+  const view = useMemo(
+    () =>
+      replayVis === 'off'
+        ? viewFor(workRef.current, null)
+        : viewFor(workRef.current, perspective, { revealAll: replayVis === 'on' }),
+    [index, perspective, replayVis],
+  )
   // a read-only spectator session: seat null ⇒ the board disables every interaction; view.you keeps
   // the chosen perspective's orientation. No send / undo / chat — purely for watching.
   const session: Session = useMemo(() => ({ kind: 'online', seat: null, view, send: () => {} }), [view])
@@ -53,7 +82,15 @@ export default function ReplayViewer({ replay, onLeave, mobile }: { replay: Repl
   return (
     <div className="replay-root">
       <Game session={session} view={view} hotseatViewpoint={null} onLeave={onLeave} mobile={mobile} />
-      <div className="replay-bar">
+      <div className="replay-bar" style={{ translate: `${drag.x}px ${drag.y}px` }}>
+        <span
+          className="replay-grip"
+          title="Drag to move these controls"
+          onPointerDown={onGripDown}
+          onPointerMove={onGripMove}
+          onPointerUp={onGripUp}
+          onPointerCancel={onGripUp}
+        >⠿</span>
         <button className="replay-btn" title="Restart" onClick={() => { setPlaying(false); rebuildTo(0) }}>⏮</button>
         <button className="replay-btn" title="Step back" onClick={() => { setPlaying(false); stepBack() }} disabled={index === 0}>◀</button>
         <button className="replay-btn replay-play" title={playing ? 'Pause' : 'Play'} onClick={() => setPlaying((p) => !p)} disabled={atEnd}>

@@ -4001,16 +4001,41 @@ function GameInner({
                   </marker>
                 </defs>
                 {mode.paths.map((p, i) => {
-                  const pts = [center(u.x, u.y), ...p.map((s) => center(s.x, s.y))]
-                  const d = pts.map(([x, y], k) => `${k === 0 ? 'M' : 'L'}${x},${y}`).join(' ')
+                  // Split the polyline at any Magellan-wrap step (a 1-square move that jumps from one
+                  // edge to the opposite one): instead of one long straight arrow cutting across the
+                  // whole board, a run ENDS with an arrow into the border it exits, and the NEXT run
+                  // BEGINS at the opposite border and heads on to the destination.
+                  const gridPts = [{ x: u.x, y: u.y }, ...p]
+                  const runs: [number, number][][] = []
+                  let run: [number, number][] = [center(gridPts[0].x, gridPts[0].y)]
+                  for (let k = 1; k < gridPts.length; k++) {
+                    const a = gridPts[k - 1], b = gridPts[k]
+                    const hWrap = a.y === b.y && Math.abs(a.x - b.x) === GRID_W - 1 // horizontal edge wrap
+                    const vWrap = a.x === b.x && Math.abs(a.y - b.y) === GRID_H - 1 // vertical edge wrap
+                    if (hWrap || vWrap) {
+                      const [ax, ay] = center(a.x, a.y)
+                      const [bx, by] = center(b.x, b.y)
+                      if (hWrap) {
+                        run.push([ax < bx ? 0 : boardW, ay]); runs.push(run) // arrow INTO a's near edge
+                        run = [[bx < ax ? 0 : boardW, by], [bx, by]]         // arrow OUT of b's near edge
+                      } else {
+                        run.push([ax, ay < by ? 0 : boardH]); runs.push(run)
+                        run = [[bx, by < ay ? 0 : boardH], [bx, by]]
+                      }
+                    } else {
+                      run.push(center(b.x, b.y))
+                    }
+                  }
+                  runs.push(run)
                   const hovered = routeHover === p
                   const color = palette[i % palette.length]
-                  return (
-                    <path key={i} d={d} fill="none" stroke={color}
+                  return runs.map((r, j) => (
+                    <path key={`${i}-${j}`} d={r.map(([x, y], k) => `${k === 0 ? 'M' : 'L'}${x},${y}`).join(' ')}
+                      fill="none" stroke={color}
                       strokeWidth={hovered ? 8 : 4} strokeOpacity={hovered ? 1 : 0.5}
                       strokeLinecap="round" strokeLinejoin="round" markerEnd="url(#patharrowhead)"
                       style={hovered ? { filter: `drop-shadow(0 0 7px ${color})` } : undefined} />
-                  )
+                  ))
                 })}
               </svg>
             )

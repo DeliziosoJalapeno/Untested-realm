@@ -488,6 +488,17 @@ function discardCardId(state: GameState, player: PlayerId, id: string): void {
 export function spellHandIds(state: GameState, player: PlayerId): string[] {
   return state.players[player].hand.filter((id) => getCard(state.cards[id].name).type !== 'Site')
 }
+/** A card LOCKED to a specific caster (Morgana's own 3 spells, an Omphalos's element spells…): it sits
+ *  in the hand but ONLY that caster may cast it — so it is not a free part of your hand. A generic
+ *  "discard a card" (Troll Bridge's toll, Legion of Gall, a random discard) must never offer/consume it. */
+export function isCasterLocked(state: GameState, cardId: string): boolean {
+  return ((state.flow?.lockedCards ?? []) as { cardId: string }[]).some((e) => e.cardId === cardId)
+}
+/** A player's hand minus caster-locked cards — the pool any discard effect may touch (optionally spells only). */
+export function discardableHandIds(state: GameState, player: PlayerId, spellsOnly = false): string[] {
+  const base = spellsOnly ? spellHandIds(state, player) : [...state.players[player].hand]
+  return base.filter((id) => !isCasterLocked(state, id))
+}
 // unified random-discard resolution (Kythera/Black Cat determiner OR Lucky Charm choice)
 registerCont('random:discardChosen', (state, ctx: { player: PlayerId; __opts: string[]; __labels: string[] }, choice) => {
   const id = ctx.__opts[luckyChoiceIndex(ctx, choice)]
@@ -3369,8 +3380,9 @@ export function makeCtx(
     discardRandom: (player, opts) => {
       const p = state.players[player]
       // filter the candidate pool BEFORE the lucky/random determination so the
-      // Lucky Charm / Kythera chooser only ever sees eligible cards.
-      const pool = opts?.spellsOnly ? spellHandIds(state, player) : [...p.hand]
+      // Lucky Charm / Kythera chooser only ever sees eligible cards. Caster-locked
+      // cards (Morgana/Omphalos) are never part of the discardable hand.
+      const pool = discardableHandIds(state, player, !!opts?.spellsOnly)
       if (pool.length === 0) return
       const r = luckyCandidates(state, player, pool.map((id) => ({ label: state.cards[id].name, payload: id })))
       if (!r.choose) {
@@ -3388,8 +3400,9 @@ export function makeCtx(
     },
     discardChoose: (player, opts) => {
       // prompted discard (id-based). Candidate ids are captured at ask time and
-      // resolved by id in `effect:discardChosen`, never by live hand index.
-      let ids = opts?.spellsOnly ? spellHandIds(state, player) : [...state.players[player].hand]
+      // resolved by id in `effect:discardChosen`, never by live hand index. Caster-locked
+      // cards (Morgana/Omphalos) are excluded — they are not part of the discardable hand.
+      let ids = discardableHandIds(state, player, !!opts?.spellsOnly)
       if (opts?.filter) ids = ids.filter((id) => opts.filter!(state.cards[id].name))
       const count = Math.min(opts?.pick ?? 1, ids.length)
       if (count === 0) return

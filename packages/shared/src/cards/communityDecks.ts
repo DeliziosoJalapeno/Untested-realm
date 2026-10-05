@@ -53,7 +53,7 @@ const communityDeckList: DeckList[] = [
     },
   },
   {
-    name: "Terrharbinger - Nerd's Den Tournament 16/07/2026",
+    name: "Terrharbinger - Il Covo del Nerd Tournament 16/07/2026",
     avatar: "Harbinger",
     atlas: {
       "Bedrock": 2,

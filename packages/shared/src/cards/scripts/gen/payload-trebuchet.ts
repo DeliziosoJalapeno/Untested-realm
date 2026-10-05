@@ -1,6 +1,6 @@
 import { registerScript } from '../registry'
 import { getCard } from '../../db'
-import { toCemetery } from '../../../engine/effects'
+import { toCemetery, discardableHandIds } from '../../../engine/effects'
 import { GRID_H, GRID_W, unitsAt } from '../../../engine/grid'
 import { stepDistanceW } from '../../../engine/movement'
 import type { Region } from '../../../engine/types'
@@ -19,7 +19,7 @@ registerScript('Payload Trebuchet', {
       const crew = unitsAt(ctx.state, bearer.x, bearer.y, bearer.region).filter(
         (u) => u.id !== bearer.id && u.controller === ctx.controller && !u.tapped,
       )
-      const hand = ctx.state.players[ctx.controller].hand
+      const hand = discardableHandIds(ctx.state, ctx.controller) // a caster-locked card (Morgana/Omphalos) can't be launched
       if (!crew.length || !hand.length) return ctx.log('Need a second crew member and a card to launch.')
       ctx.ask({ kind: 'chooseTargets', title: 'Who loads the trebuchet?', data: { candidates: crew.map((u) => u.id), count: 1, upTo: false, kind: 'unit' } }, 'load')
     },
@@ -33,14 +33,16 @@ registerScript('Payload Trebuchet', {
       if (!bearer || !helper || bearer.tapped || helper.tapped) return
       bearer.tapped = true
       helper.tapped = true
-      const hand = ctx.state.players[ctx.controller].hand
-      ctx.ask({ kind: 'chooseCards', title: 'Launch which card as the payload?', data: { cards: hand.map((i) => ctx.state.cards[i].name), pick: 1, upTo: false } }, 'payload')
+      const ids = discardableHandIds(ctx.state, ctx.controller) // exclude caster-locked cards; resolve by id
+      ctx.ask({ kind: 'chooseCards', title: 'Launch which card as the payload?', data: { cards: ids.map((i) => ctx.state.cards[i].name), pick: 1, upTo: false } }, 'payload', { ids })
     },
-    payload: (ctx, _c, choice) => {
+    payload: (ctx, c, choice) => {
       const idx = Array.isArray(choice) ? choice[0] : choice
       const p = ctx.state.players[ctx.controller]
-      if (typeof idx !== 'number' || idx < 0 || idx >= p.hand.length) return
-      const [cardId] = p.hand.splice(idx, 1)
+      const ids = (c.ids as string[]) ?? []
+      const cardId = typeof idx === 'number' && idx >= 0 && idx < ids.length ? ids[idx] : undefined
+      if (!cardId || !p.hand.includes(cardId)) return
+      p.hand = p.hand.filter((h) => h !== cardId)
       toCemetery(ctx.state, cardId)
       const dmg = getCard(ctx.state.cards[cardId].name).cost ?? 0
       const art = ctx.state.artifacts[ctx.sourceId]

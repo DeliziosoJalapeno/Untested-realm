@@ -1,5 +1,5 @@
 import { registerScript, type EffectAPI } from '../registry'
-import { opponent, spellHandIds, toCemetery } from '../../../engine/effects'
+import { opponent, discardableHandIds, toCemetery } from '../../../engine/effects'
 import { effSubtypes } from '../../../engine/statics'
 import type { PlayerId } from '../../../engine/types'
 
@@ -31,7 +31,7 @@ registerScript('Unseelie Court', {
 
 function unseeliePick(ctx: EffectAPI, who: PlayerId, n: number, thenOpp: boolean): void {
   // "discard a spell for each Faerie" — sites are never eligible.
-  const spells = spellHandIds(ctx.state, who)
+  const spells = discardableHandIds(ctx.state, who, true) // never Morgana's/Omphalos's locked spells
   const count = Math.min(n, spells.length)
   if (!count) {
     if (thenOpp) unseeliePick(ctx, opponent(ctx.controller), n, false)

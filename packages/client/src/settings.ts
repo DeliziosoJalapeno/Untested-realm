@@ -7,16 +7,25 @@
  *  - 'cartesian': a (column,row) pair, 1-indexed from the top-left — (1,1)–(5,4) */
 export type CoordSystem = 'chess' | 'standard' | 'cartesian'
 
+/** How much a replay reveals:
+ *  - 'off'         → spectator view: both players' hands & collections hidden (the default)
+ *  - 'perspective' → watch from one player's side (their cards visible, the opponent's hidden); flippable
+ *  - 'on'          → reveal everything — both hands & collections (god view) */
+export type ReplayVisibility = 'off' | 'perspective' | 'on'
+
 export interface Settings {
   /** show the big center popup when the opponent plays a card (off by default) */
   opponentPlayPopup: boolean
   /** how board squares are labelled to the player */
   coordSystem: CoordSystem
+  /** how much a replay reveals (spectator / one side / everything) */
+  replayVisibility: ReplayVisibility
 }
 
 const DEFAULTS: Settings = {
   opponentPlayPopup: false,
   coordSystem: 'standard',
+  replayVisibility: 'off',
 }
 
 const KEY = 'sorcery-settings'

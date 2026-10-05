@@ -1,5 +1,5 @@
 import { registerScript } from '../registry'
-import { spellHandIds, toCemetery } from '../../../engine/effects'
+import { discardableHandIds, toCemetery } from '../../../engine/effects'
 
 // 'Spellcaster / Genesis → Discard a spell. Draw a spell.'
 registerScript('Sisters of Avalon', {
@@ -7,7 +7,7 @@ registerScript('Sisters of Avalon', {
     // "Discard a spell. Draw a spell." — the draw is CONTINGENT on the discard, so with no spell to
     // discard the Genesis does nothing at all (you do NOT draw). The FAQ even makes you demonstrate an
     // empty-of-spells hand. Offer only spells (never a site).
-    const spells = spellHandIds(ctx.state, ctx.controller)
+    const spells = discardableHandIds(ctx.state, ctx.controller, true) // never Morgana's/Omphalos's locked spells
     if (!spells.length) return
     ctx.ask({ kind: 'chooseCards', title: 'Discard which spell?', data: { cards: spells.map((id) => ctx.state.cards[id].name), pick: 1, upTo: false } }, 'trade', { spellIds: spells })
   },

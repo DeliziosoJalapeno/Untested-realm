@@ -162,6 +162,8 @@ h1, h2, h3 { font-weight: 600; }
   color: #c9cee0; margin: -24px 0 14px;
   text-shadow: 0 1px 6px rgba(0,0,0,0.8);
 }
+/* mobile only: nudge the "100% automated…" line down so it clears the title/art */
+.app.mobile .subtitle { margin-top: 16px; }
 .disclaimer { margin: 12px auto 18px; max-width: 520px; text-align: center; }
 .disclaimer p {
   font-family: 'Cormorant Garamond', serif;
@@ -457,6 +459,12 @@ h1, h2, h3 { font-weight: 600; }
   background: rgba(20,22,31,0.94); border: 1px solid #39405a;
   box-shadow: 0 6px 22px rgba(0,0,0,0.6); max-width: 96vw; flex-wrap: wrap;
 }
+.replay-grip {
+  cursor: move; color: #8b90a6; font-size: 18px; line-height: 1;
+  padding: 2px 4px; user-select: none; touch-action: none; align-self: stretch;
+  display: flex; align-items: center;
+}
+.replay-grip:hover { color: #d8b45c; }
 .replay-btn {
   background: #2a3042; color: #e8ecf7; border: none; cursor: pointer;
   border-radius: 7px; padding: 6px 10px; font-size: 15px; line-height: 1;

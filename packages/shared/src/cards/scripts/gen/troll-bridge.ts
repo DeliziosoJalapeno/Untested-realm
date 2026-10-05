@@ -1,5 +1,5 @@
 import { registerScript, type EffectAPI } from '../registry'
-import { pushLog, toCemetery } from '../../../engine/effects'
+import { pushLog, toCemetery, isCasterLocked } from '../../../engine/effects'
 import { unitsAt } from '../../../engine/grid'
 
 // 'The first time a lone enemy enters here each turn, strike it unless they discard a card.'
@@ -19,12 +19,14 @@ registerScript('Troll Bridge', {
     const key = `troll:${ctx.sourceId}`
     if (ctx.state.flow[key] === ctx.state.turn) return
     ctx.state.flow[key] = ctx.state.turn
-    const hand = ctx.state.players[moved.controller].hand
-    if (!hand.length) return trollStrike(ctx, moved.id)
+    // caster-locked cards (Morgana's / an Omphalos's own spells) aren't a free part of the hand, so the
+    // toll can't take them. Resolve by captured id, not hand index, since the list is now filtered.
+    const ids = ctx.state.players[moved.controller].hand.filter((id) => !isCasterLocked(ctx.state, id))
+    if (!ids.length) return trollStrike(ctx, moved.id)
     ctx.ask(
-      { kind: 'chooseCards', title: 'Pay the toll: discard a card? (skip to be struck)', data: { cards: hand.map((id) => ctx.state.cards[id].name), pick: 1, upTo: true }, player: moved.controller },
+      { kind: 'chooseCards', title: 'Pay the toll: discard a card? (skip to be struck)', data: { cards: ids.map((id) => ctx.state.cards[id].name), pick: 1, upTo: true }, player: moved.controller },
       'toll',
-      { unitId: moved.id },
+      { unitId: moved.id, ids },
     )
   },
   conts: {
@@ -32,9 +34,11 @@ registerScript('Troll Bridge', {
       const idx = Array.isArray(choice) ? choice[0] : choice
       const u = ctx.state.units[c.unitId as string]
       if (!u) return
+      const ids = (c.ids as string[]) ?? []
+      const id = typeof idx === 'number' && idx >= 0 && idx < ids.length ? ids[idx] : undefined
       const p = ctx.state.players[u.controller]
-      if (typeof idx === 'number' && idx >= 0 && idx < p.hand.length) {
-        const [id] = p.hand.splice(idx, 1)
+      if (id && p.hand.includes(id)) {
+        p.hand = p.hand.filter((h) => h !== id)
         toCemetery(ctx.state, id)
         pushLog(ctx.state, u.controller, `${u.name} pays the troll's toll.`)
       } else {

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { sfx, sfxMuted, setSfxMuted } from '../sfx'
-import { getSetting, setSetting, type CoordSystem } from '../settings'
+import { getSetting, setSetting, type CoordSystem, type ReplayVisibility } from '../settings'
 import { fmtCoord } from '../coords'
 
 // (0,0), (2,1) and (4,3) rendered in each system — a live preview of what board squares will read as
@@ -9,6 +9,12 @@ const COORD_OPTIONS: { value: CoordSystem; label: string }[] = [
   { value: 'standard', label: 'Standard' },
   { value: 'cartesian', label: 'Cartesian' },
 ]
+// how much a replay reveals: spectator (both hands hidden) / one player's side / everything
+const REPLAY_OPTIONS: { value: ReplayVisibility; label: string }[] = [
+  { value: 'off', label: 'Spectator' },
+  { value: 'perspective', label: 'Player' },
+  { value: 'on', label: 'Reveal all' },
+]
 
 /** Small preferences dialog shared by the home screen and the in-game rail. Sound is backed by sfx.ts;
  *  the rest by settings.ts. Both persist immediately, so changes apply without a Save button. */
@@ -16,6 +22,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
   const [sound, setSound] = useState(!sfxMuted())
   const [oppPopup, setOppPopup] = useState(getSetting('opponentPlayPopup'))
   const [coords, setCoords] = useState<CoordSystem>(getSetting('coordSystem'))
+  const [replayVis, setReplayVis] = useState<ReplayVisibility>(getSetting('replayVisibility'))
 
   return (
     <>
@@ -38,6 +45,20 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           />
           <span>🎴 Popup when the opponent plays a card</span>
         </label>
+        <div className="settings-row settings-coords" title="How much a replay reveals. Spectator: both players' hands & collections hidden. Player: watch from one side — their cards shown, the opponent's hidden (use the replay's 👁 flip to switch). Reveal all: see everything.">
+          <span>👁 Replay visibility</span>
+          <div className="coord-choices">
+            {REPLAY_OPTIONS.map((o) => (
+              <button
+                key={o.value}
+                className={`coord-choice ${replayVis === o.value ? 'selected' : ''}`}
+                onClick={() => { setReplayVis(o.value); setSetting('replayVisibility', o.value) }}
+              >
+                <span className="coord-name">{o.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="settings-row settings-coords" title="How board squares are named everywhere — the board overlay, the game log, and prompts (e.g. a movement path).">
           <span>🧭 Board coordinates</span>
           <div className="coord-choices">
