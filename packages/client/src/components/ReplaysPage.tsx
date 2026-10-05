@@ -90,7 +90,7 @@ export default function ReplaysPage({
           {!username ? (
             <p style={{ opacity: 0.7 }}>Sign in on the home screen to save and manage your own replays.</p>
           ) : mine.length === 0 ? (
-            <p style={{ opacity: 0.6 }}>None yet — finish a local game and use “Save replay”.</p>
+            <p style={{ opacity: 0.6 }}>None yet — finish a game and use “Save replay”.</p>
           ) : (
             mine.map(row)
           )}

@@ -11,6 +11,8 @@ export const CHAT_PHRASES = [
   'that was a bug!',
   "that wasn't a bug!",
   'brace yourself for this!',
+  ':(',
+  'sorry',
 ] as const
 
 export type ChatPhrase = (typeof CHAT_PHRASES)[number]

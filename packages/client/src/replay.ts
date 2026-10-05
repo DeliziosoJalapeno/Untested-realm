@@ -17,7 +17,7 @@ export const REPLAY_VERSION = 1
 export interface ReplayRecord {
   replayVersion: number
   createdAt: number
-  mode: 'hotseat' | 'bot'
+  mode: 'hotseat' | 'bot' | 'online'
   decks: [DeckList, DeckList]
   names: [string, string]
   seed: number

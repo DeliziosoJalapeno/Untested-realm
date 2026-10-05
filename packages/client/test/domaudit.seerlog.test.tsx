@@ -6,6 +6,7 @@ import { describe, it, expect, afterEach } from 'vitest'
 import { fireEvent } from '@testing-library/react'
 import { GameHarness } from './harness'
 import { sweepBoardBase } from './domaudit'
+import { setSetting } from '../src/settings'
 import '../../../packages/shared/src/cards/scripts/index'
 
 let active: GameHarness | null = null
@@ -54,6 +55,7 @@ describe('Seer-style peek prompt + log card links', () => {
   })
 
   it('multiple opponent plays stack multiple pop-ups', () => {
+    setSetting('opponentPlayPopup', true) // the pop-up is opt-in (off by default) — this test exercises it
     const g = sweepBoardBase()
     ;(g as any).lastPlay = { name: 'Fireball', player: 1, n: 1 }
     const h = new GameHarness(g).mount(); active = h

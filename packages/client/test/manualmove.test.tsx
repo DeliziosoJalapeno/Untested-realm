@@ -78,7 +78,11 @@ describe('complex move → Auto / Manual', () => {
     h.click(h.container.querySelector('[data-modebanner="howMove"] [data-choice="manual"]') as HTMLElement)
     expect(h.container.querySelector('[data-modebanner="manualMove"]'), 'manual mode entered').toBeTruthy()
     h.click(sq(h, 2, 2)) // one legal step (highlighted)
-    h.click(sq(h, 2, 3)) // reaches the stated destination → resolves
+    h.click(sq(h, 2, 3)) // reach the stated destination
+    // with movement still to spare it does NOT force-stop — it offers "⏹ Stop here / ▶ Keep moving".
+    const stop = h.container.querySelector('[data-modebanner="manualMove"] [data-stop="1"]') as HTMLElement
+    expect(stop, 'reached-destination panel shown (movement to spare)').toBeTruthy()
+    h.click(stop) // ⏹ Stop here → we're on the stated square, so the move resolves
     expect([g.units[id].x, g.units[id].y]).toEqual([2, 3])
     expect(h.drifts).toHaveLength(0)
     expect(h.container.querySelector('[data-modebanner="manualMove"]'), 'panel closed after resolving').toBeFalsy()

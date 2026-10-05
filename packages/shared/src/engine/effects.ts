@@ -2040,7 +2040,20 @@ export function emitUnitEnters(state: GameState, unit: UnitState): void {
   // location-entry site effects (Dark Alley, Old Mortimer's Den, ...) trigger,
   // while region-transit triggers that test `from.region` (Ghost Ship's
   // void-emergence, Khamaseen Mummy's unburrow, Planar Gate) correctly do NOT.
-  if (state.units[unit.id]) emitEvent(state, 'onUnitEntersSquare', unit, { x: -1, y: -1, region: 'offboard' as Region })
+  //
+  // DEFER it for a SUMMON/conjure entry (the unit is flagged "entering" while its Genesis — and any
+  // prompt the Genesis raises — resolves): the location trigger fires at settleEntering, AFTER the
+  // Genesis has FULLY resolved. So a site that kills or relocates on entry (Bottomless Pit, Dark
+  // Alley) can't pre-empt the entering minion's Genesis or its target selection. Non-entering emits
+  // (a vanilla token appearing, a site transforming into a minion) have no Genesis and fire now.
+  if (state.units[unit.id]) {
+    const isEntering = ((state.flow?.entering as string[] | undefined) ?? []).includes(unit.id)
+    if (isEntering) {
+      state.flow.pendingSquareEntry = [...(((state.flow.pendingSquareEntry as string[] | undefined)) ?? []), unit.id]
+    } else {
+      emitEvent(state, 'onUnitEntersSquare', unit, { x: -1, y: -1, region: 'offboard' as Region })
+    }
+  }
 }
 
 /**
@@ -2243,6 +2256,15 @@ export function effectSummonUnit(state: GameState, unit: UnitState, genesisTarge
  *  its Genesis needs no choice, or as a deferred turn-step after the Genesis prompt chain drains. */
 export function settleEntering(state: GameState, unitId: string): void {
   if (state.flow?.entering) state.flow.entering = (state.flow.entering as string[]).filter((id) => id !== unitId)
+  // the unit's Genesis — including any prompt it raised — is fully resolved now, so fire its DEFERRED
+  // location-entry trigger (see emitUnitEnters): a site that kills or relocates on entry (Bottomless
+  // Pit, Dark Alley) only acts once the Genesis has completely resolved and chosen its targets.
+  const pend = state.flow?.pendingSquareEntry as string[] | undefined
+  if (pend?.includes(unitId)) {
+    state.flow.pendingSquareEntry = pend.filter((id) => id !== unitId)
+    const u = state.units[unitId]
+    if (u) emitEvent(state, 'onUnitEntersSquare', u, { x: -1, y: -1, region: 'offboard' as Region })
+  }
 }
 registerCont('summon:settle', (state, ctx: { unitId: string }) => {
   settleEntering(state, ctx.unitId)

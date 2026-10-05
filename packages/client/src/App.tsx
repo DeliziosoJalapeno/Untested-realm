@@ -313,6 +313,10 @@ export default function App() {
   // live replay recording for the current LOCAL game (hotseat / vs-computer); null online or when off
   const recordingRef = useRef<ReplayRecord | null>(null)
   const savedReplayIdRef = useRef<string | null>(null) // reused across re-saves so one game = one DB entry
+  // ONLINE replays are recorded server-side and handed to both seated players at game-over (rides in
+  // synced state). We hold the received record + a stable save id (one online game = one DB entry).
+  const onlineReplayRef = useRef<ReplayRecord | null>(null)
+  const onlineReplayIdRef = useRef<string | null>(null)
 
   // ── "Thinking" bot: the strong search runs in a Web Worker so its (up to 30s) planning never blocks
   //    the UI. A persistent worker keeps the search's turn-plan cache warm across messages. ──
@@ -561,6 +565,15 @@ export default function App() {
     await auth.pushReplay({ id, name, isPublic, data: r })
   }
 
+  /** save the just-finished ONLINE game (the server handed us the full record at game-over). */
+  async function saveOnlineReplay(name: string, isPublic: boolean): Promise<void> {
+    const r = onlineReplayRef.current
+    if (!r) throw new Error('No replay available for this game.')
+    if (!auth.isSignedIn()) throw new Error('Sign in (on the home screen) to save replays.')
+    const id = onlineReplayIdRef.current ?? (onlineReplayIdRef.current = newDeckId())
+    await auth.pushReplay({ id, name, isPublic, data: r })
+  }
+
   function startVsBot(myDeck: DeckList, botDeck: DeckList, clock: ClockConfig | null = null, stepBot = false, difficulty: 'fast' | 'thinking' = 'fast', secondSeer = false) {
     myDeckFromCollection.current = !!myDeck.fromCollection
     localHistory.current = []
@@ -731,12 +744,23 @@ export default function App() {
       // even after a tab switch / disconnect / reconnect and clear once resolved.
       if (msg.undoAsk !== undefined) setUndoAsk(msg.undoAsk)
       if (msg.editorAsk !== undefined) setEditorAsk(msg.editorAsk)
+      // online replay: the server hands seated players the finished record at game-over (null while
+      // live). Hold it + reset the save id when a NEW game's record arrives, so re-saves dedupe but a
+      // fresh game gets its own entry. Rides in every state → survives a reconnect to the over screen.
+      if (msg.replay !== undefined) {
+        const prev = onlineReplayRef.current
+        onlineReplayRef.current = msg.replay ?? null
+        if (!msg.replay || prev?.createdAt !== msg.replay.createdAt) onlineReplayIdRef.current = null
+      }
       setSession((cur) =>
         cur
           ? {
               ...cur,
               view: msg.view,
               editorAllowed: msg.editorAllowed ?? cur.editorAllowed,
+              // the game-over "💾 Save replay" form keys off onSaveReplay — expose it only once the
+              // server has delivered the finished record (seated players only).
+              onSaveReplay: onlineReplayRef.current ? saveOnlineReplay : undefined,
               // rematch offer rides in synced state (survives reconnect); a fresh non-over game
               // clears the lobby flag so the board shows instead of the deck picker.
               rematchDeadline: msg.rematchDeadline !== undefined ? msg.rematchDeadline : cur.rematchDeadline,
@@ -757,7 +781,9 @@ export default function App() {
 
   function startOnline(mode: 'create' | 'join' | 'spectate' | 'matchmake' | 'rejoin', name: string, deck: DeckList | null, code?: string, clock?: ClockConfig | null, isPublic?: boolean, secondSeer?: boolean) {
     myDeckFromCollection.current = !!deck?.fromCollection
-    recordingRef.current = null // online games aren't recorded for replay (v1 is local-only)
+    recordingRef.current = null // online games are recorded server-side, not here
+    onlineReplayRef.current = null
+    onlineReplayIdRef.current = null
     leavingRef.current = false
     const net = new Net()
     netRef.current = net

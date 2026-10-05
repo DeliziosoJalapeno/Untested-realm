@@ -2,6 +2,7 @@
 
 import type { Action, ClockConfig, DeckList, PlayerId } from '@sorcery/shared'
 import type { PlayerView } from '@sorcery/shared'
+import type { ReplayRecord } from './replay'
 
 /** creator's choices when opening a Sealed room (the play clock is separate). */
 export interface SealedConfig {
@@ -34,6 +35,9 @@ export type ServerMsg =
       t: 'state'; view: PlayerView; undoAsk?: string | null; editorAsk?: string | null; editorAllowed?: boolean
       // post-game rematch offer (rides in every state so it survives a reconnect):
       rematchDeadline?: number | null; rematchYou?: boolean; rematchOpp?: boolean
+      // the finished game's replay, delivered to SEATED players once the game is over (null while
+      // live, and never to spectators). Rides in synced state so it survives a reconnect.
+      replay?: ReplayRecord | null
     }
   | SealedStateMsg
   | { t: 'error'; msg: string }

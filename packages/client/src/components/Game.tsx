@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom'
 import {
   GRID_H,
   GRID_W,
-  squareLabel,
   affinity,
   allCards,
   affordable,
@@ -69,7 +68,7 @@ import { hasFaq, faqFor } from '../faq'
 import { CHAT_PHRASES } from '../chatPhrases'
 import { sfx, preloadSfx, type SfxKey } from '../sfx'
 import { getSetting } from '../settings'
-import SettingsModal from './SettingsModal'
+import { fmtCoord as squareLabel, relabelCoords } from '../coords'
 import {
   presentViews,
   viewLabel,
@@ -367,7 +366,6 @@ function GameInner({
   const [replaySaving, setReplaySaving] = useState(false)
   const [replayPublic, setReplayPublic] = useState(false)
   const [replayMsg, setReplayMsg] = useState<string | null>(null)
-  const [showSettings, setShowSettings] = useState(false) // ⚙ settings dialog (sound, popups…)
   // sound-cue tracking: last-seen turn / play-counter / tapped-count, so each change fires once
   const sfxTurn = useRef(view.turn)
   const sfxPlayN = useRef(view.lastPlay?.n ?? 0)
@@ -1308,11 +1306,11 @@ function GameInner({
       return !site || site.isRubble
     })
   }
-  // overlay every square with its coordinate whenever the UI refers to squares by "(x,y)":
-  // the route picker (pathChoice / moveChoice show coords in their labels) or a prompt title
-  // show the per-square coordinate overlay while routing, or whenever a prompt names a square in the
-  // chess-style notation (a1–e4) so the player can find it on the board.
-  const showCoords = mode.m === 'pathChoice' || mode.m === 'moveChoice' || /\b[a-e][1-4]\b/.test(String(prompt?.title ?? ''))
+  // overlay every square with its coordinate whenever the UI refers to squares by name: the route
+  // picker (pathChoice / moveChoice show coords in their labels), a prompt that names a square in
+  // chess-style notation (a1–e4), or the EDITOR placing/moving something (judgePlace — "click a
+  // square") so the player can see exactly which square is which, in their chosen coordinate system.
+  const showCoords = mode.m === 'pathChoice' || mode.m === 'moveChoice' || mode.m === 'judgePlace' || /\b[a-e][1-4]\b/.test(String(prompt?.title ?? ''))
   // colours shared by the route-picker arrows (on the board) and their panel buttons
   const PATH_PALETTE = ['#7fd18a', '#ffcf56', '#b98cff', '#ff9a6b', '#6bd0ff', '#ff7ac0']
   // a "peeked" card (Seer / the Rivers / Riddle Sphinx) is mirrored into the lateral
@@ -3115,9 +3113,6 @@ function GameInner({
           <button className={`railbtn ${stView ? 'selected' : ''}`} title="Subtype view — pick a subtype (Spellcasters, Evil, Beasts, Deserts…); its cards glow, all else dims. Z to toggle, ←/→ to cycle" onClick={toggleSubtype}>
             <span className="ri">🏷</span><span className="rl">Subtypes</span>
           </button>
-          <button className={`railbtn ${showSettings ? 'selected' : ''}`} title="Settings — sound, popups…" onClick={() => setShowSettings((v) => !v)}>
-            <span className="ri">⚙</span><span className="rl">Settings</span>
-          </button>
           {session.sendChat && (
             <button ref={chatBtnRef} className={`railbtn ${chatOpen ? 'selected' : ''}`} title="Chat — send a quick phrase to your opponent" onClick={() => setChatOpen((v) => !v)}>
               <span className="ri">💬</span><span className="rl">Chat</span>
@@ -3167,7 +3162,6 @@ function GameInner({
           <button title="What do the symbols mean?" className={showSymbols ? 'selected' : ''} onClick={() => setShowSymbols((v) => !v)}>❔</button>
           <button title="FAQ view — tap a glowing card to read its rulings" className={faqView ? 'selected' : ''} onClick={toggleFaq}>📖</button>
           <button title="Subtype view — a subtype's cards glow, all else dims (tap to open, use the top bar to pick)" className={stView ? 'selected' : ''} onClick={toggleSubtype}>🏷</button>
-          <button title="Settings" className={showSettings ? 'selected' : ''} onClick={() => setShowSettings((v) => !v)}>⚙</button>
           {session.sendChat && (
             <button ref={chatBtnRef} title="Chat — send a quick phrase" className={chatOpen ? 'selected' : ''} onClick={() => setChatOpen((v) => !v)}>💬</button>
           )}
@@ -3252,7 +3246,6 @@ function GameInner({
         </div>
       )}
 
-      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
 
       {/* concede confirmation — it immediately hands the win to the opponent */}
       {confirmConcede && (
@@ -4503,7 +4496,7 @@ function GameInner({
       {/* multi-target prompt accumulation (Swap: pick two) */}
       {mode.m === 'promptTargets' && prompt && mode.promptId === prompt.id && (
         <div className="promptbanner" data-modebanner="promptTargets">
-          {prompt.title} ({mode.picked.length}/{prompt.data?.count ?? 1} picked) —{' '}
+          {relabelCoords(prompt.title ?? '')} ({mode.picked.length}/{prompt.data?.count ?? 1} picked) —{' '}
           {(prompt.data?.upTo || mode.picked.length === (prompt.data?.count ?? 1)) && (
             <button data-confirm="1" onClick={() => { send({ t: 'prompt', promptId: prompt.id, choice: mode.picked }); setMode({ m: 'idle' }) }}>confirm</button>
           )}
@@ -5062,6 +5055,7 @@ function auraWallBg(name: string): string {
 /** a log line with every card name turned into a coloured, clickable reference
  *  (click / hover → show it in the lateral detail panel). */
 function LogLine({ msg, onPick }: { msg: string; onPick: (name: string) => void }) {
+  msg = relabelCoords(msg) // show square names (a1…) in the player's chosen coordinate system
   const re = cardNameRegex()
   re.lastIndex = 0
   const out: React.ReactNode[] = []
@@ -5637,7 +5631,7 @@ function PromptBox({ view, prompt, send, me, flip, onHover, onGoBack, interceptA
     case 'drawDeck':
       return (
         <div className="modal" style={drag.style} data-promptbox="drawDeck">
-          <h3 {...drag.handleProps}>{prompt.title}</h3>
+          <h3 {...drag.handleProps}>{relabelCoords(prompt.title ?? '')}</h3>
           <button data-choice="spellbook" onClick={() => answer('spellbook')}>Spellbook (spells)</button>
           <button data-choice="atlas" onClick={() => answer('atlas')}>Atlas (sites)</button>
         </div>
@@ -5647,7 +5641,7 @@ function PromptBox({ view, prompt, send, me, flip, onHover, onGoBack, interceptA
       const tags = disambiguateUnits(view, ids) // text disambiguation: location → damage → artifacts → silenced
       return (
         <div className="modal" style={drag.style} data-promptbox="defend">
-          <h3 {...drag.handleProps}>{prompt.title}</h3>
+          <h3 {...drag.handleProps}>{relabelCoords(prompt.title ?? '')}</h3>
           <div className="choices">
             {ids.map((id: string) => {
               const u = view.units[id]
@@ -5681,7 +5675,7 @@ function PromptBox({ view, prompt, send, me, flip, onHover, onGoBack, interceptA
     case 'intercept':
       return (
         <div className="modal" style={drag.style} data-promptbox="intercept">
-          <h3 {...drag.handleProps}>{prompt.title}</h3>
+          <h3 {...drag.handleProps}>{relabelCoords(prompt.title ?? '')}</h3>
           {(prompt.data.candidates ?? []).map((id: string) => {
             const u = view.units[id]
             return u ? <button key={id} data-choice={id} onClick={() => answer(id)}>Intercept with {u.name}</button> : null
@@ -5692,7 +5686,7 @@ function PromptBox({ view, prompt, send, me, flip, onHover, onGoBack, interceptA
     case 'stayInFight':
       return (
         <div className="modal" style={drag.style} data-promptbox="stayInFight">
-          <h3 {...drag.handleProps}>{prompt.title}</h3>
+          <h3 {...drag.handleProps}>{relabelCoords(prompt.title ?? '')}</h3>
           <button data-choice="true" onClick={() => answer(true)}>Stay in the fight</button>
           <button data-choice="false" onClick={() => answer(false)}>Withdraw</button>
         </div>
@@ -5703,7 +5697,7 @@ function PromptBox({ view, prompt, send, me, flip, onHover, onGoBack, interceptA
       const left = power - spent
       return (
         <div className="modal" style={drag.style} data-promptbox="allocateDamage">
-          <h3 {...drag.handleProps}>{prompt.title}</h3>
+          <h3 {...drag.handleProps}>{relabelCoords(prompt.title ?? '')}</h3>
           <p>
             Damage left to assign: <b>{left}</b> / {power}
           </p>
@@ -5742,7 +5736,7 @@ function PromptBox({ view, prompt, send, me, flip, onHover, onGoBack, interceptA
     case 'yesNo':
       return (
         <div className="modal" style={drag.style} data-promptbox="yesNo">
-          <h3 {...drag.handleProps}>{prompt.title}</h3>
+          <h3 {...drag.handleProps}>{relabelCoords(prompt.title ?? '')}</h3>
           {revealCard}
           <button data-choice="true" onClick={() => answer(true)}>Yes</button>
           <button data-choice="false" onClick={() => answer(false)}>No</button>
@@ -5766,7 +5760,7 @@ function PromptBox({ view, prompt, send, me, flip, onHover, onGoBack, interceptA
       const plainOpts = opts.filter((o) => !cardOf(o))
       return (
         <div className="modal" style={{ ...drag.style, ...(dirPos ? { left: dirPos.left, top: dirPos.top } : {}) }} data-promptbox="chooseOption">
-          <h3 {...drag.handleProps}>{prompt.title}</h3>
+          <h3 {...drag.handleProps}>{relabelCoords(prompt.title ?? '')}</h3>
           {revealCard}
           {cardOpts.length > 0 && (
             <div className="mullhand">
@@ -5781,7 +5775,7 @@ function PromptBox({ view, prompt, send, me, flip, onHover, onGoBack, interceptA
             <button key={o} data-choice={o} onClick={() => answer(o)}
               onMouseEnter={isCardinalOptions(options) ? () => onDirHover?.(o) : undefined}
               onMouseLeave={isCardinalOptions(options) ? () => onDirHover?.(null) : undefined}>
-              {isCardinalOptions(options) ? dirLabel(o, flip) : o}
+              {isCardinalOptions(options) ? dirLabel(o, flip) : relabelCoords(o)}
             </button>
           ))}
         </div>
@@ -5799,7 +5793,7 @@ function PromptBox({ view, prompt, send, me, flip, onHover, onGoBack, interceptA
       if (asChoice) {
         return (
           <div className="modal" style={drag.style} data-promptbox="nameCard">
-            <h3 {...drag.handleProps}>{prompt.title}</h3>
+            <h3 {...drag.handleProps}>{relabelCoords(prompt.title ?? '')}</h3>
             <div className="mullhand">
               {[...pool].sort().map((n) => (
                 <div key={n} data-choice={n} className="handcard" onMouseEnter={() => onHover?.(n)} onClick={() => answer(n)}>
@@ -5818,7 +5812,7 @@ function PromptBox({ view, prompt, send, me, flip, onHover, onGoBack, interceptA
       const valid = pool.some((n) => n.toLowerCase() === typed.toLowerCase())
       return (
         <div className="modal" style={drag.style} data-promptbox="nameCard" data-namecard-free={pool.length}>
-          <h3 {...drag.handleProps}>{prompt.title}</h3>
+          <h3 {...drag.handleProps}>{relabelCoords(prompt.title ?? '')}</h3>
           <input
             list="cardnames"
             data-namecard-input="1"
@@ -5858,7 +5852,7 @@ function PromptBox({ view, prompt, send, me, flip, onHover, onGoBack, interceptA
       const names: string[] = prompt.data?.names ?? []
       return (
         <div className="modal" style={drag.style} data-promptbox="firstSite">
-          <h3 {...drag.handleProps}>{prompt.title}</h3>
+          <h3 {...drag.handleProps}>{relabelCoords(prompt.title ?? '')}</h3>
           <div className="mullhand">
             {ids.map((id, i) => (
               <div key={id} data-choice={id} className="handcard" onMouseEnter={() => onHover?.(names[i] ?? '')} onClick={() => answer(id)}>
@@ -5875,7 +5869,7 @@ function PromptBox({ view, prompt, send, me, flip, onHover, onGoBack, interceptA
       const cards: string[] = prompt.data.cards ?? []
       return (
         <div className="modal" style={drag.style} data-promptbox="chooseCards">
-          <h3 {...drag.handleProps}>{prompt.title}</h3>
+          <h3 {...drag.handleProps}>{relabelCoords(prompt.title ?? '')}</h3>
           <div className="mullhand">
             {cards.map((name, i) => (
               <div
@@ -5915,7 +5909,7 @@ function PromptBox({ view, prompt, send, me, flip, onHover, onGoBack, interceptA
       const allPlaced = sel.length === cards.length
       return (
         <div className="modal" style={drag.style} data-promptbox="orderCards">
-          <h3 {...drag.handleProps}>{prompt.title}</h3>
+          <h3 {...drag.handleProps}>{relabelCoords(prompt.title ?? '')}</h3>
           <p>{place === 'resolve'
             ? 'Click them in the order they should resolve — the first you pick resolves first.'
             : place === 'top'
@@ -5947,7 +5941,7 @@ function PromptBox({ view, prompt, send, me, flip, onHover, onGoBack, interceptA
       const label = kind === 'site' ? 'site' : kind === 'unitOrSite' ? 'unit or site' : kind === 'unitOrAura' ? 'unit or aura' : kind === 'aura' ? 'aura' : 'unit'
       return (
         <div className="promptbanner" data-promptbox="chooseTargets" data-target-kind={kind === 'site' ? 'site' : kind === 'aura' ? 'aura' : 'unit'}>
-          {prompt.title} (click {kind === 'aura' ? 'an' : 'a'} {label} on the board)
+          {relabelCoords(prompt.title ?? '')} (click {kind === 'aura' ? 'an' : 'a'} {label} on the board)
           {prompt.data?.upTo && <button data-skip="1" onClick={() => answer([])}>skip</button>}
         </div>
       )
@@ -5958,13 +5952,13 @@ function PromptBox({ view, prompt, send, me, flip, onHover, onGoBack, interceptA
       // invalid choice — chooseSquare is always a mandatory pick from data.squares).
       return (
         <div className="promptbanner" data-promptbox="chooseSquare">
-          {prompt.title} (click a highlighted square on the board)
+          {relabelCoords(prompt.title ?? '')} (click a highlighted square on the board)
         </div>
       )
     default:
       return (
         <div className="modal" style={drag.style} data-promptbox={prompt.kind}>
-          <h3 {...drag.handleProps}>{prompt.title}</h3>
+          <h3 {...drag.handleProps}>{relabelCoords(prompt.title ?? '')}</h3>
           <button data-choice="null" onClick={() => answer(null)}>OK</button>
         </div>
       )
@@ -6442,11 +6436,15 @@ function JudgePanel({ view, me, send, selectedUnitId, selectedSiteId, selectedAr
             </label>
             <label>
               give artifact
-              <input data-judge-artname value={artName} list="jp-card-names" onChange={(e) => setArtName(e.target.value)} style={{ width: '9em' }} />
+              <select data-judge-artname value={artName} onChange={(e) => setArtName(e.target.value)} style={{ maxWidth: '11em' }}>
+                <option value="">— choose an artifact —</option>
+                {allCards.filter((c) => c.type === 'Artifact').sort((a, b) => a.name.localeCompare(b.name)).map((c) => (
+                  <option key={c.name} value={c.name}>{c.name}</option>
+                ))}
+              </select>
               <button
                 data-judge-giveart={u.id}
-                disabled={!artName || findCard(artName)?.type !== 'Artifact'}
-                title={artName && findCard(artName)?.type !== 'Artifact' ? 'Not an artifact.' : undefined}
+                disabled={!artName}
                 onClick={() => judge({ k: 'spawnArtifact', name: artName, player: u.controller, x: u.x, y: u.y, giveTo: u.id })}
               >
                 to {u.name}

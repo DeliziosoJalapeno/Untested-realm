@@ -1,6 +1,7 @@
 import { registerScript, type EffectAPI } from '../registry'
 import { nearbySquaresW, unitsAt } from '../../../engine/grid'
 import { effAttack, hasSubtype } from '../../../engine/statics'
+import { isDyingUnit } from '../../../engine/effects'
 
 // 'For each point of its power, an allied Monster may deal 1 damage to a unit in
 // a square near it.'
@@ -31,7 +32,10 @@ function nextLash(ctx: EffectAPI, monsterId: string, left: number) {
   const candidates = nearbySquaresW(ctx.state, monster.x, monster.y)
     // nearby minion is region-locked to the source
     .flatMap((s) => unitsAt(ctx.state, s.x, s.y, monster.region))
-    .filter((u) => u.id !== monsterId)
+    // skip the source AND any unit already doomed by a prior lash — its lethal damage is deferred to
+    // the event boundary, so it still lingers in state.units here; offering it would dangle a ghost
+    // target (a candidate with no board affordance) once the death settles. See [[deferred-death...]].
+    .filter((u) => u.id !== monsterId && !isDyingUnit(ctx.state, u))
     .map((u) => u.id)
   if (!candidates.length) return
   ctx.ask(

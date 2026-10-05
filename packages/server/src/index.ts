@@ -46,6 +46,27 @@ import {
 const PORT = Number(process.env.PORT ?? 8787)
 const CLIENT_DIST = resolve(import.meta.dirname, '../../client/dist')
 
+// ---- replays ----
+// A game is fully determined by its creation inputs + the ordered action log (the engine is a
+// deterministic seeded reducer). Online games are recorded SERVER-SIDE — the server is the only
+// party that holds both decks + the seed + every action — and the finished record is handed to the
+// two SEATED players at game-over so the existing "save replay" UI can store it. The shape mirrors
+// the client's ReplayRecord (packages/client/src/replay.ts); keep REPLAY_VERSION in sync.
+const REPLAY_VERSION = 1
+interface ServerReplay {
+  replayVersion: number
+  createdAt: number
+  mode: 'online'
+  decks: [DeckList, DeckList]
+  names: [string, string]
+  seed: number
+  firstPlayer: PlayerId
+  clock: ClockConfig | null
+  secondSeer?: boolean
+  actions: { seat: PlayerId; action: Action }[]
+  winner?: PlayerId | null
+}
+
 // ---- rooms ----
 
 interface Seat {
@@ -122,6 +143,18 @@ interface Room {
   rematchLobby?: boolean
   /** "Second Seer" optional rule: the second player gets the Seer's start-of-turn peek on turn 2. */
   secondSeer?: boolean
+  // ---- replay recording (server-side; the finished record is handed to seated players at game-over) ----
+  /** the current game's creation inputs (captured at createGame; the ORIGINAL seed, before setup
+   *  advanced it) + the ordered action log. Null until a game is running. */
+  replaySeed?: number
+  replayFirst?: PlayerId
+  replayDecks?: [DeckList, DeckList]
+  replayNames?: [string, string]
+  replayActions?: { seat: PlayerId; action: Action }[]
+  /** replayActions length to roll back to when a tentative-activate flow is erased (mirrors tentativeBase) */
+  replayTentBase?: number
+  /** the finished record, built once on the game-over edge; rides in stateMsg to seated players */
+  replay?: ServerReplay | null
 }
 
 /** how long a post-game rematch offer stays open before it lapses. */
@@ -233,7 +266,7 @@ function send(ws: WebSocket, data: unknown): void {
  *  the OTHER seat is the requester (i.e. it's this seat's to answer). */
 function stateMsg(room: Room, seat: PlayerId | null): {
   t: 'state'; view: unknown; undoAsk: string | null; editorAsk: string | null; editorAllowed: boolean
-  rematchDeadline: number | null; rematchYou: boolean; rematchOpp: boolean
+  rematchDeadline: number | null; rematchYou: boolean; rematchOpp: boolean; replay: ServerReplay | null
 } {
   const view = viewFor(room.game!, seat === null ? null : viewSeatFor(room.game!, seat))
   const askFrom = (pending: PlayerId | null) =>
@@ -250,6 +283,9 @@ function stateMsg(room: Room, seat: PlayerId | null): {
     rematchDeadline: room.rematchDeadline ?? null,
     rematchYou: seat !== null ? !!room.rematchVote?.[seat] : false,
     rematchOpp: seat !== null ? !!room.rematchVote?.[(1 - seat) as PlayerId] : false,
+    // the finished game's replay goes ONLY to the two seated players (never spectators), and only
+    // once the game is over (room.replay is null while live). Safe post-game: both decks are public.
+    replay: seat !== null ? (room.replay ?? null) : null,
   }
 }
 
@@ -272,6 +308,18 @@ function sendStateToSeat(room: Room, seat: PlayerId): void {
   if (socket) send(socket, stateMsg(room, seat))
 }
 
+/** start recording a freshly-created game. Pass the ORIGINAL seed/first handed to createGame (it
+ *  advances state.seed during setup, so reading it back later would be the wrong starting point). */
+function beginReplay(room: Room, decks: [DeckList, DeckList], names: [string, string], seed: number, first: PlayerId): void {
+  room.replaySeed = seed
+  room.replayFirst = first
+  room.replayDecks = JSON.parse(JSON.stringify(decks)) // deep-clone so later deck edits can't mutate it
+  room.replayNames = names
+  room.replayActions = []
+  room.replayTentBase = undefined
+  room.replay = null // clear any previous game's finished record
+}
+
 function maybeStart(room: Room): void {
   if (room.game) return
   const [a, b] = room.seats
@@ -279,6 +327,7 @@ function maybeStart(room: Room): void {
     const seed = Math.floor(Math.random() * 0xffffffff)
     const first = Math.random() < 0.5 ? 0 : 1
     room.game = createGame([a.deck, b.deck], [a.name, b.name], seed, first as PlayerId, room.clock, { secondSeer: room.secondSeer })
+    beginReplay(room, [a.deck, b.deck], [a.name, b.name], seed, first as PlayerId)
     room.lastTick = Date.now()
     room.rematchLobby = false // a game is running again — leave the rematch deck-select lobby
     broadcastState(room)
@@ -293,6 +342,25 @@ function offerRematch(room: Room): void {
   if (!room.game || room.game.phase !== 'over') return
   room.rematchVote = [false, false]
   room.rematchDeadline = Date.now() + REMATCH_WINDOW_MS
+  // the game just ended → freeze the finished replay exactly once (every game-over edge — a lethal
+  // action, an in-play flag-fall, the clock ticker — routes through here). It then rides in stateMsg
+  // to both seated players so either can save it, surviving a reconnect.
+  if (!room.replay && room.replayDecks && room.replayNames && room.replayActions
+      && room.replaySeed !== undefined && room.replayFirst !== undefined) {
+    room.replay = {
+      replayVersion: REPLAY_VERSION,
+      createdAt: Date.now(),
+      mode: 'online',
+      decks: room.replayDecks,
+      names: room.replayNames,
+      seed: room.replaySeed,
+      firstPlayer: room.replayFirst,
+      clock: room.clock,
+      secondSeer: room.secondSeer,
+      actions: room.replayActions,
+      winner: room.game.winner,
+    }
+  }
 }
 
 /** both seats agreed → tear the finished game down and return the room to DECK SELECTION.
@@ -381,9 +449,11 @@ function finalizeSealed(room: Room): void {
   const [a, b] = room.seats
   if (!a || !b) return
   const build = (i: PlayerId) => autofillSealedDeck(s.decks[i] ?? { name: `${room.seats[i]!.name}'s sealed`, avatar: '', spellbook: {}, atlas: {} }, aggregatePool(s.packs[i] ?? []))
+  const built: [DeckList, DeckList] = [build(0), build(1)]
   const seed = rndSeed()
   const first = Math.random() < 0.5 ? 0 : 1
-  room.game = createGame([build(0), build(1)], [a.name, b.name], seed, first as PlayerId, room.clock, { secondSeer: room.secondSeer })
+  room.game = createGame(built, [a.name, b.name], seed, first as PlayerId, room.clock, { secondSeer: room.secondSeer })
+  beginReplay(room, built, [a.name, b.name], seed, first as PlayerId)
   room.lastTick = Date.now()
   s.deadline = null
   broadcastState(room)
@@ -714,12 +784,18 @@ wss.on('connection', (ws) => {
           }
           const wasOver = m.room.game.phase === 'over'
           const histLenBefore = m.room.history.length
+          const replayLenBefore = m.room.replayActions?.length ?? 0
           const snapshot = JSON.stringify(m.room.game)
           const inner = msg.action as Action
           const result = applyAction(m.room.game, m.seat, inner)
           if (!result.ok) return send(ws, { t: 'error', msg: result.error })
+          // record this action for the replay BEFORE the game-over check, so a lethal/concede action is
+          // itself part of the log. A tentative flow that later rolls back is pruned below (replayTentBase),
+          // exactly as history is — keeping the log a faithful "apply these in order" reconstruction.
+          m.room.replayActions?.push({ seat: m.seat, action: inner })
           // the action just ENDED the game (a lethal blow, a concede…) → open the rematch offer so it
-          // rides in the broadcast(s) below. Only on the transition edge, so it's set exactly once.
+          // rides in the broadcast(s) below. Only on the transition edge, so it's set exactly once
+          // (this also freezes the finished replay — hence the push above must come first).
           if (!wasOver && m.room.game.phase === 'over') offerRematch(m.room)
           // record any secret achievements this action earned (rides in synced state, redacted per seat)
           try { applyAchievements(JSON.parse(snapshot), m.room.game, m.seat, inner) } catch { /* cosmetic */ }
@@ -743,6 +819,7 @@ wss.on('connection', (ws) => {
               if (!tentativeChanged(m.room.tentativeStart ?? snapshot, m.room.game) && m.room.tentativeStart) {
                 m.room.game = JSON.parse(m.room.tentativeStart)
                 if (m.room.tentativeBase !== undefined && m.room.tentativeBase <= m.room.history.length) m.room.history.length = m.room.tentativeBase
+                if (m.room.replayActions && m.room.replayTentBase !== undefined) m.room.replayActions.length = m.room.replayTentBase
               }
               m.room.tentative = null; m.room.tentativeKind = undefined; m.room.tentativeStart = null
               broadcastState(m.room)
@@ -753,7 +830,7 @@ wss.on('connection', (ws) => {
             if (m.room.tentative === null && (isPlay || isTentAct) && actorHasPrompt) {
               m.room.tentative = m.seat
               m.room.tentativeKind = isTentAct ? 'activate' : 'play'
-              if (isTentAct) { m.room.tentativeStart = snapshot; m.room.tentativeBase = histLenBefore }
+              if (isTentAct) { m.room.tentativeStart = snapshot; m.room.tentativeBase = histLenBefore; m.room.replayTentBase = replayLenBefore }
               sendStateToSeat(m.room, m.seat)
             } else {
               m.room.tentative = null; m.room.tentativeKind = undefined; m.room.tentativeStart = null
@@ -771,9 +848,11 @@ wss.on('connection', (ws) => {
             // a tentative-activate (Animist) may span several prompts — roll the WHOLE flow back
             m.room.game = JSON.parse(m.room.tentativeStart)
             if (m.room.tentativeBase !== undefined && m.room.tentativeBase <= m.room.history.length) m.room.history.length = m.room.tentativeBase
+            if (m.room.replayActions && m.room.replayTentBase !== undefined) m.room.replayActions.length = m.room.replayTentBase
           } else {
             if (m.room.history.length === 0) return
             m.room.game = JSON.parse(m.room.history.pop()!)
+            m.room.replayActions?.pop() // keep the replay log in step with the rolled-back cast
           }
           m.room.tentative = null; m.room.tentativeKind = undefined; m.room.tentativeStart = null
           m.room.lastTick = Date.now() // don't bill the aborted cast's think time twice
@@ -799,6 +878,7 @@ wss.on('connection', (ws) => {
           m.room.pendingUndo = null
           if (msg.ok && m.room.history.length > 0) {
             m.room.game = JSON.parse(m.room.history.pop()!)
+            m.room.replayActions?.pop() // keep the replay log in step with the undone action
             m.room.lastTick = Date.now() // don't bill the running seat for the undo negotiation
             for (const seat of m.room.seats) if (seat?.socket) send(seat.socket, { t: 'chat', from: 'system', msg: '↩ Undo accepted — one action rolled back.' })
             broadcastState(m.room)
