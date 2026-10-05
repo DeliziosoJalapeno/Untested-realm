@@ -196,7 +196,9 @@ export default function Home({
           </aside>
         </>
       )}
-      <h1>Untested Realm</h1>
+      <div className="home-titlewrap">
+        <img className="home-title" src="/titolosorcery.png" alt="Untested Realm" />
+      </div>
       <p className="byline">by Jalapeno</p>
       <p className="subtitle">
         100% automated, 99%* verified!
