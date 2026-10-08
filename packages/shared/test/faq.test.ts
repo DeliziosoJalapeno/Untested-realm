@@ -1885,27 +1885,30 @@ describe('Magellan Globe: a 2x2 aura at the edge wraps its coverage to the oppos
     expect(has(0, 2)).toBe(true) // (5,2) wrapped → (0,2)
   })
 
-  it('without Magellan Globe the same edge aura simply clips (no wrap)', () => {
+  it('without Magellan Globe an edge-overhanging anchor is REJECTED (the 2x2 must fully fit)', () => {
     const g = board()
     waiveThreshold(g, 0)
     g.players[0].mana = 20
     const cardId = injectToHand(g, 0, 'Drought')
-    act(g, 0, { t: 'castSpell', cardId, casterId: avatarOf(g, 0).id, at: { x: 4, y: 1 } })
-    const aura = Object.values(g.auras).find((r) => r.name === 'Drought')!
-    expect(aura.squares.some((s) => s.x === 0)).toBe(false) // no wrap
-    expect(aura.squares.length).toBe(2) // only (4,1) and (4,2) remain on-board
+    // (4,1) overhangs the right edge — illegal without a Globe to wrap it (no more clipping)
+    expect(actFail(g, 0, { t: 'castSpell', cardId, casterId: avatarOf(g, 0).id, at: { x: 4, y: 1 } }))
+      .toMatch(/fit inside the realm/i)
   })
 
   it('CASTING Magellan Globe wraps an already-existing edge aura (dynamic on add, real cast)', () => {
     const g = board()
     waiveThreshold(g, 0)
     g.players[0].mana = 20
-    // edge aura placed BEFORE any Globe → clipped to on-board sites
+    // the edge aura can only be PLACED while a Globe connects the edges — spawn one, cast the aura
+    // (it wraps), then remove the Globe so the aura clips back to its on-board sites
+    act(g, 0, { t: 'judge', op: { k: 'spawnArtifact', name: 'Magellan Globe', player: 0, x: 0, y: 0 } })
     const auraId = injectToHand(g, 0, 'Drought')
     act(g, 0, { t: 'castSpell', cardId: auraId, casterId: avatarOf(g, 0).id, at: { x: 4, y: 1 } })
     const aura = Object.values(g.auras).find((r) => r.name === 'Drought')!
-    expect(aura.squares.some((s) => s.x === 0)).toBe(false)
-    // now CAST Magellan Globe (normal artifact cast, conjured to a controlled site)
+    const spawned = Object.values(g.artifacts).find((a) => a.name === 'Magellan Globe')!
+    act(g, 0, { t: 'judge', op: { k: 'removeArtifact', artifactId: spawned.id } })
+    expect(aura.squares.some((s) => s.x === 0)).toBe(false) // clipped once the Globe is gone
+    // now CAST a real Magellan Globe (normal artifact cast) → the existing aura wraps again
     const globeId = injectToHand(g, 0, 'Magellan Globe')
     g.players[0].mana = 20
     act(g, 0, { t: 'castSpell', cardId: globeId, casterId: avatarOf(g, 0).id, at: { x: 2, y: 0 } })

@@ -140,7 +140,7 @@ export function affinity(state: GameState, player: PlayerId): Thresholds {
   }
   for (const art of Object.values(state.artifacts)) {
     const controller = art.carriedBy ? state.units[art.carriedBy]?.controller : art.conjuredBy
-    if (controller === player) addBonus(getScript(art.name)?.affinityBonus)
+    if (controller === player) addBonus(artScript(state, art)?.affinityBonus) // silenced artifact grants no affinity
   }
   // a negative judge override (or any future negative source) can't drop affinity
   // below zero — thresholds are natural numbers.
@@ -238,9 +238,14 @@ export function siteSilenced(state: GameState, site: { x: number; y: number }): 
     const f = getScript(u.name)?.unitSilencesSiteAt
     if (f && f(state, u.id, site as { id: string; x: number; y: number })) return true
   }
-  // auras that silence covered sites (Acid Rain, Atlantean Fate)
+  // auras that silence covered sites: `true` silences every covered site (Acid Rain); a predicate
+  // silences only the sites it accepts (Atlantean Fate silences its non-Ordinary sites only).
   for (const r of Object.values(state.auras)) {
-    if (getScript(r.name)?.auraSilencesSites && r.squares.some((q) => q.x === site.x && q.y === site.y)) return true
+    const f = getScript(r.name)?.auraSilencesSites
+    if (!f || !r.squares.some((q) => q.x === site.x && q.y === site.y)) continue
+    if (f === true) return true
+    const full = siteAt(state, site.x, site.y)
+    if (typeof f === 'function' && full && f(state, full)) return true
   }
   return false
 }
@@ -253,6 +258,16 @@ export function artifactSilenced(state: GameState, art: { x: number; y: number; 
     if (getScript(r.name)?.auraSilencesArtifacts && r.squares.some((q) => q.x === x && q.y === y)) return true
   }
   return false
+}
+
+/** An artifact's script, or undefined when the artifact is SILENCED. A silenced artifact loses ALL its
+ *  text/abilities — it just sits there (still carriable if it was, still targetable/destructible). Use
+ *  this instead of getScript(art.name) for every PASSIVE/STATIC artifact effect so silence disables them
+ *  uniformly. (Activated artifact abilities are already gated in canActivate. Automatons are UNITS in
+ *  state.units, NOT entries in state.artifacts, so a silenced Automaton still moves / attacks / taps for
+ *  costs like any silenced minion — this never touches them.) */
+export function artScript(state: GameState, art: { name: string; x: number; y: number; carriedBy?: string | null }): ReturnType<typeof getScript> {
+  return artifactSilenced(state, art) ? undefined : getScript(art.name)
 }
 
 /** an artifact sitting on this site turns it off entirely (Blightstone) */
@@ -366,7 +381,7 @@ function collectKeywordRemovals(state: GameState, unit: UnitState): string[] {
     if (f) out.push(...f(state, s.id, unit))
   }
   for (const a of src.arts) {
-    const f = getScript(a.name)?.removesKeywords
+    const f = artScript(state, a)?.removesKeywords // a silenced artifact removes nothing
     if (f) out.push(...f(state, a.id, unit))
   }
   for (const r of src.auras) {
@@ -672,7 +687,7 @@ export function directlyDisabled(state: GameState, unit: UnitState): boolean {
   // shackled by a carried artifact (Iron Shackles)
   for (const artId of unit.carrying) {
     const art = state.artifacts[artId]
-    if (art && getScript(art.name)?.bearerDisabled) return true
+    if (art && artScript(state, art)?.bearerDisabled) return true // a silenced shackle doesn't disable
   }
   return false
 }
@@ -694,7 +709,7 @@ export function isUnmodifiable(state: GameState, unit: UnitState): boolean {
   if (getScript(unit.name)?.unmodifiable) return true
   return unit.carrying.some((id) => {
     const a = state.artifacts[id]
-    return !!a && !!getScript(a.name)?.bearerUnmodifiable
+    return !!a && !!artScript(state, a)?.bearerUnmodifiable // silenced → no longer makes bearer unmodifiable
   })
 }
 
@@ -1015,7 +1030,7 @@ export function grantedAbilities(state: GameState, unit: UnitState): AbilityDef[
     if (g && !u.silenced && !isBlanked(u)) out.push(...tag(g(state, u.id, unit), u.name))
   }
   for (const art of Object.values(state.artifacts)) {
-    const g = getScript(art.name)?.artifactGrantsAbilities
+    const g = artScript(state, art)?.artifactGrantsAbilities // silenced → grants no abilities
     if (g) out.push(...tag(g(state, art.id, unit), art.name))
   }
   for (const aura of Object.values(state.auras)) {

@@ -3,7 +3,7 @@ import { getCard } from '../cards/db'
 import type { GameState, PlayerId } from './types'
 import { pushLog, pushPrompt, registerCont, drawCards, opponent, makeCtx, checkStateBased, killUnit, deferTurnStep, tapUnit, noAtlasDrawChoice, recordManaGain, siteStillFlooded, beginAreaReveal, sealAbilityReveal, snapshotRealm, recordTouchedSites, turnFingerprint } from './effects'
 import { sitesOf, unitsOf, avatarOf, siteAt } from './grid'
-import { siteSilenced, siteDisabledByArtifact, canTap, isDisabled } from './statics'
+import { siteSilenced, artifactSilenced, siteDisabledByArtifact, canTap, isDisabled } from './statics'
 import { playSite } from './casting'
 
 export function beginTurn(state: GameState, player: PlayerId): void {
@@ -218,7 +218,7 @@ function finishBeginTurn(state: GameState, player: PlayerId): void {
   for (const art of Object.values(state.artifacts)) {
     const script = getScript(art.name)
     const controller = art.carriedBy ? state.units[art.carriedBy]?.controller : art.conjuredBy
-    if (script?.startOfEachTurn && controller !== undefined) script.startOfEachTurn(makeCtx(state, art.id, controller, []), player)
+    if (script?.startOfEachTurn && controller !== undefined && !artifactSilenced(state, art)) script.startOfEachTurn(makeCtx(state, art.id, controller, []), player)
   }
   checkStateBased(state)
   if ((state.phase as string) === 'over') return
@@ -398,7 +398,7 @@ function finishEndTurn(state: GameState, player: PlayerId): void {
   for (const art of Object.values(state.artifacts)) {
     const controller = art.carriedBy ? state.units[art.carriedBy]?.controller : art.conjuredBy
     const script = getScript(art.name)
-    if (script?.endOfEveryTurn && controller !== undefined) script.endOfEveryTurn(makeCtx(state, art.id, controller, []))
+    if (script?.endOfEveryTurn && controller !== undefined && !artifactSilenced(state, art)) script.endOfEveryTurn(makeCtx(state, art.id, controller, []))
   }
   // auras too — Wildfire moves + burns at the end of each turn (was never dispatched,
   // so Wildfire "did not move"). Snapshot ids first: a hook may add/remove auras.
@@ -434,7 +434,7 @@ function finishEndTurn(state: GameState, player: PlayerId): void {
   // its damage is cleared, instead of dying the instant the buff leaves (Torshammar FAQ).
   // Damage-DEALING end-of-turn effects (Wildfire) already resolved earlier and still kill.
   for (const art of Object.values(state.artifacts)) {
-    if (!getScript(art.name)?.returnToHandAfterTurn) continue
+    if (!getScript(art.name)?.returnToHandAfterTurn || artifactSilenced(state, art)) continue
     if (art.carriedBy) {
       const carrier = state.units[art.carriedBy]
       if (carrier) carrier.carrying = carrier.carrying.filter((id) => id !== art.id)
@@ -572,7 +572,7 @@ function collectTurnTriggers(state: GameState, player: PlayerId, hook: 'startOfT
   }
   for (const art of Object.values(state.artifacts)) {
     const controller = art.carriedBy ? state.units[art.carriedBy]?.controller : art.conjuredBy
-    if (controller === player && getScript(art.name)?.[hook]) refs.push({ kind: 'artifact', sourceId: art.id })
+    if (controller === player && getScript(art.name)?.[hook] && !artifactSilenced(state, art)) refs.push({ kind: 'artifact', sourceId: art.id })
   }
   for (const aura of Object.values(state.auras)) {
     if (aura.controller === player && getScript(aura.name)?.[hook]) refs.push({ kind: 'aura', sourceId: aura.id })
@@ -604,7 +604,7 @@ function runTurnTrigger(state: GameState, player: PlayerId, ref: TriggerRef, hoo
   } else if (ref.kind === 'artifact') {
     const a = state.artifacts[ref.sourceId]
     const controller = a?.carriedBy ? state.units[a.carriedBy]?.controller : a?.conjuredBy
-    if (a && controller === player) { srcId = a.id; srcName = a.name; fire = () => getScript(a.name)?.[hook]?.(makeCtx(state, a.id, player, [])) }
+    if (a && controller === player && !artifactSilenced(state, a)) { srcId = a.id; srcName = a.name; fire = () => getScript(a.name)?.[hook]?.(makeCtx(state, a.id, player, [])) }
   } else if (ref.kind === 'aura') {
     const r = state.auras[ref.sourceId]
     if (r && r.controller === player) { srcId = r.id; srcName = r.name; fire = () => getScript(r.name)?.[hook]?.(makeCtx(state, r.id, player, [])) }

@@ -1,7 +1,7 @@
 // Card script registry. A script teaches the engine what a card's rules text
 // does. Cards whose text is only engine-native keywords need no script.
 
-import type { GameState, UnitState, AuraState, PlayerId, Thresholds, Region, Duration } from '../../engine/types'
+import type { GameState, UnitState, SiteState, AuraState, PlayerId, Thresholds, Region, Duration } from '../../engine/types'
 import { scriptedNames, getCard } from '../db'
 
 /** A reference to something an effect can point at. */
@@ -521,8 +521,9 @@ export interface CardScript {
   siteExtraThreshold?: (state: GameState, site: { id: string; x: number; y: number; controller: PlayerId | null }) => Partial<Thresholds>
   /** site: provides no mana at all (Wedding Hall) */
   noMana?: boolean
-  /** aura: sites are silenced on covered squares (Acid Rain, Atlantean Fate) */
-  auraSilencesSites?: boolean
+  /** aura: sites are silenced on covered squares. `true` silences EVERY covered site (Acid Rain); a
+   *  predicate silences only the sites it returns true for (Atlantean Fate: only non-Ordinary sites). */
+  auraSilencesSites?: boolean | ((state: GameState, site: SiteState) => boolean)
   /** aura: artifacts on covered squares lose their text (Acid Rain) */
   auraSilencesArtifacts?: boolean
   /** aura: covered non-Ordinary sites only provide Water threshold (Atlantean Fate) */

@@ -1,5 +1,6 @@
 import { registerScript } from '../registry'
 import { getCard } from '../../db'
+import { waterSiteTargets } from '../multi-card-utils/site-terrain-targets'
 import { adjacentSquaresW, isWaterSite, unitsAt } from '../../../engine/grid'
 import { isLegalStep } from '../../../engine/movement'
 import { pushLog, checkStateBased, emitUnitMoved } from '../../../engine/effects'
@@ -10,6 +11,7 @@ registerScript('Call of the Sea', {
     what: 'site', count: 1, targeted: true, label: 'target water site',
     filter: (state, site) => isWaterSite(state, site, getCard),
   }],
+  targetOptions: (state) => waterSiteTargets(state), // engine-authoritative glow: every water site
   onCast: (ctx) => {
     const t = ctx.targets[0]
     if (!('site' in t)) return

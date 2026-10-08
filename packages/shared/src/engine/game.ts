@@ -8,7 +8,7 @@ import { castSpell, playSite, affinity, validateTarget, legalTargetOptions, same
 import { moveAttack, shootProjectile, pickUp, drop, enforceForcedAttacks, resolvePendingMoveAttack } from './combat'
 import { applyJudge } from './judge'
 import { abilityAnchor, avatarOf, unitsAt, nearbySquaresW, occupiedSquares } from './grid'
-import { canTap, isDisabled, effKeywords, siteSilenced, artifactSilenced, grantedAbilities, attackBlockedAt } from './statics'
+import { canTap, isDisabled, effKeywords, siteSilenced, artifactSilenced, artScript, grantedAbilities, attackBlockedAt } from './statics'
 import { reachableLocations } from './movement'
 
 export { createGame } from './setup'
@@ -228,7 +228,7 @@ function mustAttackViolation(state: GameState, player: PlayerId): string | null 
     // NB: The Green Knight's "enemies must attack me" is enforced PROACTIVELY (enforceForcedAttacks) — an
     // able enemy is compelled to attack it immediately, so it never lingers as an end-turn violation here.
     return Object.values(state.artifacts).some((a) => {
-      if (!getScript(a.name)?.forcesNearbyAttacks) return false
+      if (!artScript(state, a)?.forcesNearbyAttacks) return false // silenced artifact compels nothing
       const ax = a.carriedBy ? state.units[a.carriedBy]?.x : a.x
       const ay = a.carriedBy ? state.units[a.carriedBy]?.y : a.y
       return ax !== undefined && ay !== undefined && nearbySquaresW(state, ax, ay).some((s) => s.x === u.x && s.y === u.y)

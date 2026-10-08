@@ -5,7 +5,7 @@ import { findCard } from '../cards/db'
 import { pickUpUnits, dropUnits, syncCarried, detachFromCarrier } from './carrying'
 import type { GameState, PlayerId, Region, Step, UnitState, AttackTarget } from './types'
 import { pushLog, pushPrompt, registerCont, dealDamageToUnit, dealDamage, checkStateBased, opponent, makeCtx, emitUnitMoved, gainLife, tapUnit, emitEvent, drawCards, askDrawCard, recordAreaReveal, markRevealShoots, beginAreaReveal, sealAbilityReveal, beginBattleCapture, finishBattleCapture, avatarTrappedAt, isMagicProtected } from './effects'
-import { effAttack, effKeywords, isDisabled, canTap, projectileCanHit, attackBlockedAt, interceptBlockedAt, siteSilenced as siteSilencedC, regionPresentAt, carriedInside, isBlanked, isCarriableArtifact } from './statics'
+import { effAttack, effKeywords, isDisabled, canTap, projectileCanHit, attackBlockedAt, interceptBlockedAt, siteSilenced as siteSilencedC, artScript, regionPresentAt, carriedInside, isBlanked, isCarriableArtifact } from './statics'
 import { findPath, isFreeStep, isLegalStep, maxSteps, reachableLocations, reachableWithPaths, resolveMovement } from './movement'
 import { unitsAt, occupies, occupiedSquares, inBounds, edgesConnected, GRID_W, GRID_H, squareLabel } from './grid'
 
@@ -846,7 +846,7 @@ function runFightPass(state: GameState, ctx: FightCtx): void {
       // carried artifacts watching their bearer's blows (The Rack)
       for (const artId of striker.carrying) {
         const art = state.artifacts[artId]
-        const hook = art ? getScript(art.name)?.bearerOnStrike : undefined
+        const hook = art ? artScript(state, art)?.bearerOnStrike : undefined // silenced weapon doesn't fire
         if (art && hook) hook(makeCtx(state, art.id, striker.controller, []), art.id, target)
       }
       if (dealt > 0 && lifelinkSources > 0) {
@@ -963,7 +963,7 @@ function runFightPass(state: GameState, ctx: FightCtx): void {
     if (kills.length) {
       for (const artId of attacker.carrying) {
         const art = state.artifacts[artId]
-        const hook = art ? getScript(art.name)?.onAttackKill : undefined
+        const hook = art ? artScript(state, art)?.onAttackKill : undefined // silenced weapon: no on-kill
         if (art && hook) for (const id of kills) hook(makeCtx(state, art.id, attacker.controller, []), { id } as any)
       }
     }
@@ -982,7 +982,7 @@ function strikePower(state: GameState, striker: UnitState): number {
   let n = effAttack(state, striker) + unbrokenLances(state, striker).length
   for (const artId of striker.carrying) {
     const art = state.artifacts[artId]
-    const mult = art ? getScript(art.name)?.bearerStrikeMultiplier : undefined
+    const mult = art ? artScript(state, art)?.bearerStrikeMultiplier : undefined // silenced → no multiplier
     if (mult) n *= mult
   }
   return n
@@ -1622,7 +1622,7 @@ export function pickUp(state: GameState, player: PlayerId, unitId: string, artif
   if (isDisabled(state, unit)) return `${unit.name} is disabled.`
   if ((unit.usedThisTurn['pickup'] ?? 0) >= 1) return 'Pick Up was already used this turn.'
   // Red Rock of Ravannis: artifacts can't be carried at its location
-  if (Object.values(state.artifacts).some((a) => !a.carriedBy && a.x === unit.x && a.y === unit.y && getScript(a.name)?.blocksCarryingHere)) {
+  if (Object.values(state.artifacts).some((a) => !a.carriedBy && a.x === unit.x && a.y === unit.y && artScript(state, a)?.blocksCarryingHere)) {
     return 'A strange magnetism prevents carrying artifacts here.'
   }
   const stealsCarried = getScript(unit.name)?.stealsCarried
@@ -1660,7 +1660,7 @@ export function pickUp(state: GameState, player: PlayerId, unitId: string, artif
     art.region = unit.region
     unit.carrying.push(id)
     // "when picked up" triggers (13 Treasures of Britain)
-    const hook = getScript(art.name)?.onPickedUp
+    const hook = artScript(state, art)?.onPickedUp // a silenced artifact has no pick-up trigger
     if (hook) hook(makeCtx(state, art.id, player, []), unit)
   }
   unit.usedThisTurn['pickup'] = 1
@@ -1679,7 +1679,7 @@ export function drop(state: GameState, player: PlayerId, unitId: string, artifac
   for (const id of artifactIds) {
     if (!unit.carrying.includes(id)) return 'Not carrying that artifact.'
     const art = state.artifacts[id]
-    if (art && getScript(art.name)?.cantDrop) return `${art.name} cannot be dropped.`
+    if (art && artScript(state, art)?.cantDrop) return `${art.name} cannot be dropped.` // silenced → droppable
   }
   // Cursed Iron: artifacts on covered squares can't be dropped
   if (artifactIds.length > 0) {

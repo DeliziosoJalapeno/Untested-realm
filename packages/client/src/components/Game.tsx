@@ -47,6 +47,7 @@ import {
   carriedInside,
   occupiedSquares,
   occupies,
+  edgesConnected,
   coneSquares,
   areaDamagePreview,
   type Action,
@@ -1987,6 +1988,14 @@ function GameInner({
         // judge placement is direct: every in-bounds square is a legal target
         for (let x = 0; x < GRID_W; x++) for (let y = 0; y < GRID_H; y++) set.set(`${x},${y}`, 'hl-place')
       }
+      // A targetable SITE fills its whole square, so the chip's own glow is clipped by the square's
+      // overflow:hidden. Glow the SQUARE instead, REUSING the summon / explosion `hl-place` highlight —
+      // driven straight off the engine's target set (targetIds), no legality logic here.
+      if (targetIds) {
+        for (const s of Object.values(view.sites) as any[]) {
+          if (targetIds.has(s.id)) set.set(`${s.x},${s.y}`, 'hl-place')
+        }
+      }
     } catch {
       // highlight computation must never crash the UI
     }
@@ -3696,7 +3705,7 @@ function GameInner({
                           )}
                           {site.ward && <WardGlow />}
                           {site.ward && <span className="kw siteward" title="Warded">🛡</span>}
-                          {siteSilenced(st, site) && <span className="kw sitesilenced" title="Silenced — its abilities are removed">🤐</span>}
+                          {siteSilenced(st, site) && <span className={`kw sitesilenced${Object.values(view.auras).some((r) => r.squares.some((s) => s.x === x && s.y === y)) ? ' aura-shift' : ''}`} title="Silenced — its abilities are removed">🤐</span>}
                           {site.flooded && <span className="kw siteflood" title="Flooded">🌊</span>}
                           {(site as any).trap && <span className="kw sitetrap" title={(site as any).trap.realName ? `Your hidden trap: ${(site as any).trap.realName}` : 'A hidden trap lurks here'}>🪤</span>}
                           {scorchedSquares.has(`${x},${y}`) && <span className="kw sitescorched" title="Scorched — a roaming Wildfire has burned here">🔥</span>}
@@ -4005,11 +4014,14 @@ function GameInner({
             const placement = getScript(name)?.auraPlacement
             const S = 22
             const markers: React.ReactNode[] = []
-            // anchors run from -1 so the board's LEFT (x=-1) and BOTTOM (y=-1) border
-            // intersections are offered too — not just the interior/top/right ones. A
-            // border anchor's 2x2 clips to the adjacent column/row (or wraps under the Globe).
-            for (let x = -1; x < GRID_W; x++) {
-              for (let y = -1; y < GRID_H; y++) {
+            // a 2x2 aura must FULLY FIT in the realm, so anchors stop one short of each edge — UNLESS a
+            // Magellan Globe connects the edges, which lets the area wrap around a corner onto the far
+            // side (then the last row/column become legal anchors too). Mirrors the engine's validation.
+            const wrap = edgesConnected(st)
+            const maxX = wrap ? GRID_W : GRID_W - 1
+            const maxY = wrap ? GRID_H : GRID_H - 1
+            for (let x = 0; x < maxX; x++) {
+              for (let y = 0; y < maxY; y++) {
                 if (placement) { try { if (placement(st, me, { x, y }) !== null) continue } catch { continue } }
                 // shared corner of the anchor's 2x2 = right/top boundary of the anchor
                 // cell (flip-aware); same corner math as wallRect

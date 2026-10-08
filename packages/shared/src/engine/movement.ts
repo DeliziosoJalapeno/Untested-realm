@@ -30,7 +30,7 @@ export function siteEntryAllowed(state: GameState, unit: UnitState, from: Step, 
   }
   for (const a of Object.values(state.artifacts)) {
     const script = getScript(a.name)
-    if (!script?.entryFilter || (forced && !forcedActivates(script))) continue
+    if (!script?.entryFilter || artifactSilenced(state, a) || (forced && !forcedActivates(script))) continue
     if (!script.entryFilter(state, a.id, unit, from, to)) return false
   }
   return true
@@ -102,7 +102,7 @@ export function isLegalStep(state: GameState, unit: UnitState, from: Step, to: S
   }
   for (const a of Object.values(state.artifacts)) {
     const extra = getScript(a.name)?.extraSteps
-    if (extra && extra(state, unit, from, a.id).some((t) => t.x === to.x && t.y === to.y && t.region === to.region)) return true
+    if (extra && !artifactSilenced(state, a) && extra(state, unit, from, a.id).some((t) => t.x === to.x && t.y === to.y && t.region === to.region)) return true
   }
 
   // oversized: the anchor moves one orthogonal step; all four parts move with it
@@ -247,7 +247,7 @@ function extraStepsFor(state: GameState, unit: UnitState, from: Step): Step[] {
   }
   for (const a of Object.values(state.artifacts)) {
     const extra = getScript(a.name)?.extraSteps
-    if (extra) out.push(...extra(state, unit, from, a.id))
+    if (extra && !artifactSilenced(state, a)) out.push(...extra(state, unit, from, a.id))
   }
   return out
 }

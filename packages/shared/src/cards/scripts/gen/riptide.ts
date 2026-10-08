@@ -1,5 +1,6 @@
 import { registerScript } from '../registry'
 import { getCard } from '../../db'
+import { waterSiteTargets } from '../multi-card-utils/site-terrain-targets'
 import { isWaterSite, orthAdjacentWrapped, unitsAt } from '../../../engine/grid'
 
 // 'Target water site pulls in an aboveground unit it's adjacent to. Draw a card.'
@@ -8,6 +9,7 @@ registerScript('Riptide', {
     what: 'site', count: 1, targeted: true, label: 'target water site',
     filter: (state, s) => isWaterSite(state, s, getCard),
   }],
+  targetOptions: (state) => waterSiteTargets(state), // engine-authoritative glow: every water site
   onCast: (ctx) => {
     const t = ctx.targets[0]
     if (!t || !('site' in t)) return

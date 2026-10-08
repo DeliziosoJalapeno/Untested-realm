@@ -1,5 +1,6 @@
 import { registerScript } from '../registry'
 import { getCard } from '../../db'
+import { landSiteTargets } from '../multi-card-utils/site-terrain-targets'
 import { isWaterSite, unitsAt } from '../../../engine/grid'
 import { footprintAllTerrain } from '../../../engine/statics'
 import { pushLog, checkStateBased } from '../../../engine/effects'
@@ -11,6 +12,7 @@ registerScript('Cave-In', {
     what: 'site', count: 1, targeted: true, label: 'target land site',
     filter: (state, site) => !isWaterSite(state, site, getCard),
   }],
+  targetOptions: (state) => landSiteTargets(state), // engine-authoritative glow: every land site
   onCast: (ctx) => {
     const t = ctx.targets[0]
     if (!('site' in t)) return

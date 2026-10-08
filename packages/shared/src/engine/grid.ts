@@ -32,10 +32,16 @@ export function siteAt(state: GameState, x: number, y: number): SiteState | null
   return null
 }
 
-/** Magellan Globe: "Opposite edges of the realm are connected." Global while the
- *  artifact is in play (matches its movement extraSteps dispatch — no silence gate). */
+/** Magellan Globe: "Opposite edges of the realm are connected." Global while the artifact is in play —
+ *  but a SILENCED Globe (Acid Rain) has lost its text and connects nothing. (The silence check is
+ *  inlined — a faithful copy of statics.artifactSilenced — to avoid a grid↔statics import cycle.) */
 export function edgesConnected(state: GameState): boolean {
-  return Object.values(state.artifacts).some((a) => a.name === 'Magellan Globe')
+  return Object.values(state.artifacts).some((a) => {
+    if (a.name !== 'Magellan Globe') return false
+    const x = a.carriedBy ? state.units[a.carriedBy]?.x ?? a.x : a.x
+    const y = a.carriedBy ? state.units[a.carriedBy]?.y ?? a.y : a.y
+    return !Object.values(state.auras).some((r) => getScript(r.name)?.auraSilencesArtifacts && r.squares.some((q) => q.x === x && q.y === y))
+  })
 }
 
 /** the squares a standard 2x2 aura anchored at `at` (top-left) covers: clipped to

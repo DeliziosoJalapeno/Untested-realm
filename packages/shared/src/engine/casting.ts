@@ -3,7 +3,7 @@ import { getScript, type CardScript, type TargetRef, type TargetSpec } from '../
 import type { GameState, PlayerId, Region, Thresholds, UnitState } from './types'
 import { adjacentSquares, adjacentSquaresW, avatarOf, chebyshev, chebyshevW, orthAdjacentWrapped, nearbySquares, nearbySquaresW, siteAt, sitesOf, inBounds, unitsAt, occupies, occupiedSquares, GRID_W, GRID_H, edgesConnected, aura2x2Squares } from './grid'
 import { newId, pushLog, makeCtx, checkStateBased, opponent, emitUnitEnters, emitEvent, isMagicProtected, loseLife, checkWard, pushPrompt, registerCont, runCont, toCemetery, bumpManaSpent, beginAreaReveal, recordAffectedSites, snapshotRealm, recordTouchedSites, sealSpellReveal, setActionCredit, restoreActionCredit, firesGenesisOnEntry, recordManaGain, deferTurnStep, settleEntering, runDamageEvent } from './effects'
-import { affinity, effKeywords, isDisabled, disabledByEffect, canExistIn, siteSilenced, siteDisabledByArtifact, artifactSilenced, zoneAccessToll, applyKeywordString, isArtifactUnit, isEvilUnit, isEvilCardName, isEvilCardNameFor, cardSubtypesFor, collectionBanned, payZoneToll, takeFromCollection, carriedInside, isBlanked, isCarriableArtifact, terrainAt } from './statics'
+import { affinity, effKeywords, isDisabled, disabledByEffect, canExistIn, siteSilenced, siteDisabledByArtifact, artifactSilenced, artScript, zoneAccessToll, applyKeywordString, isArtifactUnit, isEvilUnit, isEvilCardName, isEvilCardNameFor, cardSubtypesFor, collectionBanned, payZoneToll, takeFromCollection, carriedInside, isBlanked, isCarriableArtifact, terrainAt } from './statics'
 import { siteEntryAllowed } from './movement'
 import { TRAP_DISGUISE, trapElementOf } from './traps'
 
@@ -618,7 +618,7 @@ function targetCompulsion(
   caster: UnitState,
   player: PlayerId,
 ): string | null {
-  const oaks = Object.values(state.artifacts).filter((a) => getScript(a.name)?.compelsTargets)
+  const oaks = Object.values(state.artifacts).filter((a) => artScript(state, a)?.compelsTargets) // silenced Oak doesn't compel
   if (!oaks.length) return null
   const ok = (r: TargetRef) => !validateTargetCore(state, spec, r, caster, player)
   // precedence 1: a compelling artifact itself
@@ -1112,7 +1112,15 @@ export function castSpell(
   }
   if (def.type === 'Aura') {
     if (!at) return 'Choose where the aura goes.'
-    const placement = getScript(castName)?.auraPlacement
+    const aScript = getScript(castName)
+    // a plain 2x2 aura's area must FULLY FIT in the realm — unless a Magellan Globe connects the edges,
+    // which lets it wrap around a corner onto the far side (FAQ). Single-site + edge (wall) auras exempt.
+    if (!aScript?.singleSiteAura && !(aScript as { edgeAura?: boolean } | undefined)?.edgeAura) {
+      const wrap = edgesConnected(state)
+      if (at.x < 0 || at.x >= GRID_W || at.y < 0 || at.y >= GRID_H) return 'The two-by-two area must fit inside the realm.'
+      if (!wrap && (at.x >= GRID_W - 1 || at.y >= GRID_H - 1)) return 'The two-by-two area must fit inside the realm — raise a Magellan Globe to wrap it around the edge.'
+    }
+    const placement = aScript?.auraPlacement
     if (placement) {
       const err = placement(state, player, at, caster)
       if (err) return err

@@ -5,7 +5,7 @@ import { getCard, getKeywords, findCard } from '../cards/db'
 import { getScript, type DamageSource, type EffectAPI, type TargetRef, type TargetSpec } from '../cards/scripts/registry'
 import type { GameState, PlayerId, Region, UnitState, SiteState, Prompt, DeckName } from './types'
 import { avatarOf, siteAt, unitsAt, edgesConnected, aura2x2Squares, occupiedSquares, inBounds, GRID_W, GRID_H, squareLabel, nearbySquaresW, orthAdjacentWrapped } from './grid'
-import { affinity, effAttack, effDefence, effKeywords, canExistIn, siteSilenced, artifactSilenced, isEvilUnit, isDisabled, isUnmodifiable, silenceImmune, footprintAllTerrain, terrainAt, buildStaticGrantIndex } from './statics'
+import { affinity, effAttack, effDefence, effKeywords, canExistIn, siteSilenced, artifactSilenced, artScript, isEvilUnit, isDisabled, isUnmodifiable, silenceImmune, footprintAllTerrain, terrainAt, buildStaticGrantIndex } from './statics'
 import { siteEntryAllowed } from './movement' // runtime-only use (teleport closure); import cycle is safe
 import { awardAchievement } from './achievements.catalog' // types-only module → no cycle
 
@@ -1269,7 +1269,7 @@ export function dealDamageToUnit(
     if (boost) n = boost(state, other.id, unit, n, source)
   }
   for (const art of Object.values(state.artifacts)) {
-    const boost = getScript(art.name)?.damageBoost
+    const boost = artScript(state, art)?.damageBoost // silenced artifact boosts nothing
     if (boost) n = boost(state, art.id, unit, n, source)
   }
   let forceLethal = false
@@ -1554,7 +1554,7 @@ export function dealDamage(state: GameState, target: TargetRef, n: number, sourc
       if (mod) n = mod(state, r.id, site, n, source)
     }
     for (const a of Object.values(state.artifacts)) {
-      const mod = getScript(a.name)?.siteDamageModifier
+      const mod = artScript(state, a)?.siteDamageModifier // silenced artifact: no damage modifier
       if (mod) n = mod(state, a.id, site, n, source)
     }
     if (n <= 0) return
@@ -1650,7 +1650,7 @@ export function trySubmerge(state: GameState, unit: UnitState): boolean {
   }
   for (const artId of unit.carrying) {
     const art = state.artifacts[artId]
-    if (art && getScript(art.name)?.protectsAlliesFromSubmerge) {
+    if (art && artScript(state, art)?.protectsAlliesFromSubmerge) {
       pushLog(state, unit.controller, `${unit.name} clings on — it can't be submerged.`)
       return false
     }
@@ -1723,7 +1723,7 @@ export function applyHealingModifier(state: GameState, n: number): number {
   for (const u of Object.values(state.units)) {
     if (!u.silenced) apply(getScript(u.name)?.healingMultiplier)
   }
-  for (const a of Object.values(state.artifacts)) apply(getScript(a.name)?.healingMultiplier)
+  for (const a of Object.values(state.artifacts)) apply(artScript(state, a)?.healingMultiplier) // silenced → no heal mult
   for (const r of Object.values(state.auras)) apply(getScript(r.name)?.healingMultiplier)
   return n
 }
@@ -1804,7 +1804,7 @@ export function killUnit(state: GameState, unitId: string): void {
     if (would && would(state, u.id, unit)) return
   }
   for (const a of Object.values(state.artifacts)) {
-    const would = getScript(a.name)?.onWouldDie
+    const would = artScript(state, a)?.onWouldDie // silenced artifact can't replace a death
     if (would && would(state, a.id, unit)) return
   }
   dyingUnits.add(unitId)
@@ -2598,7 +2598,7 @@ export function checkStateBased(state: GameState): void {
     const a: string[] = []
     const r: string[] = []
     for (const unit of Object.values(state.units)) if (getScript(unit.name)?.disablesOther) u.push(unit.id)
-    for (const art of Object.values(state.artifacts)) if (!art.carriedBy && getScript(art.name)?.disablesOther) a.push(art.id)
+    for (const art of Object.values(state.artifacts)) if (!art.carriedBy && artScript(state, art)?.disablesOther) a.push(art.id)
     for (const aura of Object.values(state.auras)) if (getScript(aura.name)?.auraDisablesUnit) r.push(aura.id)
     state.flow = state.flow ?? {}
     // stamp with nextId (bumps on every entity creation) so disabledByEffect trusts
