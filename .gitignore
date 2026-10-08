@@ -55,3 +55,6 @@ build/
 
 # Internal scratch: per-card gap notes + one-off audit scripts (all working files, not shipped)
 /test-gaps/
+
+# Root scratch: judge-form HTML dump
+/_form.html

@@ -1,6 +1,6 @@
 import { registerScript } from '../registry'
-import { getCard } from '../../db'
 import { siteAt, unitsAt } from '../../../engine/grid'
+import { siteRarity } from '../../../engine/statics'
 import { pushLog, killUnit, toCemetery } from '../../../engine/effects'
 
 // "Conjure atop an Elite or Unique site. / At the start of your turn, destroy
@@ -10,7 +10,7 @@ registerScript("Castle's Ablaze!", {
   auraPlacement: (state, _player, at) => {
     const site = siteAt(state, at.x, at.y)
     if (!site) return "Castle's Ablaze! must be conjured atop a site."
-    const rar = getCard(site.name).rarity
+    const rar = siteRarity(state, site) // rubble is Ordinary → not a legal target
     return rar === 'Elite' || rar === 'Unique' ? null : "Castle's Ablaze! must be conjured atop an Elite or Unique site."
   },
   startOfTurn: (ctx) => {

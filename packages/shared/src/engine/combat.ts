@@ -404,6 +404,13 @@ function openDefendWindow(state: GameState, attacker: UnitState, target: { unitI
       ? { x: tSite.x, y: tSite.y, region: 'surface' }
       : { x: attacker.x, y: attacker.y, region: attacker.region }
 
+  // a site attacked directly may rise to defend ITSELF (Free City musters its 3/3 garrison) — the hook
+  // spawns a pseudo-defender at the site, which the candidate scan below then offers like any defender.
+  if (tSite && tSite.controller !== null && !siteSilencedC(state, tSite)) {
+    const hook = getScript(tSite.name)?.onSiteAttacked
+    if (hook) hook(makeCtx(state, tSite.id, tSite.controller, []), attacker)
+  }
+
   let candidates: UnitState[] = []
   let undefendable = getScript(attacker.name)?.cantBeDefended && !attacker.silenced
   // Dread Thicket: the first attack out of the site each turn can't be defended
@@ -716,8 +723,11 @@ function evilTwinStrikesFirst(state: GameState, u: UnitState, opponents: UnitSta
   return opponents.some((o) => o.id === link.originalId)
 }
 
+function unbrokenLances(state: GameState, unit: UnitState): string[] {
+  return unit.carrying.filter((id) => state.artifacts[id]?.name === 'Lance' && !(state.artifacts[id].counters?.broken))
+}
 function hasUnbrokenLance(state: GameState, unit: UnitState): boolean {
-  return unit.carrying.some((id) => state.artifacts[id]?.name === 'Lance' && !(state.artifacts[id].counters?.broken))
+  return unbrokenLances(state, unit).length > 0
 }
 
 function fireAfterAttack(state: GameState, ctx: FightCtx): void {
@@ -843,13 +853,15 @@ function runFightPass(state: GameState, ctx: FightCtx): void {
         gainLife(state, striker.controller, dealt * lifelinkSources) // N sources → N× the heal
       }
     }
-    if (hasUnbrokenLance(state, striker)) {
-      // the lance breaks after its first strike
-      const lanceId = striker.carrying.find((id) => state.artifacts[id]?.name === 'Lance')
-      if (lanceId) {
-        striker.carrying = striker.carrying.filter((id) => id !== lanceId)
-        delete state.artifacts[lanceId]
-        pushLog(state, striker.controller, `${striker.name}'s lance shatters after the blow.`)
+    {
+      // every lance held adds +1 to the strike (see strikePower) and ALL of them break afterwards
+      const lances = unbrokenLances(state, striker)
+      if (lances.length) {
+        for (const lanceId of lances) {
+          striker.carrying = striker.carrying.filter((id) => id !== lanceId)
+          delete state.artifacts[lanceId]
+        }
+        pushLog(state, striker.controller, `${striker.name}'s lance${lances.length > 1 ? 's' : ''} shatter${lances.length > 1 ? '' : 's'} after the blow.`)
       }
     }
     // striking (even at 0 power) "interacts with the realm" → this unit can't Drop this
@@ -967,7 +979,7 @@ function runFightPass(state: GameState, ctx: FightCtx): void {
 
 /** strike damage including a carried lance's bonus and strike multipliers */
 function strikePower(state: GameState, striker: UnitState): number {
-  let n = effAttack(state, striker) + (hasUnbrokenLance(state, striker) ? 1 : 0)
+  let n = effAttack(state, striker) + unbrokenLances(state, striker).length
   for (const artId of striker.carrying) {
     const art = state.artifacts[artId]
     const mult = art ? getScript(art.name)?.bearerStrikeMultiplier : undefined
@@ -1111,7 +1123,13 @@ registerCont('projectile:hit', (state, ctx: { shooterId: string }, choice) => {
   if (typeof targetId === 'string') resolveProjectileHit(state, ctx.shooterId, targetId)
 })
 
-export function shootProjectile(state: GameState, player: PlayerId, unitId: string, direction: Direction): string | null {
+// an oversized/stretched shooter picked which of its squares the Ranged shot flies from → fire it there
+registerCont('ranged:origin', (state, ctx: { unitId: string; player: PlayerId; dir: Direction }, choice) => {
+  const sq = choice as any
+  if (sq && typeof sq.x === 'number' && typeof sq.y === 'number') shootProjectile(state, ctx.player, ctx.unitId, ctx.dir, { x: sq.x, y: sq.y })
+})
+
+export function shootProjectile(state: GameState, player: PlayerId, unitId: string, direction: Direction, origin?: { x: number; y: number }): string | null {
   const unit = state.units[unitId]
   if (!unit) return 'No such unit.'
   if (unit.controller !== player) return 'Not your unit.'
@@ -1126,6 +1144,9 @@ export function shootProjectile(state: GameState, player: PlayerId, unitId: stri
   markRevealShoots(state)
   sealAbilityReveal(state, `${unit.name} shoots!`)
 
+  // an oversized/stretched shooter fires from a CHOSEN occupied square (origin); the unit itself stays put
+  const ox = origin?.x ?? unit.x
+  const oy = origin?.y ?? unit.y
   const dx = direction === 'e' ? 1 : direction === 'w' ? -1 : 0
   const dy = direction === 'n' ? 1 : direction === 's' ? -1 : 0
   // Truesight Crossbow: the bearer sees through Stealth
@@ -1147,16 +1168,16 @@ export function shootProjectile(state: GameState, player: PlayerId, unitId: stri
   // the shot begins at the shooter's OWN square: enemies sharing it are hit first
   // (allies at the starting location are ignored per the rulebook; not the shooter)
   {
-    const atOrigin = unitsAt(state, unit.x, unit.y, unit.region).filter((u) => u.id !== unitId && u.controller !== player && hittable(u))
+    const atOrigin = unitsAt(state, ox, oy, unit.region).filter((u) => u.id !== unitId && u.controller !== player && hittable(u))
     if (atOrigin.length > 0) { impact(atOrigin); return null }
   }
   // Magellan Globe: a Ranged shot flies around the joined edge (same region), exactly like a spell
   // projectile's raySquares — wrap the coords on leaving the board, and a `visited` guard stops the
   // ray if it circles all the way back. Without a Globe it breaks at the edge as before.
   const wrap = edgesConnected(state)
-  const visited = new Set<string>([`${unit.x},${unit.y}`])
-  let x = unit.x
-  let y = unit.y
+  const visited = new Set<string>([`${ox},${oy}`])
+  let x = ox
+  let y = oy
   for (let step = 1; step <= (kw.ranged ?? 1); step++) {
     x += dx
     y += dy

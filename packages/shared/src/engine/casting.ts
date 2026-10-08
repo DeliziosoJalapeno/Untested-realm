@@ -1,9 +1,9 @@
 import { getCard, cardSupport, getKeywords } from '../cards/db'
-import { getScript, type TargetRef, type TargetSpec } from '../cards/scripts/registry'
+import { getScript, type CardScript, type TargetRef, type TargetSpec } from '../cards/scripts/registry'
 import type { GameState, PlayerId, Region, Thresholds, UnitState } from './types'
-import { adjacentSquares, adjacentSquaresW, avatarOf, chebyshev, chebyshevW, orthAdjacentWrapped, nearbySquares, nearbySquaresW, siteAt, sitesOf, inBounds, unitsAt, occupies, GRID_W, GRID_H, edgesConnected, aura2x2Squares } from './grid'
+import { adjacentSquares, adjacentSquaresW, avatarOf, chebyshev, chebyshevW, orthAdjacentWrapped, nearbySquares, nearbySquaresW, siteAt, sitesOf, inBounds, unitsAt, occupies, occupiedSquares, GRID_W, GRID_H, edgesConnected, aura2x2Squares } from './grid'
 import { newId, pushLog, makeCtx, checkStateBased, opponent, emitUnitEnters, emitEvent, isMagicProtected, loseLife, checkWard, pushPrompt, registerCont, runCont, toCemetery, bumpManaSpent, beginAreaReveal, recordAffectedSites, snapshotRealm, recordTouchedSites, sealSpellReveal, setActionCredit, restoreActionCredit, firesGenesisOnEntry, recordManaGain, deferTurnStep, settleEntering, runDamageEvent } from './effects'
-import { affinity, effKeywords, isDisabled, disabledByEffect, canExistIn, siteSilenced, siteDisabledByArtifact, artifactSilenced, zoneAccessToll, applyKeywordString, isArtifactUnit, isEvilUnit, isEvilCardName, isEvilCardNameFor, cardSubtypesFor, collectionBanned, payZoneToll, takeFromCollection, carriedInside, isBlanked, isCarriableArtifact } from './statics'
+import { affinity, effKeywords, isDisabled, disabledByEffect, canExistIn, siteSilenced, siteDisabledByArtifact, artifactSilenced, zoneAccessToll, applyKeywordString, isArtifactUnit, isEvilUnit, isEvilCardName, isEvilCardNameFor, cardSubtypesFor, collectionBanned, payZoneToll, takeFromCollection, carriedInside, isBlanked, isCarriableArtifact, terrainAt } from './statics'
 import { siteEntryAllowed } from './movement'
 import { TRAP_DISGUISE, trapElementOf } from './traps'
 
@@ -580,6 +580,35 @@ export function validateTarget(
   return targetCompulsion(state, spec, ref, caster, player)
 }
 
+/** The engine-authoritative legal-target set for a card's pick at `specIndex`, given the targets
+ *  already picked this cast — the single source of truth for interdependent/spatial picks (see
+ *  CardScript.targetOptions: explosion step-range, Meteor Shower's no-shared-border rule). Returns
+ *  null when the card declares no such hook, so the caller falls back to per-spec validateTarget. */
+export function legalTargetOptions(
+  state: GameState,
+  script: CardScript | null | undefined,
+  caster: UnitState,
+  picked: TargetRef[],
+  specIndex: number,
+): TargetRef[] | null {
+  if (!script?.targetOptions) return null
+  try {
+    return script.targetOptions(state, caster, picked, specIndex)
+  } catch {
+    return null
+  }
+}
+
+/** structural equality of two target refs (same unit/site/artifact/aura, or same square). */
+export function sameTargetRef(a: TargetRef, b: TargetRef): boolean {
+  if ('unit' in a && 'unit' in b) return a.unit === b.unit
+  if ('site' in a && 'site' in b) return a.site === b.site
+  if ('artifact' in a && 'artifact' in b) return a.artifact === b.artifact
+  if ('aura' in a && 'aura' in b) return (a as any).aura === (b as any).aura
+  if ('square' in a && 'square' in b) return a.square.x === b.square.x && a.square.y === b.square.y
+  return false
+}
+
 /** 'If a spell or non-basic ability can target—in order of precedence—Blasted
  *  Oak, its site or location, or anything else at its site or location, it must.' */
 function targetCompulsion(
@@ -851,6 +880,12 @@ function resolveMagicCast(state: GameState, cardId: string, castName: string, pl
   const def = getCard(castName)
   const script = getScript(castName)
   const caster = resolveCasterForCast(state, player, cardId, casterId)
+  // a multi-region SITE caster chose which region to blast (see the region prompt below); makeCtx places
+  // ctx.caster in that region, and the square targets it resolves against must sit in the same region.
+  if (extra?.castRegion) {
+    for (const ref of targets) if ('square' in ref && (ref as any).square) (ref as any).square.region = extra.castRegion
+    if (at) at.region = extra.castRegion
+  }
   const snap = snapshotRealm(state)
   const prevCredit = setActionCredit(state, 2, [caster.id])
   if (script?.onCast) {
@@ -932,6 +967,19 @@ export function resolvePendingCast(state: GameState): void {
   else if (p.type === 'aura') resolveAuraCast(state, p.cardId, p.castName, p.player, p.at, p.targets, p.extra)
 }
 
+// A site caster picked the region to blast from → stamp it onto the parked cast; the applyAction
+// boundary (game.ts) then runs resolvePendingCast to finish the spell in that region.
+registerCont('cast:region', (state, _ctx, choice) => {
+  const pc = state.flow?.pendingCast as any
+  if (pc) pc.extra = { ...(pc.extra ?? {}), castRegion: typeof choice === 'string' ? choice : 'surface' }
+})
+
+// An oversized caster picked which of its squares to fire from → stamp it onto the parked cast.
+registerCont('cast:origin', (state, _ctx, choice) => {
+  const pc = state.flow?.pendingCast as any
+  if (pc && isSquare(choice)) pc.extra = { ...(pc.extra ?? {}), castOrigin: { x: choice.x, y: choice.y } }
+})
+
 export function castSpell(
   state: GameState,
   player: PlayerId,
@@ -976,10 +1024,16 @@ export function castSpell(
   const targetAnchor: UnitState =
     def.type === 'Magic' || !at ? caster : { ...caster, x: at.x, y: at.y, region: at.region ?? caster.region }
   let ti = 0
-  for (const spec of specs) {
+  for (let si = 0; si < specs.length; si++) {
+    const spec = specs[si]
     for (let i = 0; i < spec.count && ti < targets.length; i++, ti++) {
       const err = validateTarget(state, spec, targets[ti], targetAnchor, player, targets)
       if (err) return err
+      // engine-authoritative legal set for spatial/interdependent picks (explosion range, Meteor
+      // Shower's no-shared-border) — reject anything the card's targetOptions wouldn't offer, so an
+      // illegal pick is refused up front instead of fizzling mid-resolution and wasting the spell.
+      const opts = legalTargetOptions(state, script, targetAnchor, targets.slice(0, ti), si)
+      if (opts && !opts.some((o) => sameTargetRef(o, targets[ti]))) return 'Not a legal target.'
       // magic-protection blocks targeting by enemy Magic spells
       const ref = targets[ti]
       if (def.type === 'Magic' && 'unit' in ref) {
@@ -1195,6 +1249,28 @@ export function castSpell(
   // Each spell type either resolves inline, or — if the Enchantress opened her animate prompt — parks
   // its resolution in flow.pendingCast for resolvePendingCast to finish once that prompt is answered.
   if (def.type === 'Magic') {
+    // A SITE caster (River of Flame…) occupies BOTH its surface and its subsurface, so it must choose WHICH
+    // region it casts FROM. We fire this for EVERY magic a site casts — NOT just obviously-positional ones:
+    // a missed prompt silently casts from the wrong region (Heat Ray's projectile, any ranged/area spell),
+    // and a harmless extra prompt is far better than a wrong silent assumption.
+    const siteCaster = state.sites[caster.id]
+    if (siteCaster && extra?.castRegion === undefined) {
+      const sub = terrainAt(state, siteCaster.x, siteCaster.y) === 'water' ? 'underwater' : 'underground'
+      state.flow.pendingCast = { type: 'magic', cardId, castName, player, casterId, at, targets, extra, fromCemetery }
+      pushPrompt(state, { player, kind: 'chooseOption', title: `Cast ${castName} from which region?`, data: { options: ['surface', sub] }, cont: 'cast:region', ctx: {} })
+      return null
+    }
+    // An OVERSIZED / Rack-stretched caster occupies several squares → it picks which one it acts FROM.
+    // Same principle: fire for every magic it casts so a projectile/blast origin is never silently assumed.
+    const realCaster = state.units[caster.id]
+    if (realCaster && extra?.castOrigin === undefined) {
+      const squares = occupiedSquares(realCaster)
+      if (squares.length > 1) {
+        state.flow.pendingCast = { type: 'magic', cardId, castName, player, casterId, at, targets, extra, fromCemetery }
+        pushPrompt(state, { player, kind: 'chooseSquare', title: `Cast ${castName} from which square?`, data: { squares }, cont: 'cast:origin', ctx: {} })
+        return null
+      }
+    }
     if (enchantDeferred) { state.flow.pendingCast = { type: 'magic', cardId, castName, player, casterId, at, targets, extra, fromCemetery }; return null }
     resolveMagicCast(state, cardId, castName, player, casterId, targets, at, extra, fromCemetery)
     return null
@@ -1288,7 +1364,12 @@ export function validateSummonAt(state: GameState, player: PlayerId, cardName: s
     // let you cast a minion to a fated square even if it is void ground).
     const av = avatarOf(state, player)
     const grants = getScript(av.name)?.allowsSummonAt
-    if (region === 'surface' && grants && !av.silenced && grants(state, player, at)) return null
+    if (region === 'surface' && grants && !av.silenced && grants(state, player, at)) {
+      // a siteless granted square IS void ground: the void-placement rule outranks the grant, so only a
+      // voidwalker may be summoned there. A non-voidwalk minion still can't be cast into the void.
+      if (!kw.voidwalk) return `${cardName} cannot be summoned to the void.`
+      return null
+    }
     return 'There is no site there.'
   }
   // absolute ENTRY bans apply to summoning too, not just movement (Gnome Hollows: "units with 3 or

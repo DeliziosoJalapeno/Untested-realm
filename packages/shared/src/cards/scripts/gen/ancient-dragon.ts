@@ -1,13 +1,15 @@
 import { registerScript } from '../registry'
 import { chebyshevW, unitsAt } from '../../../engine/grid'
 
-// 'Airborne / Tap â†’ Deal 4 damage to each other unit at target location nearby.'
+// 'Airborne / Tap → Deal 4 damage to each other unit at target location nearby.'
 registerScript('Ancient Dragon', {
   abilities: [{
     key: 'breath',
-    label: 'Tap â†’ 4 damage to each other unit at a nearby location',
+    label: 'Tap → 4 damage to each other unit at a nearby location',
     cost: { tap: true },
-    targets: [{ what: 'square', count: 1, targeted: true, label: 'target location nearby' }],
+    // `where: 'nearby'` is carried on the spec so validateTarget constrains it on BOTH sides — the
+    // client highlights only nearby squares, instead of the whole board with a fizzle on a far click.
+    targets: [{ what: 'square', count: 1, targeted: true, where: 'nearby', label: 'target location nearby' }],
     effect: (ctx) => {
       const self = ctx.state.units[ctx.sourceId]
       const t = ctx.targets[0]

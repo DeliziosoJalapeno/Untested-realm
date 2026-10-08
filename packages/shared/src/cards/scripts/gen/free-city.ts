@@ -55,6 +55,15 @@ registerScript('Free City', {
     // leaves it untapped if they'd rather it stand aside
     freeCityPseudo(ctx.state, site.id)
   },
+  onSiteAttacked: (ctx) => {
+    // the city itself is under attack — it may rise to defend its own walls (a 3/3 that converts the
+    // attacker's blows to life loss via damageBecomesLifeLoss). Offered as a defender; the controller
+    // chooses whether to commit it.
+    const site = ctx.state.sites[ctx.sourceId]
+    if (!site || site.controller === null) return
+    if (ctx.state.flow?.freeCityUsed?.[site.id] === ctx.state.turn) return
+    freeCityPseudo(ctx.state, site.id)
+  },
   conts: {
     'fc:strike': (ctx, c, choice) => {
       const id = Array.isArray(choice) ? choice[0] : choice

@@ -333,6 +333,16 @@ export default function App() {
   // ── secret achievements: unlocks earned mid-game surface as dismissable toasts ──
   const [achvToasts, setAchvToasts] = useState<{ key: number; id: string }[]>([])
   const achvToastKey = useRef(0)
+  // UI-awarded achievements (e.g. "Paint supremacy" from the homepage-quality toggle) announce
+  // themselves via a window event so they surface the same toast as in-game unlocks.
+  useEffect(() => {
+    const onEarned = (e: Event) => {
+      const ids = (e as CustomEvent).detail as string[]
+      if (ids?.length) setAchvToasts((cur) => [...cur, ...ids.map((id) => ({ key: achvToastKey.current++, id }))])
+    }
+    window.addEventListener('achv-earned', onEarned)
+    return () => window.removeEventListener('achv-earned', onEarned)
+  }, [])
 
   function ensureBotWorker(): Worker {
     if (!botWorkerRef.current) {
@@ -933,7 +943,10 @@ export default function App() {
   // (that clipped the whole builder) — treat it as a scrollable portrait menu instead.
   const inSealedBuild = !!(sealed && session?.kind === 'online' && !session?.view)
   const atGame = page === 'game' && !inSealedBuild
-  const appClass = `app${mm.mobile ? ' mobile' : ''}${mm.simulated ? ' mobile-sim' : ''}${mm.mobile && atGame ? ' at-game' : ''}${mm.mobile && mm.portrait && !mm.simulated ? ' portrait' : ''}${!mm.mobile && page === 'game' ? ' at-game-desktop' : ''}`
+  // A touch device on the DESKTOP game layout (e.g. an iPad, which we serve the PC layout) held
+  // upright → nudge it to landscape, where the 1600×900 game canvas fills the screen.
+  const desktopRotateHint = !mm.mobile && atGame && mm.touch && mm.portrait
+  const appClass = `app${mm.mobile ? ' mobile' : ''}${mm.simulated ? ' mobile-sim' : ''}${mm.mobile && atGame ? ' at-game' : ''}${mm.mobile && mm.portrait && !mm.simulated ? ' portrait' : ''}${!mm.mobile && page === 'game' ? ' at-game-desktop' : ''}${desktopRotateHint ? ' rotate-hint' : ''}`
 
   return (
     <div className={appClass}>

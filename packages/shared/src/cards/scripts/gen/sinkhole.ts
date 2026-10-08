@@ -20,8 +20,8 @@ registerScript('Sinkhole', {
       const victim = ctx.state.sites[t.site]
       if (!victim || victim.id === self.id) return
       if (!nearbySquaresW(ctx.state, self.x, self.y).some((s) => s.x === victim.x && s.y === victim.y)) return ctx.log('Not nearby.')
-      ctx.destroySite(victim.id)
-      ctx.destroySite(self.id)
+      ctx.destroySite(victim.id) // a real destruction — Sacred Oak etc. still protect the victim
+      ctx.destroySite(self.id, undefined, true) // Sinkhole SACRIFICES itself (not destruction) — never blocked
       pushLog(ctx.state, ctx.controller, 'The ground gives way with a roar.')
     },
   }],

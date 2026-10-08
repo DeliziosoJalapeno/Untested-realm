@@ -1,13 +1,13 @@
 import { registerScript } from '../registry'
 import { getCard } from '../../db'
 import { pushLog } from '../../../engine/effects'
-import { GRID_H, GRID_W, siteAt } from '../../../engine/grid'
+import { GRID_H, GRID_W, isWaterSite, siteAt } from '../../../engine/grid'
 import type { GameState } from '../../../engine/types'
-import { connected } from '../multi-card-utils/connected'
+import { bodyOfWaterCells } from '../multi-card-utils/body-of-water'
 
 const isWater = (state: GameState, x: number, y: number) => {
   const s = siteAt(state, x, y)
-  return !!s && (s.flooded || getCard(s.name).thresholds.water > 0)
+  return !!s && isWaterSite(state, s, getCard)
 }
 
 // 'This turn, your units can move between any sites in a chosen body of water
@@ -22,7 +22,7 @@ registerScript('Marine Voyage', {
   conts: {
     sail: (ctx, _c, sq) => {
       if (!sq) return
-      const body = connected(ctx.state, sq.x, sq.y, (x, y) => isWater(ctx.state, x, y))
+      const body = bodyOfWaterCells(ctx.state, sq.x, sq.y)
       if (body.length < 2) return ctx.log('That body of water leads nowhere.')
       ctx.state.flow = ctx.state.flow ?? {}
       ctx.state.flow.tempAdjacency = [

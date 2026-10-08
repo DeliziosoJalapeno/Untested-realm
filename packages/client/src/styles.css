@@ -66,19 +66,32 @@ h1, h2, h3 { font-weight: 600; }
 
 /* ---------- home ---------- */
 .home { position: relative; max-width: 640px; margin: 0 auto; padding: 48px 20px 40px; }
-/* hand-drawn "Untested Realm" cover art, fixed behind the whole page */
-.home::before {
+/* HIGH quality (default): the classic One-shot Wizard hero art, zoomed + darkened for legibility */
+.home.hq::before {
   content: '';
   position: fixed; inset: 0; z-index: -1;
-  /* 100% 100% = the WHOLE cover always fills the viewport, stretched to the screen's size (aspect
-     ratio NOT preserved — enlarged as needed so there's never any letterbox). */
+  background: url('/cards/006-one_shot_wizard-b-s.webp') no-repeat center 22%;
+  background-size: 230%;
+  filter: brightness(0.4) saturate(1.1);
+}
+/* LOW quality: the hand-drawn "meme" cover, stretched to fill (aspect ratio NOT preserved) */
+.home.lq::before {
+  content: '';
+  position: fixed; inset: 0; z-index: -1;
   background: #9ccfe3 url('/copertinasorcery.png') no-repeat center center;
   background-size: 100% 100%;
-  filter: none; /* full colour, no darkening */
+  filter: none;
 }
-/* the One-shot Wizard as a super-faint ghost in the BACKGROUND (behind all content, like before) —
-   it shows through the empty areas but the panels/tabs sit on top of it, never washed over */
-.home::after {
+/* HIGH: a soft dark vignette so the content panels stay legible over the hero art */
+.home.hq::after {
+  content: '';
+  position: fixed; inset: 0; z-index: -1;
+  background:
+    radial-gradient(ellipse at 50% 28%, rgba(20,22,31,0) 0%, rgba(20,22,31,0.22) 60%, rgba(20,22,31,0.55) 100%),
+    linear-gradient(to bottom, rgba(20,22,31,0.12), rgba(20,22,31,0.42) 55%, rgba(20,22,31,0.82) 100%);
+}
+/* LOW: the One-shot Wizard as a super-faint ghost behind the meme cover */
+.home.lq::after {
   content: '';
   position: fixed; inset: 0; z-index: -1;
   background: url('/cards/006-one_shot_wizard-b-s.webp') no-repeat center 18%;
@@ -86,10 +99,28 @@ h1, h2, h3 { font-weight: 600; }
   opacity: 0.07;
   pointer-events: none;
 }
-/* card-art showcase in the side margins — hidden now that the hand-drawn cover art fills the
-   background (the cover already has its own characters framing the sides). */
+/* HIGH: the new hand-drawn cover art (jala), full-bleed, with the serif gold title over it. */
+.home.aq::before {
+  content: '';
+  position: fixed; inset: 0; z-index: -1;
+  /* the art has an OPAQUE white backing baked in, so tint it with a multiply blend against a parchment
+     colour: white areas → old paper, the dark line art stays dark. */
+  background: url('/jala1.png') no-repeat center center, #efe3c2;
+  background-size: cover, cover;
+  background-blend-mode: multiply;
+}
+/* dark vignette so the gold title / menu text stay legible over the art */
+.home.aq::after {
+  content: '';
+  position: fixed; inset: 0; z-index: -1;
+  background:
+    radial-gradient(ellipse at 50% 30%, rgba(14,12,20,0) 0%, rgba(14,12,20,0.18) 58%, rgba(14,12,20,0.55) 100%),
+    linear-gradient(to bottom, rgba(14,12,20,0.10), rgba(14,12,20,0.30) 55%, rgba(14,12,20,0.72) 100%);
+  pointer-events: none;
+}
+/* card-art showcase in the side margins (the classic "boring" page only — the low/art covers frame their own sides) */
+.home.lq .home-artrail, .home.aq .home-artrail { display: none; }
 .home-artrail {
-  display: none !important;
   position: fixed; top: 0; bottom: 0; z-index: 0;
   width: calc((100vw - 680px) / 2);
   display: flex; gap: 12px; padding: 16px 14px; box-sizing: border-box;
@@ -110,6 +141,47 @@ h1, h2, h3 { font-weight: 600; }
 }
 /* need room for the central content AND both rails — otherwise hide them */
 @media (max-width: 1200px) { .home-artrail { display: none; } }
+/* HIGH-quality serif title (gold gradient Cinzel). The LOW/meme page uses the title IMAGE instead. */
+.home h1 {
+  font-family: 'Cinzel', serif;
+  font-weight: 900;
+  font-size: 56px;
+  line-height: 1.05;
+  letter-spacing: 3px;
+  margin: 0 0 6px;
+  text-align: center;
+  background: linear-gradient(180deg, #f6e8b8 0%, #d8b45c 55%, #9c7a2f 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 2px 10px rgba(0,0,0,0.85));
+}
+/* HIGH (new art) cover: the title is a DARK-GRAY OUTLINE with a see-through (hollow) fill, so the
+   white background / artwork shows through the middle of each letter. */
+.home.aq h1 {
+  background: none;
+  -webkit-background-clip: border-box; background-clip: border-box;
+  color: transparent;
+  -webkit-text-stroke: 2px #3a3a42;
+  filter: drop-shadow(0 2px 3px rgba(0,0,0,0.35));
+  font-size: 62px; /* ~10% larger than the base 56px, High cover only */
+}
+/* HIGH cover: all body text in black with no shadows (legible on the white art) */
+.home.aq .byline,
+.home.aq .subtitle,
+.home.aq .subtitle .linklike,
+.home.aq .changelog-open,
+.home.aq .disclaimer p,
+.home.aq .socials .brand-link {
+  color: #000;
+  text-shadow: none;
+}
+.home.aq .socials .brand-link:hover { color: #444; }
+/* cover-art credit, pinned to the bottom-right corner of the HIGH cover */
+.home.aq .art-credit {
+  position: fixed; right: 14px; bottom: 10px; z-index: 3;
+  font-family: 'Cormorant Garamond', serif; font-style: italic; font-size: 25px;
+  color: #000; text-decoration: none; opacity: 0.82;
+}
+.home.aq .art-credit:hover { opacity: 1; text-decoration: underline; }
 /* hand-drawn title image, centred — it carries its own (opaque, full-colour) background that matches
    the cover, so it reads as part of the artwork. */
 /* the title lives in a wrapper so the One-shot Wizard can ghost over JUST the title (not the UI below) */
@@ -199,7 +271,15 @@ h1, h2, h3 { font-weight: 600; }
 .roomopts-foot { display: flex; gap: 10px; justify-content: flex-end; padding: 12px 18px; border-top: 1px solid #33294a; }
 .roomcode { font-size: 22px; letter-spacing: 4px; color: #ffd257; }
 .waiting { text-align: center; padding-top: 15vh; }
-.waiting .waitbtns { display: flex; gap: 8px; justify-content: center; margin-top: 12px; }
+.waiting .waitbtns { display: flex; gap: 8px; justify-content: center; margin-top: 12px; flex-wrap: wrap; }
+/* MOBILE: the room "waiting for opponent" screen fills the frame and SCROLLS, so the Leave button at the
+   bottom is always reachable. The 15vh top padding + room-config controls used to push it off-screen in
+   the short landscape frame, locking the player in. */
+.app.mobile .waiting {
+  position: absolute; inset: 0;
+  padding: 18px 12px calc(18px + env(safe-area-inset-bottom, 0px)); padding-top: 22px;
+  box-sizing: border-box; overflow-y: auto; -webkit-overflow-scrolling: touch;
+}
 
 /* Non-blocking "waiting for opponent / matchmaking" banner: floats at the bottom and does NOT
    cover the page, so you can keep using the menus (deck builder, collection…) while you wait. */
@@ -799,7 +879,13 @@ button.autobattle:hover:not(:disabled) { background: #4a5cc0; }
 /* FIXED design canvas — the whole game is laid out at 866×400 then uniformly scaled to
    the visible viewport by the JS `uiScale` transform, so nothing ever clips (extra space
    becomes letterbox padding around the centred canvas). */
-.game.mobile { position: relative; flex: 0 0 auto; width: 866px; height: 400px; overflow: hidden; }
+.game.mobile { position: relative; flex: 0 0 auto; width: 866px; height: 400px; overflow: hidden;
+  /* Centre of the BOARD GRID (the site squares — the real "game area"), as a fraction of the 866×400
+     canvas. The board sits in the `.table` slot below, flex-centred inside its padding
+     `4px 240px 4px 44px`: x = (44 + (866-240))/2 = 335 → 38.7%; y = 40(top bar) + (4 + (360-8))/2 ≈ 220
+     → 55%. Floating panels (modals, prompt banner, toasts) centre on THIS, not the frame centre, so
+     they land over the board and not under the 240px card panel on the right. */
+  --board-cx: 38.7%; --board-cy: 55%; }
 
 /* only the GAME page needs landscape — nudge a real portrait phone to rotate there
    (menus stay portrait, so no hint on them). */
@@ -808,6 +894,15 @@ button.autobattle:hover:not(:disabled) { background: #4a5cc0; }
   position: fixed; inset: 0; z-index: 999;
   display: flex; align-items: center; justify-content: center; text-align: center;
   background: #05060a; color: #cdd3ea; font-size: 20px; padding: 24px;
+}
+
+/* a touch device served the DESKTOP game layout (an iPad) held upright — same landscape nudge.
+   The 1600×900 canvas only fills the screen in landscape. Menus/home stay usable in portrait. */
+.app.rotate-hint::after {
+  content: '↻  Rotate your device to landscape';
+  position: fixed; inset: 0; z-index: 999;
+  display: flex; align-items: center; justify-content: center; text-align: center;
+  background: #05060a; color: #cdd3ea; font-size: 24px; padding: 24px;
 }
 
 /* MOBILE MENUS (home/decks/…): keep every element inside the narrow portrait frame.
@@ -936,20 +1031,23 @@ button.autobattle:hover:not(:disabled) { background: #4a5cc0; }
   max-width: none; max-height: none; width: auto; overflow: auto; margin: 0;
 }
 
-/* keep prompts / modals / toasts INSIDE the phone frame (absolute → relative to .game) */
+/* keep prompts / modals / toasts INSIDE the phone frame (absolute → relative to .game), centred on
+   the BOARD (--board-cx/cy) — not the frame centre, which sits under the right-hand card panel.
+   Inline-positioned popups (the square-anchored action menus) set their own `left`/`top`, which
+   override these, so they stay pinned to their square. */
 .game.mobile .modal {
-  position: absolute; left: 50%; top: 50%; right: auto; bottom: auto;
-  transform: translate(-50%, -50%); width: auto; max-width: 80%; max-height: 86%; overflow: auto;
+  position: absolute; left: var(--board-cx); top: var(--board-cy); right: auto; bottom: auto;
+  transform: translate(-50%, -50%); width: auto; max-width: 66%; max-height: 86%; overflow: auto;
 }
 .game.mobile .promptbanner {
-  position: absolute; left: 50%; right: auto; top: auto; bottom: 8px;
-  transform: translateX(-50%); width: auto; max-width: 80%; text-align: center;
+  position: absolute; left: var(--board-cx); right: auto; top: auto; bottom: 8px;
+  transform: translateX(-50%); width: auto; max-width: 66%; text-align: center;
   /* draggable (drag anywhere on the banner background) so it can be shoved off a board
      square you need to click; `none` stops the touch gesture becoming a page pan. */
   touch-action: none; cursor: move;
 }
-.game.mobile .logtoasts { position: absolute; top: 42px; left: 50%; transform: translateX(-50%); z-index: 40; }
-.game.mobile .oppplay-stack { position: absolute; left: 50%; top: 6px; right: auto; transform: translateX(-50%); }
+.game.mobile .logtoasts { position: absolute; top: 42px; left: var(--board-cx); transform: translateX(-50%); z-index: 40; }
+.game.mobile .oppplay-stack { position: absolute; left: var(--board-cx); top: 6px; right: auto; transform: translateX(-50%); }
 .game.mobile .oppplay-card { max-width: 150px; }
 .game.mobile .oppplay-card img, .game.mobile .oppplay-card .cardimg { max-width: 150px; height: auto; }
 
@@ -2000,10 +2098,17 @@ button.autobattle:hover:not(:disabled) { background: #4a5cc0; }
 .dc-thumb { width: 100%; height: auto; border-radius: 6px; display: block; }
 .dc-badge { position: absolute; right: 4px; bottom: 4px; background: rgba(0, 0, 0, 0.82); color: #fff;
   font-size: 12px; font-weight: bold; padding: 1px 6px; border-radius: 10px; }
-/* mobile / narrow: tighter grid + a sticky action bar so Confirm is always reachable */
+/* mobile / narrow: tighter grid + a stacked action bar. The bar is laid out as a COLUMN (deck picker
+   on top, Back + Confirm as a full-width row below) so the controls never get pushed off the right
+   edge and clipped by the app's `overflow-x: hidden`. Safe-area top padding keeps it clear of a
+   phone's status bar / notch. */
 .mobile .dc-grid { grid-template-columns: repeat(auto-fill, minmax(74px, 1fr)); gap: 6px; }
-.mobile .dc-bar { position: sticky; top: 0; padding: 10px 14px; }
+.mobile .dc-bar { position: sticky; top: 0; flex-direction: column; align-items: stretch; gap: 8px;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 14px 10px; }
 .mobile .dc-title b { font-size: 16px; }
+.mobile .dc-actions { justify-content: space-between; }
+.mobile .dc-actions button { flex: 1; }         /* Back + Confirm split the width — both always visible & tappable */
+.mobile .dc-pick select { max-width: none; flex: 1; min-width: 0; }
 @media (max-width: 560px) { .dc-grid { grid-template-columns: repeat(auto-fill, minmax(74px, 1fr)); } }
 /* body = the scrolling card grid + a RESERVED detail column on the right (a real column, so the
    preview never overlaps the cards). Hover / tap a card to read it in the column. */
@@ -2079,6 +2184,15 @@ button.autobattle:hover:not(:disabled) { background: #4a5cc0; }
 .game.scaled .modal.mulligan .handcard { width: 298px; }
 /* a crowded opening hand (>6 cards) uses smaller cards so both rows still fit comfortably */
 .game.scaled .modal.mulligan.crowded .handcard { width: 238px; }
+/* MOBILE: the opening-hand panel is centred ON the smaller scaled board (grid-lock), so cap its
+   width to the board (not the 80%-of-frame default, which hangs off the right over the card panel)
+   and shrink its cards so both rows fit inside. */
+.game.mobile .modal.mulligan { max-width: 66%; padding: 10px 14px; }
+.game.mobile .modal.mulligan h3 { font-size: 14px; margin: 2px 0 8px; }
+.game.mobile .modal.mulligan .mullhand { gap: 8px; margin: 8px 0; }
+.game.mobile .modal.mulligan .mullrow { gap: 6px; }
+.game.mobile .modal.mulligan .handcard { width: 100px; }
+.game.mobile .modal.mulligan.crowded .handcard { width: 84px; }
 .mull-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 /* inline "keep this hand?" confirmation (mulligan panel only; mulligan itself is immediate) */
 .mull-confirm { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 4px; }

@@ -82,6 +82,9 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'our-spellbook', name: 'Your spellbook? Our spellbook!', hint: "Play a card from your opponent's deck (Lilith, Captain Baldassarre…)." },
   { id: 'kink-of-realm', name: 'Kink of the realm', hint: 'Use a whip effect on the King of the Realm.' },
   { id: 'nuclear-option', name: 'The nuclear option', hint: 'Kill both Avatars at once with a single blast (Craterize, Doomsday, Holy Nova, an explosion).' },
+  // a UI achievement (not game-detected): awarded client-side when the player switches the home screen
+  // to the hand-drawn "meme" cover (⚙ Settings → Homepage quality → Low).
+  { id: 'paint-supremacy', name: 'Paint supremacy', hint: 'Reveal the low quality homepage.' },
 ]
 
 export const BY_ID: Record<string, AchievementDef> = Object.fromEntries(ACHIEVEMENTS.map((a) => [a.id, a]))

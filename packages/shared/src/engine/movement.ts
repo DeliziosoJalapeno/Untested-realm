@@ -639,6 +639,37 @@ export function stepDistanceW(state: GameState, a: { x: number; y: number }, b: 
 }
 
 /**
+ * REAL "steps away": the shortest path from `a` to `b` taking one orthogonal step per adjacent
+ * LOCATION, routing AROUND the void — you can't step through a siteless square (the void), so a target
+ * with a void between it and the caster is farther than its Manhattan distance (e.g. 4, not 2), or
+ * unreachable entirely. Magellan-aware (steps wrap the joined seam). This is the rules-correct metric
+ * for "up to N steps away" range checks; plain stepDistanceW (Manhattan) wrongly counts straight through
+ * the void. Intermediate squares must be sites; the destination itself may be a void location (you can
+ * still lob an effect AT the void, you just can't path THROUGH it). Returns Infinity if unreachable.
+ */
+export function realStepDistanceW(state: GameState, a: { x: number; y: number }, b: { x: number; y: number }): number {
+  if (a.x === b.x && a.y === b.y) return 0
+  const seen = new Set<string>([`${a.x},${a.y}`])
+  let frontier: { x: number; y: number }[] = [{ x: a.x, y: a.y }]
+  let dist = 0
+  while (frontier.length) {
+    dist++
+    const next: { x: number; y: number }[] = []
+    for (const cur of frontier) {
+      for (const n of orthAdjacentWrapped(state, cur.x, cur.y)) {
+        const k = `${n.x},${n.y}`
+        if (seen.has(k)) continue
+        if (n.x === b.x && n.y === b.y) return dist // reached the target location
+        seen.add(k)
+        if (siteAt(state, n.x, n.y)) next.push(n) // can only continue the path across real locations
+      }
+    }
+    frontier = next
+  }
+  return Infinity
+}
+
+/**
  * The legal squares a unit reaches by taking ONE step of its own relative to
  * `ref` — Sorcery definition 2 ("take a step" / "move one step": Coy Nixie,
  * Guile Sirens, Persecutor, the automata). The mover uses its OWN abilities:

@@ -94,7 +94,7 @@ export interface EffectAPI {
   untap(unitId: string): void
   /** `by` overrides who is credited with the destruction (Vindictive Nation, ward checks);
    *  defaults to the source's controller. Pass the attacker/damager for reactive shatters. */
-  destroySite(siteId: string, by?: PlayerId): void
+  destroySite(siteId: string, by?: PlayerId, sacrifice?: boolean): void
   disable(unitId: string): void
   /** flood a site (permanent unless duration given) */
   floodSite(siteId: string, duration?: 'endOfTurn'): void
@@ -136,6 +136,9 @@ export interface AbilityDef {
   threshold?: Partial<Thresholds>
   targets?: TargetSpec[]
   oncePerTurn?: boolean
+  /** a oncePerTurn ability whose use is spent only when the effect COMMITS (the script sets usedThisTurn
+   *  itself), not at activation — so the player can back out of intermediate prompts for free. */
+  deferUse?: boolean
   /** where the choice of square is required (e.g. teleport destinations) */
   needsSquare?: boolean
   /** card name whose `conts` resolve this ability's asks — set when an ability
@@ -417,6 +420,8 @@ export interface CardScript {
    *  attacker's square the fight fizzles (Wills-o'-the-Wisp, Witherwing Hero,
    *  Bridge Troll). */
   onUnitAttacked?: (ctx: EffectAPI, target: UnitState, attacker: UnitState) => void
+  /** fires when this SITE is attacked directly — may spawn a self-defender (Free City). ctx.sourceId = the site. */
+  onSiteAttacked?: (ctx: EffectAPI, attacker: UnitState) => void
   /** fires after an ALLY finishes resolving an attack it initiated (Sir Agravaine) */
   afterAllyAttack?: (ctx: EffectAPI, attacker: UnitState, targetUnitId: string | null) => void
   /** a unit was killed by a striker's blow; victim is the pre-death snapshot
@@ -737,8 +742,11 @@ export interface CardScript {
   immovableSite?: boolean
   /** this site can't be modified in any way (e.g. Bedrock — flooded, silenced, transformed, granted abilities) */
   unmodifiableSite?: boolean
-  /** unit protects its site from destruction AND movement (e.g. Bluecap Knockers' site) */
+  /** unit protects a site from DESTRUCTION only (e.g. Order of the Sacred Oak — the site can still be
+   *  moved and modified). A card that also immobilizes (Bluecap Knockers) additionally sets immobilizesSite. */
   protectsSite?: (state: GameState, self: UnitState, site: { id: string; x: number; y: number }) => boolean
+  /** unit also forbids MOVING/rearranging a site (e.g. Bluecap Knockers: "can't be moved, destroyed, or modified") */
+  immobilizesSite?: (state: GameState, self: UnitState, site: { id: string; x: number; y: number }) => boolean
   /** this unit may carry other units (Carrying Units rule) */
   carryUnits?: {
     capacity: number | 'any'
@@ -769,6 +777,14 @@ export interface CardScript {
    * resolves. Returns null when not enough parameters are chosen yet. The engine
    * `areaDamagePreview()` helper wraps this and stamps on the spell's element. */
   areaDamage?: (state: GameState, casterId: string, params: AreaDamageParams) => { x: number; y: number; dmg: number }[] | null
+  /** Engine-authoritative legal-target set for the pick at `specIndex`, given the targets already
+   *  picked this cast (interdependent or spatial picks). When present, the ENGINE validates each
+   *  submitted target against this set (castSpell rejects anything outside it) and the CLIENT
+   *  highlights/permits EXACTLY this set — nobody re-derives legality per candidate. Use for picks
+   *  whose legality isn't expressible by a plain TargetSpec: explosion step-range, Meteor Shower's
+   *  "share no borders with an already-chosen site". Return the full set for `specIndex`; `picked`
+   *  holds the refs chosen for earlier specs this cast. */
+  targetOptions?: (state: GameState, caster: UnitState, picked: TargetRef[], specIndex: number) => TargetRef[]
   /** continuations for ask(); key → handler */
   conts?: Record<string, (ctx: EffectAPI, contCtx: any, choice: any) => void>
   /** UI hint: how to pick `at` when casting (minions default to own sites) */

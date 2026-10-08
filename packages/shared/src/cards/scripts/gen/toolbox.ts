@@ -1,7 +1,7 @@
 import { registerScript } from '../registry'
 import { getCard } from '../../db'
 import { toCemetery } from '../../../engine/effects'
-import { collectionNames, takeFromCollection } from '../../../engine/statics'
+import { collectionNames, takeFromCollection, payZoneToll } from '../../../engine/statics'
 import { affordable, effectCastSpell } from '../../../engine/casting'
 
 // 'Sacrifice → Bearer may cast an Ordinary spell from your collection.'
@@ -32,6 +32,8 @@ registerScript('Toolbox', {
       if (def.rarity !== 'Ordinary' || def.type === 'Site' || def.type === 'Avatar') return
       if ((ctx.state.players[ctx.controller].collection[name] ?? 0) <= 0) return // must own it
       if (!affordable(ctx.state, ctx.controller, name, bearer)) return // must be payable
+      // reaching into your collection is tolled by the Bureau of Occult Control — pay (2) first (abort if you can't)
+      if (!payZoneToll(ctx.state, ctx.controller)) return ctx.log('The Bureau of Occult Control demands (2) for collection access.')
       // the toolbox is spent
       bearer.carrying = bearer.carrying.filter((id) => id !== art.id)
       const card = ctx.state.cards[art.cardId]

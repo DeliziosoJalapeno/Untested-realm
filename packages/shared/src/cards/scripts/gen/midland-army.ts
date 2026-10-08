@@ -1,10 +1,14 @@
 import { registerScript } from '../registry'
 import { adjacentSquaresW, unitsAt, siteAt } from '../../../engine/grid'
-import { stepDistanceW } from '../../../engine/movement'
+import { realStepDistanceW } from '../../../engine/movement'
+import { squaresWithinSteps } from '../multi-card-utils/step-range-targets'
 
 // 'Tap → Target a location up to three steps away. Deal 4 damage to each unit there.
 //  Deathrite → Summon a Foot Soldier token to each adjacent location.'
 registerScript('Midland Army', {
+  // bombard's legal set: every square ≤3 steps from Midland Army → the ability path highlights/permits
+  // exactly these and rejects a too-far pick (so the tap isn't wasted on a dead shot).
+  targetOptions: (state, caster) => squaresWithinSteps(state, caster, 3),
   abilities: [{
     key: 'bombard',
     label: 'Tap → Deal 4 damage to each unit at target location up to three steps away',
@@ -14,7 +18,7 @@ registerScript('Midland Army', {
       const self = ctx.state.units[ctx.sourceId]
       const t = ctx.targets[0]
       if (!self || !t || !('square' in t)) return
-      if (stepDistanceW(ctx.state, self, t.square) > 3) return ctx.log('Too far away.') // "up to three steps away" (def. 1)
+      if (realStepDistanceW(ctx.state, self, t.square) > 3) return ctx.log('Too far away.') // "up to three steps away" (def. 1)
       const region = t.square.region ?? self.region
       for (const u of unitsAt(ctx.state, t.square.x, t.square.y, region)) {
         ctx.dealDamage({ unit: u.id }, 4)

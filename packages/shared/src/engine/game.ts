@@ -4,11 +4,11 @@ import type { Action, ActionResult, GameState, PlayerId, UnitState } from './typ
 import { doMulligan, keepHand } from './setup'
 import { endTurn } from './turn'
 import { activePrompt, resolvePrompt, pushLog, pushPrompt, registerCont, drawCards, opponent, makeCtx, checkStateBased, killUnit, tapUnit, checkWard, luckyCandidates, bumpManaSpent, beginAreaReveal, sealAbilityReveal, revealAbility, setActionCredit, restoreActionCredit, reconcileSummonTax, completeDeferredDeaths, finishBattleCapture, runDamageEvent } from './effects'
-import { castSpell, playSite, affinity, validateTarget, resolvePendingCast } from './casting'
+import { castSpell, playSite, affinity, validateTarget, legalTargetOptions, sameTargetRef, resolvePendingCast } from './casting'
 import { moveAttack, shootProjectile, pickUp, drop, enforceForcedAttacks, resolvePendingMoveAttack } from './combat'
 import { applyJudge } from './judge'
-import { abilityAnchor, avatarOf, unitsAt, nearbySquaresW } from './grid'
-import { canTap, isDisabled, effKeywords, siteSilenced, grantedAbilities, attackBlockedAt } from './statics'
+import { abilityAnchor, avatarOf, unitsAt, nearbySquaresW, occupiedSquares } from './grid'
+import { canTap, isDisabled, effKeywords, siteSilenced, artifactSilenced, grantedAbilities, attackBlockedAt } from './statics'
 import { reachableLocations } from './movement'
 
 export { createGame } from './setup'
@@ -366,6 +366,8 @@ export function canActivate(
     if (controller !== player) return 'You do not control that.'
     const site = state.sites[sourceId]
     if (site && siteSilenced(state, site)) return `${site.name} is silenced.`
+    const art = state.artifacts[sourceId]
+    if (art && artifactSilenced(state, art)) return `${art.name} is silenced.` // Acid Rain hushes artifacts too
   }
 
   const p = state.players[player]
@@ -405,7 +407,16 @@ function activateAbility(
   if (action.ability === 'ranged') {
     const dir = action.extra?.direction
     if (!['n', 's', 'e', 'w'].includes(dir)) return 'Choose a direction.'
-    return shootProjectile(state, player, action.sourceId, dir)
+    // an oversized / Rack-stretched shooter occupies several squares → it picks which one the shot flies from
+    const shooter = state.units[action.sourceId]
+    if (shooter && action.extra?.origin === undefined) {
+      const squares = occupiedSquares(shooter)
+      if (squares.length > 1) {
+        pushPrompt(state, { player, kind: 'chooseSquare', title: `${shooter.name} shoots from which square?`, data: { squares }, cont: 'ranged:origin', ctx: { unitId: action.sourceId, player, dir } })
+        return null
+      }
+    }
+    return shootProjectile(state, player, action.sourceId, dir, action.extra?.origin)
   }
 
   // scripted abilities on units, sites, artifacts
@@ -449,10 +460,17 @@ function activateAbility(
   // location — not the avatar's. See grid.ts abilityAnchor.
   const caster = abilityAnchor(state, action.sourceId, player)
   let ti = 0
-  for (const spec of ability.targets ?? []) {
+  const abilitySpecs = ability.targets ?? []
+  for (let si = 0; si < abilitySpecs.length; si++) {
+    const spec = abilitySpecs[si]
     for (let i = 0; i < spec.count && ti < targets.length; i++, ti++) {
       const err = validateTarget(state, spec, targets[ti] as any, caster, player)
       if (err) return err
+      // engine-authoritative legal set for spatial/interdependent ability picks (Midland Army's
+      // bombard, Corpse Catapult's fling — "up to three steps away") — reject a too-far pick up front
+      // so the tap/discard cost isn't spent on a shot that would just fizzle out of range.
+      const opts = legalTargetOptions(state, script, caster, targets.slice(0, ti) as any, si)
+      if (opts && !opts.some((o) => sameTargetRef(o, targets[ti] as any))) return 'Not a legal target.'
     }
     if (!spec.upTo && ti < spec.count) return 'Missing targets.'
   }
@@ -468,7 +486,9 @@ function activateAbility(
     const avatar = avatarOf(state, player)
     avatar.life = Math.max(0, (avatar.life ?? 0) - ability.cost.life)
   }
-  if (unit && ability.oncePerTurn) unit.usedThisTurn[ability.key] = 1
+  // `deferUse` abilities don't spend their once-per-turn at activation — the script marks it only when the
+  // effect actually COMMITS (e.g. Deathspeaker on the summon), so backing out of intermediate prompts is free.
+  if (unit && ability.oncePerTurn && !ability.deferUse) unit.usedThisTurn[ability.key] = 1
   // activating a special ability "interacts with the realm" (Codex — Stealth) → the unit can't
   // Drop this turn AND loses its Stealth token (Far East Assassin is revealed when it throws an
   // artifact — FAQ: "it's an activated special ability, so Stealth is lost per the normal Stealth

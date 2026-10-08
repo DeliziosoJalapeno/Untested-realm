@@ -1,6 +1,6 @@
 import { registerScript } from '../registry'
 import { pushLog } from '../../../engine/effects'
-import { stepDistanceW } from '../../../engine/movement'
+import { realStepDistanceW } from '../../../engine/movement'
 
 // ---------- sleep ----------
 
@@ -9,7 +9,7 @@ import { stepDistanceW } from '../../../engine/movement'
 registerScript('Sleep', {
   targets: [{
     what: 'minion', count: 1, targeted: true, label: 'target minion (≤2 steps)',
-    filter: (state, u, source) => stepDistanceW(state, u, source) <= 2, // "up to two steps away" (def. 1)
+    filter: (state, u, source) => realStepDistanceW(state, u, source) <= 2, // "up to two steps away" (def. 1)
   }],
   onCast: (ctx) => {
     const t = ctx.targets[0]

@@ -1,7 +1,8 @@
 import { registerScript } from '../registry'
 import { getCard } from '../../db'
 import { effectCastSpell } from '../../../engine/casting'
-import { pushLog } from '../../../engine/effects'
+import { zoneAccessToll } from '../../../engine/statics'
+import { pushLog, bumpManaSpent } from '../../../engine/effects'
 
 // 'Banish three magic spells in your cemetery → Cast a copy of one of them.'
 // (Archimago: the copy is a normal cast — it still pays its mana cost and meets thresholds, per FAQ)
@@ -15,6 +16,10 @@ registerScript('Archimago', {
       const p = ctx.state.players[ctx.controller]
       const magics = p.cemetery.filter((id) => getCard(ctx.state.cards[id].name).type === 'Magic')
       if (magics.length < 3) return ctx.log('You need three magic spells in your cemetery.')
+      // Bureau of Occult Control tolls (2) for reaching into the cemetery — gate early so a player who
+      // can't pay it doesn't bother picking (the toll itself is charged at the commit, in pickBanish).
+      const toll = zoneAccessToll(ctx.state)
+      if (p.mana < toll) return ctx.log(`The Bureau of Occult Control demands (${toll}) for cemetery access.`)
       // WHICH magic to echo is the player's choice (a specific card, so duplicates are unambiguous).
       // upTo:true → a "Take none" button lets you cancel the ability (cost is free, nothing committed).
       ctx.ask(
@@ -46,11 +51,15 @@ registerScript('Archimago', {
       const idxs = (Array.isArray(choice) ? choice : [choice]).filter((i) => typeof i === 'number') as number[]
       const others = idxs.map((i) => rest[i]).filter(Boolean)
       if (others.length < 2 || !ctx.state.cards[echoId]) return
+      // Bureau of Occult Control toll (2) for the cemetery access — paid now, at the commit
+      const toll = zoneAccessToll(ctx.state)
+      if (p.mana < toll) return pushLog(ctx.state, ctx.controller, `The Bureau of Occult Control demands (${toll}) for cemetery access.`)
       const echoName = ctx.state.cards[echoId].name
       for (const id of [echoId, ...others]) { // banish all three (the echoed one + the two chosen)
         p.cemetery = p.cemetery.filter((x) => x !== id)
         if (!p.banished.includes(id)) p.banished.push(id)
       }
+      if (toll) { p.mana -= toll; bumpManaSpent(ctx.state, ctx.controller, toll) }
       // "Cast a copy" — CAST it for real now (prompting for its targets); the copy MUST still
       // pay its mana cost and meet its elemental thresholds (FAQ), so free:false. The token
       // copy is cleaned up after it resolves; it must NOT sit in hand.

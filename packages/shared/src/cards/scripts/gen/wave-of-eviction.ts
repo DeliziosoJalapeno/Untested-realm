@@ -1,14 +1,14 @@
 import { registerScript } from '../registry'
 import { getCard } from '../../db'
 import { pushLog, applyFlood } from '../../../engine/effects'
-import { inBounds, siteAt, unitsAt } from '../../../engine/grid'
+import { inBounds, isWaterSite, siteAt, unitsAt } from '../../../engine/grid'
 
 // 'An allied water site overflows in a cardinal direction, flooding sites there
 //  this turn and carrying away enemies one step at a time.'
 registerScript('Wave of Eviction', {
   targets: [{
     what: 'site', count: 1, targeted: false, owner: 'ally', label: 'an allied water site',
-    filter: (state, s) => s.flooded || getCard(s.name).thresholds.water > 0,
+    filter: (state, s) => isWaterSite(state, s, getCard),
   }],
   onCast: (ctx) => {
     const t = ctx.targets[0]
@@ -42,7 +42,7 @@ registerScript('Wave of Eviction', {
           }
           // carry this flooded site's enemies one step onward (a forced push; can't cross into the void)
           for (const u of unitsAt(ctx.state, x, y, 'surface')) {
-            if (u.controller === ctx.controller || u.isAvatar) continue
+            if (u.controller === ctx.controller) continue // sweep every ENEMY here — avatars included
             const nx = u.x + dx
             const ny = u.y + dy
             if (inBounds(nx, ny) && siteAt(ctx.state, nx, ny)) {

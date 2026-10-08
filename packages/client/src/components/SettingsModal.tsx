@@ -1,7 +1,14 @@
 import { useState } from 'react'
 import { sfx, sfxMuted, setSfxMuted } from '../sfx'
-import { getSetting, setSetting, type CoordSystem, type ReplayVisibility } from '../settings'
+import { getSetting, setSetting, markHomepageQualityChosen, type CoordSystem, type ReplayVisibility, type HomepageQuality } from '../settings'
 import { fmtCoord } from '../coords'
+import { markUnlocked } from '../achievements'
+
+const HOMEPAGE_OPTIONS: { value: HomepageQuality; label: string }[] = [
+  { value: 'high', label: 'High' },
+  { value: 'boring', label: 'Boring' },
+  { value: 'low', label: 'Low' },
+]
 
 // (0,0), (2,1) and (4,3) rendered in each system — a live preview of what board squares will read as
 const COORD_OPTIONS: { value: CoordSystem; label: string }[] = [
@@ -23,6 +30,18 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
   const [oppPopup, setOppPopup] = useState(getSetting('opponentPlayPopup'))
   const [coords, setCoords] = useState<CoordSystem>(getSetting('coordSystem'))
   const [replayVis, setReplayVis] = useState<ReplayVisibility>(getSetting('replayVisibility'))
+  const [quality, setQuality] = useState<HomepageQuality>(getSetting('homepageQuality'))
+
+  function chooseQuality(q: HomepageQuality) {
+    setQuality(q)
+    markHomepageQualityChosen() // BEFORE setSetting: an explicit pick is honored everywhere (incl. mobile,
+    setSetting('homepageQuality', q) // which otherwise defaults to 'boring'); setSetting notifies the live home screen
+    // switching to the hand-drawn meme cover earns the "Paint supremacy" achievement
+    if (q === 'low') {
+      const fresh = markUnlocked(['paint-supremacy'])
+      if (fresh.length) window.dispatchEvent(new CustomEvent('achv-earned', { detail: fresh }))
+    }
+  }
 
   return (
     <>
@@ -70,6 +89,20 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
               >
                 <span className="coord-name">{o.label}</span>
                 <span className="coord-sample">{fmtCoord(2, 1, o.value)}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="settings-row settings-coords" title="Home-screen look.">
+          <span>🖼 Homepage quality</span>
+          <div className="coord-choices">
+            {HOMEPAGE_OPTIONS.map((o) => (
+              <button
+                key={o.value}
+                className={`coord-choice ${quality === o.value ? 'selected' : ''}`}
+                onClick={() => chooseQuality(o.value)}
+              >
+                <span className="coord-name">{o.label}</span>
               </button>
             ))}
           </div>

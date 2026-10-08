@@ -1,6 +1,6 @@
 import { registerScript } from '../registry'
 import { unitsAt } from '../../../engine/grid'
-import { stepDistanceW } from '../../../engine/movement'
+import { realStepDistanceW } from '../../../engine/movement'
 
 // 'Tap bearer and another ally here → Deal 3 damage to target unit up to two steps away.'
 registerScript('Siege Ballista', {
@@ -29,7 +29,7 @@ registerScript('Siege Ballista', {
       if (!bearer || !helper || helper.tapped || bearer.tapped) return
       bearer.tapped = true
       helper.tapped = true
-      const targets = Object.values(ctx.state.units).filter((u) => u.region === bearer.region && stepDistanceW(ctx.state, u, bearer) <= 2 && u.id !== bearer.id).map((u) => u.id) // "up to two steps away" (def. 1); region-locked to the bearer
+      const targets = Object.values(ctx.state.units).filter((u) => u.region === bearer.region && realStepDistanceW(ctx.state, u, bearer) <= 2 && u.id !== bearer.id).map((u) => u.id) // "up to two steps away" (def. 1); region-locked to the bearer
       if (!targets.length) return
       ctx.ask({ kind: 'chooseTargets', title: 'The bolt flies at whom?', data: { candidates: targets, count: 1, upTo: false, kind: 'unit' } }, 'loose')
     },

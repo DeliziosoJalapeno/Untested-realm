@@ -38,6 +38,7 @@ import {
   spellMorphName,
   validateSummonAt,
   validateTarget,
+  legalTargetOptions,
   printingsFor,
   abilityAnchor,
   canActivate,
@@ -57,6 +58,7 @@ import {
   type PlayerView,
   type Region,
   type Step,
+  type TargetRef,
   type UnitState,
   actingSeatFor,
   runningSeat,
@@ -1102,10 +1104,15 @@ function GameInner({
 
   // ── grid-lock: a hard post-SPAWN clamp so no in-game popup appears partly outside the board grid.
   // Each popup is corrected ONCE, the first laid-out frame after it mounts (then left alone, so the
-  // existing drag/movement locks stay in charge). Only popups SMALLER than the grid are moved; bigger
-  // overlays (game-over, the VS splash) and edge-docked banners are untouched. The nudge uses the CSS
-  // `translate` property so it COMPOSES with each popup's own transform; screen delta ÷ canvas scale
-  // (same maths as the drag code) keeps it exact under the uniform board scaling.
+  // existing drag/movement locks stay in charge). A popup that FITS the grid is pulled fully inside;
+  // a popup BIGGER than the grid is CENTRED on the board (mobile only — on mobile the board sits in a
+  // left-of-centre slot between the icon rail and the 240px card panel, so a frame-centred modal like
+  // the mulligan drifts right and hangs off the board over the card panel; centring on the measured
+  // board pulls it back. Desktop keeps the old "leave oversized popups alone" behaviour). Full-screen
+  // overlays (game-over `.gameover`, the VS splash `.pregame-vs`, `.deckconfirm`) aren't `.modal`, so
+  // they're excluded by the selector and never moved. The nudge uses the CSS `translate` property so
+  // it COMPOSES with each popup's own transform; screen delta ÷ canvas scale (same maths as the drag
+  // code) keeps it exact under the uniform board scaling.
   const gridLocked = useRef<WeakSet<HTMLElement>>(new WeakSet())
   const gridLockPopups = useCallback(() => {
     const root = gameRef.current
@@ -1121,10 +1128,12 @@ function GameInner({
       gridLocked.current.add(el)
       let dx = 0, dy = 0
       if (r.width <= g.width) { if (r.left < g.left) dx = g.left - r.left; else if (r.right > g.right) dx = g.right - r.right }
+      else if (mobile) dx = (g.left + g.right) / 2 - (r.left + r.right) / 2 // too wide → centre on the board
       if (r.height <= g.height) { if (r.top < g.top) dy = g.top - r.top; else if (r.bottom > g.bottom) dy = g.bottom - r.bottom }
+      else if (mobile) dy = (g.top + g.bottom) / 2 - (r.top + r.bottom) / 2 // too tall → centre on the board
       if (dx || dy) el.style.setProperty('translate', `${dx / s}px ${dy / s}px`)
     }
-  }, [])
+  }, [mobile])
   useLayoutEffect(() => { gridLockPopups() })
 
   const isSpectator = session.kind === 'online' && session.seat === null
@@ -1549,6 +1558,37 @@ function GameInner({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, mode, me, isSpectator, myTurn, myPlayer])
+  // A picked target id → its TargetRef (square picks are 'sq:x,y'; everything else is a
+  // unit/site/artifact id). Lets the client replay earlier picks into the engine's targetOptions.
+  const refOfId = (id: string): TargetRef | null => {
+    if (id.startsWith('sq:')) {
+      const [x, y] = id.slice(3).split(',')
+      return { square: { x: Number(x), y: Number(y) } }
+    }
+    return view.units[id] ? { unit: id } : view.sites[id] ? { site: id } : view.artifacts[id] ? { artifact: id } : null
+  }
+  // For a magic OR ability pick that declares an engine-authoritative legal set (Minor/Major
+  // Explosion & Mortality/Exorcism/… step range, Incinerate's caster-or-Dragon reach, Meteor Shower's
+  // no-shared-border rule, Midland Army / Corpse Catapult bombardment range), the refs the player may
+  // click for THIS pick — null when the card imposes no such restriction (the normal validateTarget
+  // path applies). Clicks outside the set are swallowed, so an illegal location/site can't be submitted.
+  const currentTargetOptions = (): TargetRef[] | null => {
+    const pickedRefs = (m: { picked: string[] }) => m.picked.map(refOfId).filter(Boolean) as TargetRef[]
+    if (mode.m === 'magic') {
+      const script = getScript(view.cards[mode.cardId]?.name ?? '')
+      if (!script?.targetOptions) return null
+      const caster = (view.units[mode.casterId] ?? avatar) as UnitState
+      return legalTargetOptions(st, script, caster, pickedRefs(mode), mode.picked.length)
+    }
+    if (mode.m === 'abilityTargets') {
+      const srcName = view.units[mode.sourceId]?.name ?? view.artifacts[mode.sourceId]?.name ?? view.sites[mode.sourceId]?.name ?? ''
+      const script = getScript(srcName)
+      if (!script?.targetOptions) return null
+      const caster = abilityAnchor(st, mode.sourceId, me) as UnitState
+      return legalTargetOptions(st, script, caster, pickedRefs(mode), mode.picked.length)
+    }
+    return null
+  }
   // units you can click right now — chooseTargets candidates, or (when conjuring
   // an artifact) the units you may hand it to. Highlighted on the board.
   const targetIds: Set<string> | null = (() => {
@@ -1591,6 +1631,24 @@ function GameInner({
         const caster = (mode.m === 'abilityTargets'
           ? abilityAnchor(st, mode.sourceId, me)
           : (view.units[mode.casterId] ?? avatar)) as UnitState
+        // engine-authoritative legal set when the magic declares one (Meteor Shower narrows the
+        // clickable sites as you pick, excluding any that border an already-chosen impact): consume
+        // it directly instead of re-deriving legality per candidate.
+        if (mode.m === 'magic') {
+          const magicScript = getScript(view.cards[mode.cardId]?.name ?? '')
+          const pickedRefs = mode.picked.map(refOfId).filter(Boolean) as TargetRef[]
+          const opts = legalTargetOptions(st, magicScript, caster, pickedRefs, mode.picked.length)
+          if (opts) {
+            const set2 = new Set<string>()
+            for (const o of opts) {
+              if ('site' in o) set2.add(o.site)
+              else if ('unit' in o) set2.add(o.unit)
+              else if ('artifact' in o) set2.add(o.artifact)
+              // square options are highlighted by the board-square block, not here
+            }
+            return set2.size > 0 ? set2 : null
+          }
+        }
         const ids = new Set<string>()
         // units are candidates for unit/minion/avatar/minionOrArtifact, and for 'artifact' too
         // (Automatons are minion-artifacts). validateTarget rejects the wrong type per candidate.
@@ -1862,17 +1920,24 @@ function GameInner({
         // board highlight is exactly the engine's accepted set (adjacent-only for
         // Floodplain's Overflow, nearby for Sinkhole's Collapse, etc.).
         const abilityCaster = abilityAnchor(st, mode.sourceId, me)
-        // site-sourced abilities that target a site (Floodplain's Overflow, etc.):
-        // highlight only the sites the engine would accept so the player can't misclick.
-        if (spec?.what === 'site') {
+        // engine-authoritative set when the ability declares one (Midland Army's bombard, Corpse
+        // Catapult's fling — "up to three steps away"): highlight EXACTLY it, like the magic path.
+        const opts = currentTargetOptions()
+        if (opts) {
+          for (const o of opts) {
+            if ('square' in o) set.set(`${o.square.x},${o.square.y}`, 'hl-place')
+            else if ('site' in o) { const s = view.sites[o.site]; if (s) set.set(`${s.x},${s.y}`, 'hl-move') }
+          }
+        } else if (spec?.what === 'site') {
+          // site-sourced abilities that target a site (Floodplain's Overflow, etc.):
+          // highlight only the sites the engine would accept so the player can't misclick.
           for (const s of Object.values(view.sites) as any[]) {
             try {
               if (!validateTarget(st, spec, { site: s.id }, abilityCaster, me)) set.set(`${s.x},${s.y}`, 'hl-move')
             } catch { /* ignore */ }
           }
-        }
-        // square-targeting abilities: highlight every square the engine would accept.
-        if (spec?.what === 'square') {
+        } else if (spec?.what === 'square') {
+          // square-targeting abilities: highlight every square the engine would accept.
           for (let x = 0; x < GRID_W; x++) {
             for (let y = 0; y < GRID_H; y++) {
               try {
@@ -1893,15 +1958,20 @@ function GameInner({
           const magicCaster = (view.units[mode.casterId] ?? avatar) as UnitState
           // the already-picked targets, so a `whereOf` square (Blink: nearby the chosen ally) is measured
           // from the right anchor instead of the caster.
-          const pickedRefs = mode.picked
-            .map((id) => (view.units[id] ? { unit: id } : view.sites[id] ? { site: id } : view.artifacts[id] ? { artifact: id } : null))
-            .filter(Boolean) as any[]
-          for (let x = 0; x < GRID_W; x++) {
-            for (let y = 0; y < GRID_H; y++) {
-              try {
-                if (!validateTarget(st, magicSpec, { square: { x, y } }, magicCaster, me, pickedRefs))
-                  set.set(`${x},${y}`, 'hl-place')
-              } catch { /* ignore */ }
+          const pickedRefs = mode.picked.map(refOfId).filter(Boolean) as any[]
+          // engine-authoritative set when the card declares one (Minor/Major Explosion's step range):
+          // highlight EXACTLY those squares, so a too-far location is never clickable.
+          const opts = legalTargetOptions(st, magicScript, magicCaster, pickedRefs, mode.picked.length)
+          if (opts) {
+            for (const o of opts) if ('square' in o) set.set(`${o.square.x},${o.square.y}`, 'hl-place')
+          } else {
+            for (let x = 0; x < GRID_W; x++) {
+              for (let y = 0; y < GRID_H; y++) {
+                try {
+                  if (!validateTarget(st, magicSpec, { square: { x, y } }, magicCaster, me, pickedRefs))
+                    set.set(`${x},${y}`, 'hl-place')
+                } catch { /* ignore */ }
+              }
             }
           }
         }
@@ -2013,6 +2083,9 @@ function GameInner({
     // square-target picking for spells (magic) AND activated abilities (Ancient
     // Dragon's breath, Ignis Rex's roar, Midland Army's bombard, Sparkmage's spark…)
     if ((mode.m === 'magic' || mode.m === 'abilityTargets') && currentSpec()?.what === 'square') {
+      // respect an engine-authoritative legal set (explosion step-range): a too-far square is inert
+      const opts = currentTargetOptions()
+      if (opts && !opts.some((o) => 'square' in o && o.square.x === x && o.square.y === y)) return
       pickTarget(`sq:${x},${y}`)
       return
     }
@@ -2425,7 +2498,11 @@ function GameInner({
       // site-targeting spells (Craterize) must reach the site under a unit
       if (spec?.what === 'site') {
         const s = Object.values(view.sites).find((st: any) => st.x === u.x && st.y === u.y && !st.isRubble)
-        if (s) pickTarget((s as any).id)
+        if (s) {
+          const opts = currentTargetOptions() // Meteor Shower: a bordering site under a unit is inert too
+          if (opts && !opts.some((o) => 'site' in o && o.site === (s as any).id)) return
+          pickTarget((s as any).id)
+        }
         return
       }
       // location/square-targeting effects (Sparkmage's spark, Ancient Dragon's breath…)
@@ -2434,6 +2511,8 @@ function GameInner({
       // to be occupied. Sent WITHOUT a region to match the highlighted legal set (the
       // engine validates square targets region-agnostically), exactly like a bare-square click.
       if (spec?.what === 'square') {
+        const opts = currentTargetOptions() // explosion step-range: a too-far square under a unit is inert
+        if (opts && !opts.some((o) => 'square' in o && o.square.x === u.x && o.square.y === u.y)) return
         pickTarget(`sq:${u.x},${u.y}`)
         return
       }
@@ -2555,6 +2634,10 @@ function GameInner({
       const spec = currentSpec()
       if (spec?.what === 'site') {
         ev.stopPropagation()
+        // respect an engine-authoritative legal set (Meteor Shower: a site bordering an already-chosen
+        // impact is inert) — swallow the click so a bordering pick can't be submitted
+        const opts = currentTargetOptions()
+        if (opts && !opts.some((o) => 'site' in o && o.site === siteObj.id)) return
         pickTarget(siteObj.id)
         return
       }
@@ -2997,8 +3080,21 @@ function GameInner({
     window.addEventListener('pointercancel', onUp)
   }
 
+  // ── tap-to-preview (touch): a touch device (an iPad on the desktop layout, or a phone) has no
+  // hover, so a TAP on a card / unit / site also loads it into the detail panel — what a mouse does
+  // on hover. Delegated from the root; purely additive (never preventDefault), so the tap still runs
+  // its normal action. Mouse/pen are ignored here and keep driving the preview via onMouseEnter.
+  const tapPreview = (e: React.PointerEvent) => {
+    if (e.pointerType !== 'touch') return
+    const el = (e.target as HTMLElement | null)?.closest?.('[data-card],[data-unitname],[data-site]') as HTMLElement | null
+    if (!el) return
+    const sid = el.getAttribute('data-site')
+    const name = el.getAttribute('data-card') ?? el.getAttribute('data-unitname') ?? (sid ? ((view.sites as any)[sid]?.name ?? null) : null)
+    if (name) showHover(name)
+  }
+
   return (
-    <div ref={gameRef} className={`game ${mobile ? 'mobile' : 'scaled'} ${mobile && handOpen ? 'hand-open' : ''} ${mobile && logsOpen ? 'logs-open' : ''}`} onMouseLeave={() => showHover(null)}
+    <div ref={gameRef} className={`game ${mobile ? 'mobile' : 'scaled'} ${mobile && handOpen ? 'hand-open' : ''} ${mobile && logsOpen ? 'logs-open' : ''}`} onMouseLeave={() => showHover(null)} onPointerDown={tapPreview}
       style={mobile
         ? { transform: `scale(${uiScale})`, transformOrigin: 'center center' }
         : {
@@ -5869,7 +5965,9 @@ function PromptBox({ view, prompt, send, me, flip, onHover, onGoBack, interceptA
     case 'sitePermutation':
       // Earthquake: author the 2x2 rearrangement in a self-contained panel, then send the permutation.
       // view/me/flip let the panel show each site's occupants and lay the grid out in board orientation.
-      return <QuakeArrange data={prompt.data} view={view} me={me} flip={flip} onAnswer={(c) => answer(c)} onHover={onHover} style={drag.style} handleProps={drag.handleProps} />
+      // This case returns early (so the shared "↩ Go back" append below is skipped) — wire the free
+      // go-back in here too, so you can cancel the Earthquake until the rearrangement is actually sent.
+      return <QuakeArrange data={prompt.data} view={view} me={me} flip={flip} onAnswer={(c) => answer(c)} onHover={onHover} style={drag.style} handleProps={drag.handleProps} onGoBack={onGoBack} />
     case 'firstSite': {
       // forced first-turn site: click one of your hand's sites; it's placed under
       // your avatar (mandatory — no skip). data carries parallel ids + names.

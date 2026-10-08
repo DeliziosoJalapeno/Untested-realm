@@ -9,7 +9,9 @@ registerScript('Flood', {
     if (!aura) return
     for (const sq of aura.squares) {
       const site = siteAt(ctx.state, sq.x, sq.y)
-      if (site && !site.isRubble) applyFlood(ctx.state, site, ctx.controller)
+      // rubble floods too — flooded rubble becomes a body of water (applyFlood still honours Bedrock's
+      // "can't be modified"). Only a siteless void square has nothing to flood.
+      if (site) applyFlood(ctx.state, site, ctx.controller)
     }
     checkStateBased(ctx.state)
   },

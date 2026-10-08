@@ -1,6 +1,6 @@
 import { registerScript } from '../registry'
-import { getCard } from '../../db'
 import { siteAt, unitsAt } from '../../../engine/grid'
+import { siteRarity } from '../../../engine/statics'
 import { pushLog, killUnit } from '../../../engine/effects'
 import { removeAura } from '../multi-card-utils/remove-aura'
 
@@ -10,7 +10,7 @@ registerScript("Hamlet's Ablaze!", {
   auraPlacement: (state, _player, at) => {
     const site = siteAt(state, at.x, at.y)
     if (!site) return "Hamlet's Ablaze! must be conjured atop a site."
-    const rar = getCard(site.name).rarity
+    const rar = siteRarity(state, site) // rubble reads as Ordinary
     return rar === 'Ordinary' || rar === 'Exceptional' ? null : "Hamlet's Ablaze! must be conjured atop an Ordinary or Exceptional site."
   },
   startOfTurn: (ctx) => {

@@ -2,12 +2,12 @@
 // c2 (2,1) the square d4 (3,3) is dx1+dy2 = 3 steps and out of range (its chebyshev distance is only 2).
 // Covers the cards that shared Minor Explosion's chebyshev bug: Mortality, Exorcism, Dispel.
 import { describe, it, expect } from 'vitest'
-import { newGame, keepBoth } from './helpers'
+import { newGame, keepBoth, fillSites } from './helpers'
 import { makeCtx, getScript, avatarOf, summonToken, type GameState } from '../src'
 import '../src/cards/scripts/index'
 
 function g0(): GameState {
-  const g = newGame(42, 0) as GameState; keepBoth(g)
+  const g = newGame(42, 0) as GameState; keepBoth(g); fillSites(g) // real steps need a site path (no voids → Manhattan)
   const av = avatarOf(g, 0); av.x = 2; av.y = 1 // c2
   return g
 }

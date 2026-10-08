@@ -1,28 +1,17 @@
 import { registerScript } from '../registry'
-import { getCard } from '../../db'
-import { adjacentSquaresW, isWaterSite, siteAt } from '../../../engine/grid'
+import { adjacentSquaresW, siteAt } from '../../../engine/grid'
 import { pushLog, checkStateBased, applyFlood } from '../../../engine/effects'
+import { bodyOfWaterCells } from '../multi-card-utils/body-of-water'
 import type { GameState, UnitState } from '../../../engine/types'
 
-// The body of water the Avatar currently occupies: the contiguous cluster of
-// orthogonally-adjacent water sites that includes its own site. Empty when the
-// Avatar isn't on a water site -- "a fish out of water", the ability won't function.
+// The body of water the Avatar currently occupies: the contiguous cluster of orthogonally-adjacent
+// water sites that includes its own site (via the shared bodyOfWater primitive, so Drought / rubble /
+// per-instance water choices are honoured). Empty when the Avatar isn't on a water site -- "a fish out
+// of water", the ability won't function.
 function avatarWaterBody(state: GameState, self: UnitState) {
-  const here = siteAt(state, self.x, self.y)
-  if (!here || !isWaterSite(state, here, getCard)) return [] as NonNullable<ReturnType<typeof siteAt>>[]
-  const body: NonNullable<ReturnType<typeof siteAt>>[] = []
-  const seen = new Set<string>()
-  const stack = [here]
-  while (stack.length) {
-    const s = stack.pop()!
-    if (seen.has(s.id)) continue
-    seen.add(s.id); body.push(s)
-    for (const a of adjacentSquaresW(state, s.x, s.y)) {
-      const ns = siteAt(state, a.x, a.y)
-      if (ns && !seen.has(ns.id) && isWaterSite(state, ns, getCard)) stack.push(ns)
-    }
-  }
-  return body
+  return bodyOfWaterCells(state, self.x, self.y)
+    .map((c) => siteAt(state, c.x, c.y))
+    .filter((s): s is NonNullable<typeof s> => !!s)
 }
 
 // Sites you may flood: any site orthogonally adjacent to that body but not in it.
@@ -37,11 +26,11 @@ function avatarFloodTargets(state: GameState, self: UnitState): Set<string> {
   return out
 }
 
-// 'Tap â†’ Flood a site adjacent to your body of water until you do so again. You may teleport there.'
+// 'Airborne / Tap → Flood a site adjacent to your body of water until you do so again. You may teleport there.'
 registerScript('Avatar of Water', {
   abilities: [{
     key: 'flood',
-    label: 'Tap â†’ Flood a site adjacent to your waters',
+    label: 'Tap → Flood a site adjacent to your waters',
     cost: { tap: true },
     // FAQ: "if the Avatar isn't in any body of water, the ability won't function"
     // -- hide it entirely when the Avatar is a fish out of water.

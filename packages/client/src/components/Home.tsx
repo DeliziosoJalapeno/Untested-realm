@@ -12,6 +12,20 @@ import { ACHIEVEMENTS } from '@sorcery/shared'
 import { unlockedCount } from '../achievements'
 import { AchievementsModal } from './Achievements'
 import SettingsModal from './SettingsModal'
+import { getSetting, subscribeSettings, homepageQualityChosen } from '../settings'
+
+/** live-reactive home-screen quality — re-renders when the setting changes. On MOBILE, until the user
+ *  explicitly picks a look, it defaults to 'boring' (the classic page), since the full-bleed art cover
+ *  is desktop-oriented. An explicit choice is always honored on both. */
+function useHomepageQuality(mobile: boolean) {
+  const compute = () => (mobile && !homepageQualityChosen()) ? 'boring' as const : getSetting('homepageQuality')
+  const [q, setQ] = useState(compute)
+  useEffect(() => {
+    setQ(compute())
+    return subscribeSettings(() => setQ(compute()))
+  }, [mobile])
+  return q
+}
 
 // Decorative card-art showcase flanking the home page on desktop (hidden on mobile). Four columns —
 // two per side — of the TRICKIEST non-site cards: the ones carrying the most engine tests (a proxy for
@@ -78,6 +92,7 @@ export default function Home({
 }) {
   const decks = loadDecks()
   const { mobile } = useMobileMode()
+  const quality = useHomepageQuality(mobile) // 'high' = new cover art + serif title, 'boring' = classic page, 'low' = paint meme cover; mobile defaults to 'boring'
   const [name, setName] = useState(localStorage.getItem('sorcery-name') ?? username ?? '')
   // account form
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
@@ -176,9 +191,9 @@ export default function Home({
   }
 
   return (
-    <div className="home">
-      {/* desktop-only decorative card-art showcase in the empty side margins (4 columns, 2 per side) */}
-      {!mobile && (
+    <div className={`home ${quality === 'low' ? 'lq' : quality === 'high' ? 'aq' : 'hq'}`}>
+      {/* desktop-only decorative card-art showcase in the empty side margins (4 columns, 2 per side) — the classic ("boring") page only */}
+      {!mobile && quality === 'boring' && (
         <>
           <aside className="home-artrail left" aria-hidden="true">
             {SHOWCASE_COLUMNS.slice(0, 2).map((col, i) => (
@@ -196,9 +211,18 @@ export default function Home({
           </aside>
         </>
       )}
-      <div className="home-titlewrap">
-        <img className="home-title" src="/titolosorcery.png" alt="Untested Realm" />
-      </div>
+      {quality === 'low' ? (
+        <div className="home-titlewrap">
+          <img className="home-title" src="/titolosorcery.png" alt="Untested Realm" />
+        </div>
+      ) : (
+        <h1>Untested Realm</h1>
+      )}
+      {quality === 'high' && (
+        <a className="art-credit" href="https://www.instagram.com/elispeedart/" target="_blank" rel="noreferrer noopener" title="Cover art by elispeedart (Instagram)">
+          art by @elispeedart (wip)
+        </a>
+      )}
       <p className="byline">by Jalapeno</p>
       <p className="subtitle">
         100% automated, 99%* verified!

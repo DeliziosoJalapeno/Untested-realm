@@ -1,7 +1,7 @@
 import { registerScript } from '../registry'
 import { getCard, getKeywords } from '../../db'
 import { pushLog, siteStillFlooded } from '../../../engine/effects'
-import { nearbySquaresW, siteAt, unitsAt } from '../../../engine/grid'
+import { isWaterSite, nearbySquaresW, siteAt, unitsAt } from '../../../engine/grid'
 
 // 'Tap → Flood a site near your body of water until you do so again. Tap minions
 //  without submerge there. They don't untap the next time they would.'
@@ -12,7 +12,7 @@ registerScript('Waveshaper', {
     cost: { tap: true },
     effect: (ctx) => {
       const water = Object.values(ctx.state.sites).filter(
-        (s) => !s.isRubble && s.controller === ctx.controller && (s.flooded || getCard(s.name).thresholds.water > 0),
+        (s) => s.controller === ctx.controller && isWaterSite(ctx.state, s, getCard),
       )
       if (!water.length) return ctx.log('You control no body of water.')
       const squares: { x: number; y: number }[] = []

@@ -1,7 +1,7 @@
 import { registerScript } from '../registry'
 import { pushLog, effectSummonUnit } from '../../../engine/effects'
 import { nearbySquaresW } from '../../../engine/grid'
-import { collectionBanned, takeFromCollection } from '../../../engine/statics'
+import { collectionBanned, takeFromCollection, payZoneToll } from '../../../engine/statics'
 
 // "Genesis → Summon two Ghouls from your collection here. They can't die while nearby."
 registerScript('Young Master Damion', {
@@ -10,6 +10,10 @@ registerScript('Young Master Damion', {
     if (!self) return
     if (collectionBanned(ctx.state, ctx.controller, 'Ghoul')) {
       return pushLog(ctx.state, ctx.controller, 'Every Ghoul in the collection was banished by the Legion of Gall.')
+    }
+    // one collection access for the pair of Ghouls → the Bureau of Occult Control tolls (2) once
+    if ((ctx.state.players[ctx.controller].collection?.['Ghoul'] ?? 0) > 0 && !payZoneToll(ctx.state, ctx.controller)) {
+      return pushLog(ctx.state, ctx.controller, 'The Bureau of Occult Control demands (2) for collection access.')
     }
     let summoned = 0
     for (let i = 0; i < 2; i++) {

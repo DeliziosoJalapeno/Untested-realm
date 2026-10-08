@@ -2,7 +2,7 @@
 // (Sleep, "up to two steps away") and an adjacency static (The Colour Out of Space, "adjacent to the
 // void") — both now honour the joined edges under a Magellan Globe via the shared wrapped helpers.
 import { describe, it, expect } from 'vitest'
-import { newGame, keepBoth, placeSite, summonCard } from './helpers'
+import { newGame, keepBoth, placeSite, summonCard, fillSites } from './helpers'
 import { getScript, GRID_W, GRID_H, type GameState } from '../src'
 import '../src/cards/scripts/index'
 
@@ -15,7 +15,7 @@ function withGlobe(g: GameState) {
 
 describe('Sleep range wraps under the Globe', () => {
   it('a minion 3 apart (2 via the seam) is only in range with the Globe', () => {
-    const g = newGame() as GameState; keepBoth(g)
+    const g = newGame() as GameState; keepBoth(g); fillSites(g) // real steps need a site path
     const caster = summonCard(g, 0, 'Bone Jumble', 0, 1)
     const foe = summonCard(g, 1, 'Bone Jumble', 3, 1) // Manhattan 3, but 2 the short way round (GRID_W=5)
     const filter = getScript('Sleep')!.targets![0].filter!

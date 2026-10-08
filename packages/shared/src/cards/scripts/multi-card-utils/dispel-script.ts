@@ -1,7 +1,8 @@
 import { type EffectAPI } from '../registry'
 import { siteAt } from '../../../engine/grid'
-import { stepDistanceW } from '../../../engine/movement'
+import { realStepDistanceW } from '../../../engine/movement'
 import { pushLog, checkStateBased, toCemetery } from '../../../engine/effects'
+import { squaresWithinSteps } from './step-range-targets'
 import type { GameState } from '../../../engine/types'
 
 // Auras whose flood is part of their continuous effect (Atlantean Fate, Flood):
@@ -27,11 +28,12 @@ export function unfloodOnAuraLeave(state: GameState, leaving: { id: string; name
 // 'Destroy all auras and artifacts at target location up to two steps away.'
 export const dispelScript = {
   targets: [{ what: 'square' as const, count: 1, targeted: true, label: 'target location (≤2 steps)' }],
+  targetOptions: (state: GameState, caster: import('../../../engine/types').UnitState) => squaresWithinSteps(state, caster, 2), // client-blockable range
   onCast: (ctx: EffectAPI) => {
     const t = ctx.targets[0]
     if (!('square' in t)) return
     const caster = ctx.caster!
-    if (stepDistanceW(ctx.state, caster, t.square) > 2) return ctx.log('Too far away.') // "up to two steps away" (def. 1)
+    if (realStepDistanceW(ctx.state, caster, t.square) > 2) return ctx.log('Too far away.') // "up to two steps away" (def. 1)
     for (const a of Object.values(ctx.state.artifacts)) {
       if (a.x === t.square.x && a.y === t.square.y) ctx.breakArtifact(a.id)
     }

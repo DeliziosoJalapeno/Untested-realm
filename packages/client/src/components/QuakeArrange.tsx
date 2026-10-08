@@ -38,6 +38,7 @@ export function QuakeArrange({
   onHover,
   style,
   handleProps,
+  onGoBack,
 }: {
   data: { cells?: Cell[] }
   view: PlayerView
@@ -47,6 +48,8 @@ export function QuakeArrange({
   onHover?: (name: string) => void
   style?: React.CSSProperties
   handleProps?: any
+  /** free cancel of the whole Earthquake cast (nothing has moved yet) — only offered on its first prompt */
+  onGoBack?: () => void
 }) {
   const cells: Cell[] = orderForDisplay(data.cells ?? [], flip)
   // arrangement[i] = index of the cell whose site currently sits at display position i (identity to start)
@@ -117,6 +120,7 @@ export function QuakeArrange({
       </div>
       <button data-confirm="1" onClick={confirm}>{dirty ? 'Confirm arrangement' : 'Leave as is'}</button>
       {dirty && <button data-reset="1" onClick={() => { setArr(cells.map((_, i) => i)); setPick(null) }}>Reset</button>}
+      {onGoBack && <button className="promptback" data-goback onClick={onGoBack} title="Cancel Earthquake — the sites haven't moved yet">↩ Go back</button>}
     </div>
   )
 }

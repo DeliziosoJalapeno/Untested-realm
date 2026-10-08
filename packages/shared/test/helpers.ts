@@ -1,4 +1,4 @@
-import { createGame, applyAction, starterDecks, type Action, type GameState, type PlayerId } from '../src'
+import { createGame, applyAction, starterDecks, siteAt, GRID_W, GRID_H, type Action, type GameState, type PlayerId } from '../src'
 
 export function newGame(seed = 42, first: PlayerId = 0): GameState {
   const g = createGame([starterDecks[0], starterDecks[1]], ['Alice', 'Bob'], seed, first)
@@ -130,6 +130,15 @@ export function castMagicFail(
 export function waiveThreshold(state: GameState, player: PlayerId): void {
   state.flow = state.flow ?? {}
   state.flow.noThreshold = { ...(state.flow.noThreshold ?? {}), [player]: state.turn }
+}
+
+/** fill every empty square with a plain site, so step-distance PATHS exist everywhere — a board with no
+ *  voids means real step distance equals Manhattan. Use in "up to N steps away" range tests that aren't
+ *  specifically about a void gap (those should leave the gap siteless on purpose). */
+export function fillSites(state: GameState, player: PlayerId = 0): void {
+  for (let x = 0; x < GRID_W; x++) for (let y = 0; y < GRID_H; y++) {
+    if (!siteAt(state, x, y)) placeSite(state, player, 'Rustic Village', x, y)
+  }
 }
 
 /** drop a REAL site directly onto a square (no play action, no genesis) */

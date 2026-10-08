@@ -40,6 +40,23 @@ registerScript('Meteor Shower', {
     { what: 'site', count: 1, targeted: true, label: 'second impact (medium)' },
     { what: 'site', count: 1, targeted: true, label: 'third impact (small)' },
   ],
+  // engine-authoritative legal set per pick: any site that shares NO border with an already-chosen
+  // one (diagonals are fine per FAQ). The client progressively narrows the clickable sites as you pick
+  // the first, then second meteor, and castSpell rejects a bordering pick — so the three impacts can
+  // never touch (previously the client let you pick adjacent sites and the whole spell fizzled).
+  targetOptions: (state, _caster, picked) => {
+    const chosen = picked
+      .filter((p) => 'site' in p)
+      .map((p) => state.sites[(p as { site: string }).site])
+      .filter(Boolean)
+    const out: { site: string }[] = []
+    for (const s of Object.values(state.sites)) {
+      // Manhattan distance ≤ 1 to any chosen site = shares a border (or is that site) → illegal
+      if (chosen.some((c) => Math.abs(c.x - s.x) + Math.abs(c.y - s.y) <= 1)) continue
+      out.push({ site: s.id })
+    }
+    return out
+  },
   onCast: (ctx) => {
     const sites = ctx.targets.map((t) => ('site' in t ? ctx.state.sites[t.site] : null))
     if (sites.some((s) => !s)) return

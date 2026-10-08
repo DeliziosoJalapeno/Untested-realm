@@ -1,5 +1,6 @@
 import { registerScript, type EffectAPI } from '../registry'
 import { firstProjectileImpact } from '../../../engine/combat'
+import { isDisabled } from '../../../engine/statics'
 import { strikeOnce } from '../multi-card-utils/strike-once'
 
 // Grapple Shot: drag the ally to the hit unit's square, then offer the strike-on-arrival.
@@ -22,6 +23,9 @@ registerScript('Grapple Shot', {
     const t = ctx.targets[0]
     if (!('unit' in t)) return
     const ally = ctx.state.units[t.unit]
+    // a disabled minion (e.g. standing over a burrowed Root Spider) cannot shoot projectiles, so the
+    // grapple simply fizzles — you may still legally target it, but nothing happens.
+    if (!ally || isDisabled(ctx.state, ally)) return ctx.log('The minion is disabled and cannot fire the grapple.')
     // the grapple fires FROM the ally minion -- anchor the direction-picker's conveyor belt there,
     // not on the avatar caster (from: seeds data.from/dirs in the ctx.ask generalization)
     ctx.ask({ kind: 'chooseOption', title: 'Fire the grapple in which direction?', data: { options: ['n', 's', 'e', 'w'] } }, 'fire', { allyId: t.unit, from: ally ? { x: ally.x, y: ally.y } : undefined })

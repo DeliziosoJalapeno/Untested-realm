@@ -2422,13 +2422,14 @@ export function notifySiteInterference(
   }
 }
 
-/** can this site be moved/rearranged? Bedrock (immovableSite) and Bluecap Knockers
- *  (protectsSite — its text also forbids moving) say no. */
+/** can this site be moved/rearranged? Bedrock (immovableSite) and units that IMMOBILIZE a site (Bluecap
+ *  Knockers — "can't be moved…") say no. A unit that only protects from DESTRUCTION (Order of the Sacred
+ *  Oak) does NOT block moving — its sites stay movable and modifiable. */
 export function siteCantBeMoved(state: GameState, site: { id: string; name: string; x: number; y: number }): boolean {
   if (getScript(site.name)?.immovableSite) return true
   for (const u of Object.values(state.units)) {
-    const protect = getScript(u.name)?.protectsSite
-    if (protect && !u.silenced && protect(state, u, site)) return true
+    const immobilize = getScript(u.name)?.immobilizesSite
+    if (immobilize && !u.silenced && !isDisabled(state, u) && immobilize(state, u, site)) return true
   }
   return false
 }
@@ -2501,19 +2502,24 @@ export function applyFlood(state: GameState, site: SiteState, by: PlayerId): boo
   return true
 }
 
-export function destroySite(state: GameState, siteId: string, sourcePlayer?: PlayerId): void {
+export function destroySite(state: GameState, siteId: string, sourcePlayer?: PlayerId, sacrifice = false): void {
   const site = state.sites[siteId]
   if (!site) return
-  // indestructible sites (Bedrock) and protected sites (Bluecap Knockers)
-  if (getScript(site.name)?.indestructibleSite) {
-    pushLog(state, sourcePlayer ?? null, `${site.name} cannot be destroyed.`)
-    return
-  }
-  for (const u of Object.values(state.units)) {
-    const protect = getScript(u.name)?.protectsSite
-    if (protect && !u.silenced && protect(state, u, site)) {
-      pushLog(state, sourcePlayer ?? null, `${site.name} is protected by ${u.name}.`)
+  // A SACRIFICE is a willing cost, not destruction (Sinkhole/Vesuvius giving up their own site), so it
+  // bypasses "can't be destroyed" (Bedrock) and destruction-protection (Order of the Sacred Oak / Bluecap)
+  // — mirroring the unit-sacrifice rule. A normal destroy effect still respects both.
+  if (!sacrifice) {
+    // indestructible sites (Bedrock) and protected sites (Bluecap Knockers / Order of the Sacred Oak)
+    if (getScript(site.name)?.indestructibleSite) {
+      pushLog(state, sourcePlayer ?? null, `${site.name} cannot be destroyed.`)
       return
+    }
+    for (const u of Object.values(state.units)) {
+      const protect = getScript(u.name)?.protectsSite
+      if (protect && !u.silenced && !isDisabled(state, u) && protect(state, u, site)) {
+        pushLog(state, sourcePlayer ?? null, `${site.name} is protected by ${u.name}.`)
+        return
+      }
     }
   }
   if (checkWard(state, site, sourcePlayer, site.controller, 'destroy')) {
@@ -3041,6 +3047,21 @@ function artifactCasterUnit(state: GameState, sourceId: string, controller: Play
   }
 }
 
+/** Synthesize a positioned pseudo-unit for a spellcaster SITE source (River of Flame, a Merlin's Tower-
+ *  granted caster). A site occupies BOTH its surface and its subsurface, so `region` carries the chosen
+ *  casting region (see casting.ts' region prompt); it defaults to the surface. Without this, a spell that
+ *  reads `ctx.caster` (a projectile, or a positional blast like Minor Explosion) crashed on a site caster. */
+function siteCasterUnit(state: GameState, sourceId: string, controller: PlayerId, region?: Region): UnitState | undefined {
+  const site = state.sites[sourceId]
+  if (!site) return undefined
+  return {
+    id: site.id, cardId: site.cardId, name: site.name,
+    owner: state.cards[site.cardId]?.owner ?? controller, controller: site.controller ?? controller,
+    isAvatar: false, x: site.x, y: site.y, region: region ?? 'surface',
+    tapped: false, damage: 0, enteredTurn: -1, modifiers: [], carrying: [], carryingUnits: [], usedThisTurn: {},
+  }
+}
+
 export function makeCtx(
   state: GameState,
   sourceId: string,
@@ -3054,7 +3075,11 @@ export function makeCtx(
   // pseudo-unit positioned at the artifact — so a spell that fires from `ctx.caster` (Magic
   // Missiles, Ball Lightning, any projectile) has a real origin instead of crashing on undefined.
   // Mirrors resolveCaster's synthesis; only kicks in when the source isn't a real unit.
-  const caster = state.units[sourceId] ?? artifactCasterUnit(state, sourceId, controller)
+  let caster = state.units[sourceId] ?? artifactCasterUnit(state, sourceId, controller) ?? siteCasterUnit(state, sourceId, controller, extra?.castRegion)
+  // an OVERSIZED / Rack-stretched caster occupies several squares; when it fires a projectile or a
+  // distance-measured blast it picks WHICH square to act from (see casting.ts' origin prompt). Use a
+  // repositioned copy so positional reads (ctx.caster.x/y, step distance) measure from that square.
+  if (caster && extra?.castOrigin) caster = { ...caster, x: extra.castOrigin.x, y: extra.castOrigin.y }
   // A CARRIED artifact's ability acts through its BEARER: that unit is the one dealing the damage, so it
   // inherits the bearer's Lethal (a Poisonous Dagger makes Ring of Morrigan's bleed lethal) and takes the
   // kill credit. Ground/uncarried artifacts (and non-artifact sources) have no bearer actor.
@@ -3344,7 +3369,7 @@ export function makeCtx(
       const u = state.units[unitId]
       if (u) u.tapped = false
     },
-    destroySite: (siteId, by) => destroySite(state, siteId, by ?? controller),
+    destroySite: (siteId, by, sacrifice) => destroySite(state, siteId, by ?? controller, sacrifice),
     disable: (unitId) => {
       const u = state.units[unitId]
       if (u && !u.isAvatar) u.disabled = true

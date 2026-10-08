@@ -5,7 +5,7 @@
 // and picking up anything that transitively carries you is refused.
 
 import { getScript } from '../cards/scripts/registry'
-import type { GameState, PlayerId, UnitState } from './types'
+import type { GameState, PlayerId, Region, UnitState } from './types'
 import { pushLog } from './effects'
 
 /** true if `carrierId` transitively carries `unitId` */
@@ -53,6 +53,16 @@ export function syncCarried(state: GameState, carrier: UnitState, visited: Set<s
       detachFromCarrier(state, u) // stays behind on the surface — it doesn't follow into the void
       continue
     }
+    // an avatar can NEVER leave the surface: a mount that burrows/submerges while carrying it drops it
+    // (it stays put on the surface at the mount's square), rather than dragging it into an illegal region.
+    if (u.isAvatar && carrier.region !== 'surface') {
+      u.x = carrier.x
+      u.y = carrier.y
+      u.region = 'surface'
+      detachFromCarrier(state, u)
+      pushLog(state, u.controller, `${u.name} is dropped — an avatar cannot leave the surface.`)
+      continue
+    }
     u.x = carrier.x
     u.y = carrier.y
     u.region = carrier.region
@@ -72,15 +82,20 @@ export function detachFromCarrier(state: GameState, unit: UnitState): void {
  *  a carried artifact whose bearer wasn't itself buried (an Avatar, or a unit that couldn't burrow) is
  *  detached from its bearer and buried on its own. (One whose bearer WAS buried already rode down via
  *  syncCarried, so its region is no longer 'surface' and it's skipped.) Used by Cave-In, Earthquake, … */
-export function buryArtifactsAt(state: GameState, x: number, y: number): void {
+/** Sink every SURFACE artifact at a square below ground (Cave-In / Earthquake, default) or under water
+ *  (Stormy Seas). A carried artifact is located by its BEARER's position — so one held by a bearer that
+ *  itself can't sink (the Avatar stays up top; a non-submergeable minion stays dry) is still found,
+ *  detached from that bearer, and sunk on its own. An artifact already below the surface — e.g. one
+ *  riding a minion that just submerged, which syncCarried already pulled under — is skipped. */
+export function buryArtifactsAt(state: GameState, x: number, y: number, toRegion: Region = 'underground'): void {
   for (const a of Object.values(state.artifacts)) {
-    if (a.x !== x || a.y !== y || a.region !== 'surface') continue
-    if (a.carriedBy) {
-      const bearer = state.units[a.carriedBy]
-      if (bearer) bearer.carrying = bearer.carrying.filter((id) => id !== a.id)
-      a.carriedBy = null
-    }
-    a.region = 'underground'
+    const bearer = a.carriedBy ? state.units[a.carriedBy] : null
+    const ax = bearer ? bearer.x : a.x
+    const ay = bearer ? bearer.y : a.y
+    const aregion = bearer ? bearer.region : a.region
+    if (ax !== x || ay !== y || aregion !== 'surface') continue
+    if (bearer) { bearer.carrying = bearer.carrying.filter((id) => id !== a.id); a.carriedBy = null }
+    a.x = x; a.y = y; a.region = toRegion
   }
 }
 

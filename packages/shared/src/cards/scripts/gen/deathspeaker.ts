@@ -4,6 +4,7 @@ import { GRID_W, GRID_H, avatarOf } from '../../../engine/grid'
 import { validateSummonAt, validateTarget } from '../../../engine/casting'
 import type { GameState, PlayerId, Region, UnitState } from '../../../engine/types'
 import { pushLog, checkStateBased, banishUnit, effectSummonUnit, bumpManaSpent } from '../../../engine/effects'
+import { zoneAccessToll } from '../../../engine/statics'
 
 // The echoed copy fires its Genesis — and a Genesis that needs a target (Gargantula's
 // "drag an adjacent minion") must let the controller pick one, exactly as a hand-cast
@@ -35,6 +36,8 @@ registerScript('Deathspeaker', {
     label: 'Banish a dead minion → flicker a copy',
     cost: {},
     oncePerTurn: true,
+    deferUse: true, // the turn's use is spent only when the echo SUMMONS — so you can back out of the
+    // "which minion / where / genesis target" prompts freely until then (nothing is committed early)
     usableFromCemetery: true, // banish/copy a dead minion + summon at a player-chosen square; no activator position → Vivien can do it from the grave
     // Gate the ability on there being a dead minion in EITHER cemetery. canActivate + the GUI
     // re-evaluate available() live (every render), so the button greys when both cemeteries hold
@@ -59,7 +62,8 @@ registerScript('Deathspeaker', {
       if (!self || !choice) return
       const name = String(choice)
       const p = ctx.state.players[ctx.controller]
-      const cost = self.deathsDoor ? 0 : findCard(name)?.cost ?? 0
+      // the echo reaches into a cemetery, so the Bureau of Occult Control tolls (2) for that access
+      const cost = (self.deathsDoor ? 0 : findCard(name)?.cost ?? 0) + zoneAccessToll(ctx.state)
       if (p.mana < cost) return ctx.log(`Not enough mana (${p.mana}/${cost}).`)
       // offer every square the copy could legally enter (validateSummonAt is the arbiter),
       // then let the player pick where its echo appears so its Genesis fires there.
@@ -102,7 +106,8 @@ function copyMinion(state: GameState, name: string, controller: PlayerId, x: num
 function deathspeakerFlicker(ctx: EffectAPI, name: string, at: { x: number; y: number }, region: Region, genesisTargets: TargetRef[] = []): void {
   const self = ctx.state.units[ctx.sourceId]
   const p = ctx.state.players[ctx.controller]
-  const cost = self?.deathsDoor ? 0 : findCard(name)?.cost ?? 0
+  // Bureau of Occult Control tolls (2) for reaching into a cemetery (mirrors the pre-check in `speak`)
+  const cost = (self?.deathsDoor ? 0 : findCard(name)?.cost ?? 0) + zoneAccessToll(ctx.state)
   if (p.mana < cost) return ctx.log(`Not enough mana (${p.mana}/${cost}).`)
   // the dead minion may lie in EITHER cemetery ("a dead minion")
   let owner: 0 | 1 | null = null
@@ -112,6 +117,8 @@ function deathspeakerFlicker(ctx: EffectAPI, name: string, at: { x: number; y: n
     if (i >= 0) { owner = pid; idx = i; break }
   }
   if (owner === null) return
+  // COMMIT: now the echo actually happens, so spend the once-per-turn use (deferUse — see the ability).
+  if (self) self.usedThisTurn.speak = 1
   p.mana -= cost
   if (cost > 0) bumpManaSpent(ctx.state, ctx.controller, cost) // count against spent so the total-mana widget doesn't shrink
   const [id] = ctx.state.players[owner].cemetery.splice(idx, 1)

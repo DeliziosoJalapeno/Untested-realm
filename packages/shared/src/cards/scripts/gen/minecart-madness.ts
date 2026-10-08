@@ -1,13 +1,13 @@
 import { registerScript } from '../registry'
 import { getCard } from '../../db'
 import { pushLog } from '../../../engine/effects'
-import { GRID_H, GRID_W, siteAt } from '../../../engine/grid'
+import { GRID_H, GRID_W, isWaterSite, siteAt } from '../../../engine/grid'
 import type { GameState } from '../../../engine/types'
 import { connected } from '../multi-card-utils/connected'
 
 const isLand = (state: GameState, x: number, y: number) => {
   const s = siteAt(state, x, y)
-  return !!s && !s.flooded && getCard(s.name).thresholds.water === 0
+  return !!s && !isWaterSite(state, s, getCard) // the land analog of a body of water (canonical water check)
 }
 
 // 'This turn, your units can move between any sites in a chosen span of land

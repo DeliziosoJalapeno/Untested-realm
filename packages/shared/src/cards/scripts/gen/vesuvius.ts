@@ -20,7 +20,7 @@ registerScript('Vesuvius', {
           ctx.dealDamage({ unit: u.id }, 3)
         }
       }
-      ctx.destroySite(self.id)
+      ctx.destroySite(self.id, undefined, true) // Vesuvius SACRIFICES itself (a cost, not destruction)
       pushLog(ctx.state, ctx.controller, '🌋 Vesuvius erupts!')
     },
   }],

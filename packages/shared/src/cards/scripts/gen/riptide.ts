@@ -1,12 +1,12 @@
 import { registerScript } from '../registry'
 import { getCard } from '../../db'
-import { orthAdjacentWrapped, unitsAt } from '../../../engine/grid'
+import { isWaterSite, orthAdjacentWrapped, unitsAt } from '../../../engine/grid'
 
 // 'Target water site pulls in an aboveground unit it's adjacent to. Draw a card.'
 registerScript('Riptide', {
   targets: [{
     what: 'site', count: 1, targeted: true, label: 'target water site',
-    filter: (state, s) => s.flooded || getCard(s.name).thresholds.water > 0,
+    filter: (state, s) => isWaterSite(state, s, getCard),
   }],
   onCast: (ctx) => {
     const t = ctx.targets[0]

@@ -618,6 +618,15 @@ export function terrainAt(state: GameState, x: number, y: number): Terrain {
   return isWaterSite(state, site, getCard) ? 'water' : 'land'
 }
 
+/** A placed site's effective rarity. RUBBLE is Ordinary — a destroyed site has lost its identity (it
+ *  provides no mana or abilities), so every rarity-gated effect (Castle Haunt / Castle's & Hamlet's
+ *  Ablaze / Heirloom Lost) must read it as Ordinary, not the destroyed card's printed rarity. Use this
+ *  instead of getCard(site.name).rarity whenever classifying a site IN PLAY. */
+export function siteRarity(state: GameState, site: SiteState): string {
+  if (site.isRubble) return 'Ordinary'
+  return getCard(site.name).rarity ?? 'Ordinary'
+}
+
 /** For a FORCED region change (Bury/Drown/Cave-In/flood submerge), an OVERSIZED unit
  *  must occupy a single uniform terrain: the rulebook says the effect FAILS unless the
  *  oversized unit occupies only water sites, or only land sites. Returns true iff every

@@ -1,7 +1,7 @@
 import { registerScript } from '../registry'
-import { getCard } from '../../db'
 import { pushLog } from '../../../engine/effects'
 import { siteAt } from '../../../engine/grid'
+import { siteRarity } from '../../../engine/statics'
 
 // 'May be cast to any Elite or Unique site. / Dies if it leaves its summoning site.'
 registerScript('Castle Haunt', {
@@ -10,7 +10,7 @@ registerScript('Castle Haunt', {
     const site = siteAt(state, at.x, at.y)
     if (!site) return 'There is no site there.'
     if (site.controller === player) return null
-    const rarity = getCard(site.name).rarity
+    const rarity = siteRarity(state, site) // rubble is Ordinary → not a legal haunt
     return rarity === 'Elite' || rarity === 'Unique' ? null : 'Castle Haunt haunts only Elite or Unique sites (or your own).'
   },
   genesis: (ctx) => {
