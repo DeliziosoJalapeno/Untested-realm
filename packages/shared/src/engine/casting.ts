@@ -1149,7 +1149,13 @@ export function castSpell(
   // one-shot discounts are spent by the first matching cast
   if (state.flow?.spellDiscounts?.length) {
     const idx = state.flow.spellDiscounts.findIndex((d: any) => spellDiscountMatches(state, d, player, castName, at ?? undefined, false, caster?.id))
-    if (idx >= 0) state.flow.spellDiscounts.splice(idx, 1)
+    if (idx >= 0) {
+      const consumed = state.flow.spellDiscounts[idx]
+      state.flow.spellDiscounts.splice(idx, 1)
+      // An X-cost spell (Arcane Barrage) pays X as mana during resolution; its printed cost is 0, so the
+      // discount above reduced nothing. Carry it to the spell to subtract from X ("3 less", free if X<=3).
+      if (getScript(castName)?.xCostSpell) state.flow.xCostDiscount = { amount: consumed.amount, player }
+    }
   }
   // spent threshold credits
   if (state.flow?.noThresholdCards?.includes(cardId)) {
@@ -1463,6 +1469,21 @@ function pickEffectCaster(state: GameState, player: PlayerId, cardId: string): s
     if (u.controller === player && !u.isAvatar && canCast(state, player, cardId, u.id).ok) return u.id
   }
   return null
+}
+
+/** Your spellcasters that could cast `cardName` right now (avatar first), judged only by the
+ *  Spellcaster + element-lock rules — NOT mana/threshold (player-wide) nor whether a target is in
+ *  range (resolved at cast time). Used by Archimago's echo: the FAQ says ANY of your spellcasters may
+ *  cast the copied spell, so the player picks which one (a projectile fires from the chosen caster). */
+export function casterCandidatesFor(state: GameState, player: PlayerId, cardName: string): string[] {
+  const def = getCard(cardName)
+  const out: string[] = [avatarOf(state, player).id]
+  for (const u of Object.values(state.units)) {
+    if (u.controller !== player || u.isAvatar || isDisabled(state, u)) continue
+    const kw = effKeywords(state, u)
+    if (kw.spellcaster && normalCasterCheck(u, kw, def) === null) out.push(u.id)
+  }
+  return out
 }
 
 function removeCastToken(state: GameState, cardId: string): void {

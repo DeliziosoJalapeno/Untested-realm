@@ -977,9 +977,11 @@ function runFightPass(state: GameState, ctx: FightCtx): void {
   }
 }
 
-/** strike damage including a carried lance's bonus and strike multipliers */
-function strikePower(state: GameState, striker: UnitState): number {
-  let n = effAttack(state, striker) + unbrokenLances(state, striker).length
+/** strike damage including a carried lance's bonus and strike multipliers. A RANGED strike skips the
+ *  lance bonus (a lance rewards charging into melee, not loosing an arrow) but still gets the strike
+ *  multiplier (Grim Guisarme ×2 — a ranged strike is a strike). */
+function strikePower(state: GameState, striker: UnitState, ranged = false): number {
+  let n = effAttack(state, striker) + (ranged ? 0 : unbrokenLances(state, striker).length)
   for (const artId of striker.carrying) {
     const art = state.artifacts[artId]
     const mult = art ? artScript(state, art)?.bearerStrikeMultiplier : undefined // silenced → no multiplier
@@ -1096,9 +1098,12 @@ function resolveProjectileHit(state: GameState, shooterId: string, targetId: str
   pushLog(state, shooter.controller, `${shooter.name} shoots ${target.name}.`)
   const snapshot = { ...target }
   const kw = effKeywords(state, shooter)
-  dealDamageToUnit(state, target, effAttack(state, shooter), shooter.controller, {
+  // a ranged strike IS a strike: it uses strike power (so a carried Grim Guisarme ×2 applies — the
+  // shooter "deals double"), and is tagged rangedStrike so strike-damage modifiers (the same Guisarme
+  // when the VICTIM wears it) double it too.
+  dealDamageToUnit(state, target, strikePower(state, shooter, true), shooter.controller, {
     lethal: !!kw.lethal && !target.isAvatar,
-    source: { player: shooter.controller, kind: 'projectile', attackerId: shooter.id, name: shooter.name },
+    source: { player: shooter.controller, kind: 'projectile', rangedStrike: true, attackerId: shooter.id, name: shooter.name },
   })
   checkStateBased(state)
   if (!state.units[snapshot.id]) {
@@ -1129,15 +1134,19 @@ registerCont('ranged:origin', (state, ctx: { unitId: string; player: PlayerId; d
   if (sq && typeof sq.x === 'number' && typeof sq.y === 'number') shootProjectile(state, ctx.player, ctx.unitId, ctx.dir, { x: sq.x, y: sq.y })
 })
 
-export function shootProjectile(state: GameState, player: PlayerId, unitId: string, direction: Direction, origin?: { x: number; y: number }): string | null {
+export function shootProjectile(state: GameState, player: PlayerId, unitId: string, direction: Direction, origin?: { x: number; y: number }, opts?: { skipTapCheck?: boolean }): string | null {
   const unit = state.units[unitId]
   if (!unit) return 'No such unit.'
   if (unit.controller !== player) return 'Not your unit.'
   const kw = effKeywords(state, unit)
   if (!kw.ranged) return `${unit.name} has no Ranged ability.`
   if (isDisabled(state, unit)) return `${unit.name} is disabled.`
-  if (!canTap(state, unit)) return unit.tapped ? `${unit.name} is already tapped.` : `${unit.name} has summoning sickness.`
-  tapUnit(state, unit)
+  // skipTapCheck: a bonus ranged strike taken DURING a Move (Skirmishers of Mu) — the unit already
+  // tapped to move, so it neither re-checks nor re-taps; it just looses the shot.
+  if (!opts?.skipTapCheck) {
+    if (!canTap(state, unit)) return unit.tapped ? `${unit.name} is already tapped.` : `${unit.name} has summoning sickness.`
+    tapUnit(state, unit)
+  }
   breakStealth(state, unit)
   // both-player reveal: golden shooter + "<card> shoots!" over its (glowing) site (like a cast).
   beginAreaReveal(state, undefined, unit.name, unitId, false)

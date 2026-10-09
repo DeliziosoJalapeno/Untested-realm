@@ -1,6 +1,6 @@
-import { registerScript } from '../registry'
+import { registerScript, getScript } from '../registry'
 import { getCard } from '../../db'
-import { effectCastSpell } from '../../../engine/casting'
+import { effectCastSpell, casterCandidatesFor } from '../../../engine/casting'
 import { zoneAccessToll } from '../../../engine/statics'
 import { pushLog, bumpManaSpent } from '../../../engine/effects'
 
@@ -64,7 +64,27 @@ registerScript('Archimago', {
       // pay its mana cost and meet its elemental thresholds (FAQ), so free:false. The token
       // copy is cleaned up after it resolves; it must NOT sit in hand.
       pushLog(ctx.state, ctx.controller, `Archimago echoes ${echoName}.`)
-      effectCastSpell(ctx.state, ctx.controller, echoName, { free: false })
+      // FAQ: "any of your spellcasters can cast the copied spell" — so when the caster's position
+      // matters (a projectile fires from the caster; a targeted spell is cast from it) and you have
+      // more than one spellcaster, let the player pick which one. For a targetless spell the caster
+      // is irrelevant, so just auto-cast (no needless prompt).
+      const casters = casterCandidatesFor(ctx.state, ctx.controller, echoName)
+      const sc = getScript(echoName)
+      const positional = !!sc?.shootsProjectile || !!sc?.targets?.length
+      if (positional && casters.length > 1) {
+        ctx.ask(
+          { kind: 'chooseTargets', title: `Which spellcaster casts ${echoName}?`, data: { candidates: casters, count: 1, kind: 'unit' } },
+          'pickCaster',
+          { echoName },
+        )
+        return
+      }
+      effectCastSpell(ctx.state, ctx.controller, echoName, { free: false, caster: casters[0] })
+    },
+    pickCaster: (ctx, c, choice) => {
+      const echoName = c.echoName as string
+      const id = Array.isArray(choice) ? choice[0] : choice
+      effectCastSpell(ctx.state, ctx.controller, echoName, { free: false, caster: typeof id === 'string' ? id : undefined })
     },
   },
 })

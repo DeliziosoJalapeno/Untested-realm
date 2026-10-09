@@ -178,6 +178,10 @@ export interface CardScript {
    * card until a direction is supplied.
    */
   shootsProjectile?: boolean
+  /** An X-cost spell (Arcane Barrage) whose X is paid as mana DURING resolution, not as the printed
+   *  cast cost (which is 0). A cost discount (Merlin's Tower "costs 3 less") would be wasted on that 0,
+   *  so castSpell stashes any matched discount into flow.xCostDiscount for the spell to subtract from X. */
+  xCostSpell?: boolean
   /** Magic resolution */
   onCast?: (ctx: EffectAPI) => void
   /** triggered when the card enters the realm (ANY entry: cast, reanimate,
@@ -849,6 +853,9 @@ type Step = { x: number; y: number; region: Region }
 export interface DamageSource {
   player: PlayerId
   kind: 'strike' | 'projectile' | 'magic' | 'ability' | 'effect'
+  /** a RANGED STRIKE (the Ranged keyword) — a projectile that IS a strike, so strike-damage
+   *  modifiers (Grim Guisarme's double) apply, unlike a spell/ability projectile. */
+  rangedStrike?: boolean
   /** strike from a fight nobody defended (Mordric Druids) */
   undefended?: boolean
   /** card name of the damage source, when known */
