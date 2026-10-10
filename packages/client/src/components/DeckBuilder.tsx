@@ -210,6 +210,9 @@ export default function DeckBuilder({ onBack }: { onBack: () => void }) {
               {importing ? 'Importing…' : 'Import deck'}
             </button>
           </div>
+          <div style={{ fontSize: 12, marginBottom: 8, opacity: 0.7 }}>
+            Note: only <b>public</b> decks can be imported — set the deck's visibility to public on its source site first.
+          </div>
           {importMsg && <div style={{ fontSize: 13, marginBottom: 8, opacity: 0.9 }}>{importMsg}</div>}
           <textarea rows={8} value={importText || deckToText(current)} onChange={(e) => setImportText(e.target.value)} style={{ width: '100%' }} />
           <button

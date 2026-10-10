@@ -5,7 +5,7 @@ import { getCard, getKeywords, findCard } from '../cards/db'
 import { getScript, type DamageSource, type EffectAPI, type TargetRef, type TargetSpec } from '../cards/scripts/registry'
 import type { GameState, PlayerId, Region, UnitState, SiteState, Prompt, DeckName } from './types'
 import { avatarOf, siteAt, unitsAt, edgesConnected, aura2x2Squares, occupiedSquares, inBounds, GRID_W, GRID_H, squareLabel, nearbySquaresW, orthAdjacentWrapped } from './grid'
-import { affinity, effAttack, effDefence, effKeywords, canExistIn, siteSilenced, artifactSilenced, artScript, isEvilUnit, isDisabled, isUnmodifiable, silenceImmune, footprintAllTerrain, terrainAt, buildStaticGrantIndex } from './statics'
+import { affinity, effAttack, effDefence, effKeywords, canExistIn, siteSilenced, artifactSilenced, artScript, isEvilUnit, isDisabled, isUnmodifiable, silenceImmune, footprintAllTerrain, terrainAt, buildStaticGrantIndex, isVoidAt } from './statics'
 import { siteEntryAllowed } from './movement' // runtime-only use (teleport closure); import cycle is safe
 import { awardAchievement } from './achievements.catalog' // types-only module → no cycle
 
@@ -2831,13 +2831,24 @@ export function checkStateBased(state: GameState): void {
       // is placed atop it (rulebook). Do this before region-legality so voidwalkers
       // don't linger in a phantom void — and so non-voidwalkers gifted/summoned to them
       // aren't wrongly banished. Applies to avatars too (site played onto a void avatar).
-      if (unit.region === 'void' && siteAt(state, unit.x, unit.y)) {
+      // EXCEPTION — "The Void" (siteAlsoVoid): that site's surface/subsurface ALSO count as void, so
+      // the void there is real and we must NOT lift a unit out of it.
+      if (unit.region === 'void' && siteAt(state, unit.x, unit.y) && !isVoidAt(state, unit.x, unit.y)) {
         unit.region = 'surface'
         for (const artId of unit.carrying) {
           const art = state.artifacts[artId]
           if (art) art.region = 'surface'
         }
         changed = true
+      }
+      // "The Void" (siteAlsoVoid): its locations also count as void, so a minion WITHOUT Voidwalk
+      // standing on it — whatever region — is banished, exactly like one in an empty void square (FAQ).
+      // (Avatars are never banished; a carried unit rides its carrier and is handled with it.)
+      if (!unit.isAvatar && !unit.carriedBy && siteAt(state, unit.x, unit.y)
+          && isVoidAt(state, unit.x, unit.y) && !effKeywords(state, unit).voidwalk) {
+        banishUnit(state, unit.id)
+        changed = true
+        continue
       }
       // Subsurface terrain flip: the underground and underwater levels of a square are
       // the SAME physical subsurface — only the label follows the site's terrain. When a

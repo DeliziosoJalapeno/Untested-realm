@@ -215,15 +215,51 @@ function makeToken(): string {
   return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
 }
 
-/** Notify everyone connected to a room, then close their sockets — used when the room is being torn down. */
+/** Notify everyone connected to a room, then close their sockets — used when the room is being torn down.
+ *  A `roomClosed` message is sent first so clients return cleanly to the home screen (and don't try to
+ *  auto-rejoin a room that no longer exists); their meta is cleared so a reconnect won't resurrect it. */
 function closeRoom(room: Room, reason: string): void {
   const drop = (sock: WebSocket | null | undefined) => {
     if (!sock) return
+    const mm = meta.get(sock)
+    if (mm) { mm.room = null; mm.seat = null }
+    try { send(sock, { t: 'roomClosed', msg: reason }) } catch { /* ignore */ }
     try { send(sock, { t: 'chat', from: 'system', msg: reason }) } catch { /* ignore */ }
     try { sock.close() } catch { /* ignore */ }
   }
   for (const seat of room.seats) drop(seat?.socket)
   for (const spec of room.spectators) drop(spec)
+}
+
+/** Tear a room down and remove it from the registry (user-initiated close or the age reaper). */
+function destroyRoom(room: Room, reason: string): void {
+  closeRoom(room, reason)
+  rooms.delete(room.code)
+}
+
+/** Remove both of a room's players from the matchmaking queue — by socket AND by account (a signed-in
+ *  player may be queued from a DIFFERENT tab/device under the same account). Each is told so its client
+ *  stops "searching". Called when a room's game actually starts: you can't still be hunting a battle. */
+function dequeueRoomPlayers(room: Room): void {
+  for (const seat of room.seats) {
+    if (!seat) continue
+    const victims = new Set<WebSocket>()
+    for (const e of matchQueue) {
+      if (e.ws === seat.socket || (seat.account && e.account === seat.account)) victims.add(e.ws)
+    }
+    for (const ws of victims) { dequeue(ws); send(ws, { t: 'matchCancelled' }) }
+  }
+}
+
+/** When a player is paired by matchmaking, close every OTHER room they were idling in ("a pairing closes
+ *  all your rooms"). Rooms are matched by the player's signed-in account; a guest only has the room on its
+ *  own socket (handled by the caller). Never closes `keep` (the new battle room) or a room mid-game. */
+function closeAccountWaitingRooms(account: string | null, keep: Room): void {
+  if (!account) return
+  for (const room of [...rooms.values()]) {
+    if (room === keep || room.game) continue
+    if (room.seats.some((s) => s?.account === account)) destroyRoom(room, 'You were matched into a battle — this room was closed.')
+  }
 }
 
 // Room reaper: kill ANY room that has been alive for more than 12 hours — a finished game, a room that
@@ -330,6 +366,7 @@ function maybeStart(room: Room): void {
     beginReplay(room, [a.deck, b.deck], [a.name, b.name], seed, first as PlayerId)
     room.lastTick = Date.now()
     room.rematchLobby = false // a game is running again — leave the rematch deck-select lobby
+    dequeueRoomPlayers(room) // the room is live → its players leave the find-a-battle queue
     broadcastState(room)
   }
 }
@@ -438,6 +475,7 @@ function startDeckbuild(room: Room): void {
   if (!s || room.game || s.deadline !== null) return // already running / started
   s.packs = [generateSealedPacks(s.edition, s.numPacks, rndSeed()), generateSealedPacks(s.edition, s.numPacks, rndSeed())]
   s.deadline = Date.now() + s.deckbuildMs
+  dequeueRoomPlayers(room) // both seats are committed to this sealed room → leave the battle queue
   broadcastSealed(room)
 }
 
@@ -616,6 +654,13 @@ wss.on('connection', (ws) => {
           const room = findRoom(msg.code)
           if (!room) return send(ws, { t: 'error', msg: 'Room not found.' })
           if (room.seats[1]) return send(ws, { t: 'error', msg: 'Room is full.' })
+          // HARD LOCK: you can't occupy both seats of a room yourself. Reject joining a room you already
+          // sit in (same socket) or whose first seat is the SAME signed-in account (a second tab/device).
+          if (room.seats[0]?.socket === ws)
+            return send(ws, { t: 'error', msg: "You can't join your own room as the opponent." })
+          const joinAcct = accountFromToken(msg.authToken)
+          if (joinAcct && room.seats[0]?.account === joinAcct)
+            return send(ws, { t: 'error', msg: "You already hold a seat in this room on this account — open it in your other tab." })
           const who = resolvePlayerName(msg.authToken, msg.name, 'Player 2')
           if ('error' in who) return send(ws, { t: 'error', msg: who.error })
           if (room.mode === 'sealed') {
@@ -705,12 +750,19 @@ wss.on('connection', (ws) => {
           const resolved = resolvePlayerName(msg.authToken, msg.name, 'Player')
           const who = 'error' in resolved ? { name: 'Guest' } : resolved
           if (matchQueue.some((e) => e.ws === ws) || m.room) return // already queued / in a room
-          // pull the next waiting opponent with a live socket (skip stale ones)
+          const myAcct = accountFromToken(msg.authToken)
+          // pull the next waiting opponent with a live socket; skip stale ones, and NEVER pair you with
+          // your own account's other tab/device (that would be playing yourself). Skipped same-account
+          // entries are restored to the front of the queue so they can still match a real opponent.
           let partner: { ws: WebSocket; name: string; deck: DeckList; account: string | null } | undefined
+          const skipped: typeof matchQueue = []
           while (matchQueue.length) {
             const cand = matchQueue.shift()!
-            if (cand.ws !== ws && cand.ws.readyState === WebSocket.OPEN) { partner = cand; break }
+            if (cand.ws === ws || cand.ws.readyState !== WebSocket.OPEN) continue // self / dead socket
+            if (myAcct && cand.account === myAcct) { skipped.push(cand); continue } // your own account
+            partner = cand; break
           }
+          for (let i = skipped.length - 1; i >= 0; i--) matchQueue.unshift(skipped[i])
           if (partner) {
             const room: Room = {
               code: makeCode(),
@@ -733,6 +785,9 @@ wss.on('connection', (ws) => {
             send(partner.ws, { t: 'joined', code: room.code, id: room.id, seat: 0, token: room.seats[0]!.token })
             m.room = room; m.seat = 1
             send(ws, { t: 'joined', code: room.code, id: room.id, seat: 1, token: room.seats[1]!.token })
+            // "a pairing closes all your rooms" — tear down any rooms either paired player was idling in
+            closeAccountWaitingRooms(partner.account, room)
+            closeAccountWaitingRooms(myAcct, room)
             maybeStart(room)
           } else {
             matchQueue.push({ ws, name: who.name, deck: msg.deck, account: accountFromToken(msg.authToken) })
@@ -743,6 +798,14 @@ wss.on('connection', (ws) => {
         case 'cancelMatch': {
           dequeue(ws)
           send(ws, { t: 'matchCancelled' })
+          break
+        }
+        case 'closeRoom': {
+          // a SEATED player may close (delete) the room — kicking the opponent + spectators and
+          // removing it from everyone's "Your games". Spectators can't close someone else's room.
+          if (!m.room) return send(ws, { t: 'error', msg: 'You are not in a room.' })
+          if (m.seat === null) return send(ws, { t: 'error', msg: 'Only a player can close this room.' })
+          destroyRoom(m.room, `${m.room.seats[m.seat]?.name ?? 'A player'} closed the room.`)
           break
         }
         case 'roomConfig': {
@@ -1352,6 +1415,17 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, path: string
         }))
         .sort((a, b) => b.createdAt - a.createdAt)
       return sendJson(res, 200, { rooms: mine })
+    }
+
+    // close (delete) one of YOUR rooms from the "Your games" list, even when you aren't connected to it
+    if (path === '/api/close-room' && method === 'POST') {
+      const body = await readJsonBody(req)
+      const id = String(body.id ?? '')
+      const room = [...rooms.values()].find((r) => r.id === id || r.code === id.toUpperCase())
+      if (!room) return sendJson(res, 404, { error: 'Room not found.' })
+      if (!room.seats.some((s) => s?.account === user.username)) return sendJson(res, 403, { error: 'That is not your room.' })
+      destroyRoom(room, `${user.username} closed the room.`)
+      return sendJson(res, 200, { ok: true })
     }
 
     if (path === '/api/decks' && method === 'GET') return sendJson(res, 200, { decks: deckStore.list(user.id) })

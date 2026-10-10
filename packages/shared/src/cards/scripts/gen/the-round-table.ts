@@ -1,6 +1,6 @@
 import { registerScript } from '../registry'
 import { pushLog } from '../../../engine/effects'
-import { hasSubtype } from '../../../engine/statics'
+import { isKnightSirDame } from '../multi-card-utils/knightly'
 
 // ------------------------------------------------------- The Round Table ----
 // 'Must be cast to your back row. / Whenever you summon King Arthur, or a
@@ -13,10 +13,9 @@ registerScript('The Round Table', {
     if (!art || art.carriedBy) return
     if (entered.x !== art.x || entered.y !== art.y || entered.region !== 'surface') return
     if (entered.controller !== art.conjuredBy) return
-    const worthy =
-      entered.name === 'King Arthur' ||
-      hasSubtype(ctx.state, entered, 'Knight') ||
-      /^(Sir|Dame)\s/.test(entered.name)
+    // "King Arthur, or a Knight, Sir, or Dame" — the latter three are a naming convention (no Knight
+    // subtype on Black Knight, Vanguard Knights, Sir Gawain, Dame Britomart…), so match the NAME.
+    const worthy = entered.name === 'King Arthur' || isKnightSirDame(entered.name)
     if (!worthy) return
     pushLog(ctx.state, art.conjuredBy, `${entered.name} takes a seat at The Round Table.`)
     // "draw a card": the bearer chooses spellbook or atlas (drawCard handles the

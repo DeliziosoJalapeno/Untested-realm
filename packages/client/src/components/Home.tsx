@@ -436,6 +436,15 @@ export default function Home({
                   {' · '}{r.inProgress ? 'in progress' : r.mode === 'sealed' ? 'building decks' : 'waiting'}
                 </span>
                 <button onClick={() => { remember(); onOnline('rejoin', username || name || 'Player', null, r.id) }}>↩ Rejoin</button>
+                <button
+                  className="mygames-close"
+                  title="Close (delete) this room"
+                  onClick={async () => {
+                    setMyRooms((cur) => cur.filter((x) => x.id !== r.id)) // optimistic
+                    await auth.closeRoomById(r.id)
+                    refreshRooms()
+                  }}
+                >✕</button>
               </div>
             ))}
           </div>

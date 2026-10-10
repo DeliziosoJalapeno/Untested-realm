@@ -2,6 +2,7 @@ import { registerScript } from '../registry'
 import { getCard } from '../../db'
 import { hasSubtype } from '../../../engine/statics'
 import { effectSummonUnit } from '../../../engine/effects'
+import { isKnightSirDame } from '../multi-card-utils/knightly'
 
 // 'If you control an Ordinary Mortal, you may summon a Knight, Sir, or Dame from
 // your hand to their location.'
@@ -12,10 +13,9 @@ registerScript('Knighthood', {
     )
     if (squires.length === 0) return ctx.log('You control no Ordinary Mortal.')
     const p = ctx.state.players[ctx.controller]
-    const knights = [...new Set(p.hand.map((id) => ctx.state.cards[id].name).filter((n) => {
-      const def = getCard(n)
-      return def.type === 'Minion' && (n.includes('Knight') || n.startsWith('Sir ') || n.startsWith('Dame '))
-    }))]
+    const knights = [...new Set(p.hand.map((id) => ctx.state.cards[id].name).filter((n) =>
+      getCard(n).type === 'Minion' && isKnightSirDame(n),
+    ))]
     if (!knights.length) return ctx.log('No Knight, Sir, or Dame in hand.')
     if (squires.length === 1) {
       ctx.ask({ kind: 'chooseOption', title: 'Dub which champion?', data: { options: knights } }, 'dub', { x: squires[0].x, y: squires[0].y })

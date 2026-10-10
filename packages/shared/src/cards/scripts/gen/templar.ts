@@ -1,7 +1,6 @@
 import { registerScript } from '../registry'
 import { getCard } from '../../db'
-
-const knightly = (name: string) => /\b(Knight|Sir|Dame)\b/.test(name) || getCard(name).subtypes.includes('Knight')
+import { isKnightSirDame as knightly } from '../multi-card-utils/knightly'
 
 // (Battlemage already scripted in m1.)
 

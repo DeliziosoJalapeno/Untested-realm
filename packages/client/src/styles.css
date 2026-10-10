@@ -1999,6 +1999,8 @@ button.autobattle:hover:not(:disabled) { background: #4a5cc0; }
 .mygames > b { display: block; margin-bottom: 6px; color: #cbd3ee; }
 .mygames-row { display: flex; align-items: center; gap: 10px; padding: 3px 0; }
 .mygames-row .lobby-who { flex: 1; }
+.mygames-close { padding: 2px 8px; line-height: 1; color: #e7a0a0; border-color: #5a3a3a; background: #2a1d1d; }
+.mygames-close:hover { background: #3a2424; color: #ffbcbc; }
 .lobby-mode { font-size: 12px; padding: 1px 7px; border-radius: 10px; white-space: nowrap; }
 .lobby-mode.sealed { background: rgba(140, 84, 220, 0.28); color: #d7b8ff; }
 .lobby-mode.constructed { background: rgba(96, 140, 200, 0.22); color: #a9c6ff; }

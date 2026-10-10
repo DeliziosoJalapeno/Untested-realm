@@ -165,6 +165,16 @@ export async function fetchMyRooms(): Promise<MyRoomInfo[]> {
     return []
   }
 }
+/** close (delete) one of your rooms from the "Your games" list. Returns true on success. */
+export async function closeRoomById(id: string): Promise<boolean> {
+  if (!isSignedIn()) return false
+  try {
+    await api('/api/close-room', { method: 'POST', body: JSON.stringify({ id }) })
+    return true
+  } catch {
+    return false
+  }
+}
 
 export async function fetchCollection(): Promise<any | null> {
   const r = await api('/api/collection')

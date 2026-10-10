@@ -47,6 +47,8 @@ export type ServerMsg =
   | { t: 'editorGranted' }
   | { t: 'searching' }
   | { t: 'matchCancelled' }
+  // the room was closed (by a player, or the server) — return to home, stop auto-rejoin.
+  | { t: 'roomClosed'; msg: string }
   // both players agreed to a rematch → the room is back at DECK SELECTION; pick a deck again.
   | { t: 'rematchStart'; mode: 'standard' | 'sealed' }
 
@@ -134,6 +136,10 @@ export class Net {
   }
   cancelMatch(): void {
     this.send({ t: 'cancelMatch' })
+  }
+  /** seated-player-only: close (delete) the room you're in, kicking everyone else out of it. */
+  closeRoom(): void {
+    this.send({ t: 'closeRoom' })
   }
   /** free go-back from a card's first prompt (rolls back the tentative cast). */
   cancelCast(): void {

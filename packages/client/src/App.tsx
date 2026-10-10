@@ -236,6 +236,9 @@ export default function App() {
     setTimeout(() => setChatMsgs((cur) => cur.filter((c) => c.id !== id)), CHAT_BUBBLE_MS)
   }
   const netRef = useRef<Net | null>(null)
+  // matchmaking runs on its OWN socket, independent of any room session (netRef), so you can create /
+  // hold a room AND stay in the find-a-battle queue. On a pairing it's promoted to the room session.
+  const matchRef = useRef<Net | null>(null)
   const leavingRef = useRef(false) // true while deliberately leaving a room (suppresses reconnect toast)
   // a shared /room link opened without a matching seat token → prefill Home's join box.
   // Computed synchronously so Home mounts already prefilled (its `code` state seeds once).
@@ -692,6 +695,19 @@ export default function App() {
       return
     }
     if (msg.t === 'searching') { setSearching(true); return }
+    if (msg.t === 'roomClosed') {
+      // the room was deleted (a player closed it, or the server did). Close THIS socket, and if it was
+      // the active room session, drop it and go home. A stale socket (we already moved to a new game via
+      // a match pairing) is just closed quietly without disturbing the current session.
+      net.close()
+      if (netRef.current === net) {
+        leavingRef.current = true
+        clearRoom(); clearRoomUrl(); netRef.current = null
+        setSession(null); setSealed(null); setPage('home')
+        setError(msg.msg || 'The room was closed.')
+      }
+      return
+    }
     if (msg.t === 'undoAsk') setUndoAsk(msg.from)
     if (msg.t === 'editorAsk') setEditorAsk(msg.from)
     if (msg.t === 'editorGranted') setSession((cur) => (cur ? { ...cur, editorAllowed: true } : cur))
@@ -790,6 +806,8 @@ export default function App() {
   }
 
   function startOnline(mode: 'create' | 'join' | 'spectate' | 'matchmake' | 'rejoin', name: string, deck: DeckList | null, code?: string, clock?: ClockConfig | null, isPublic?: boolean, secondSeer?: boolean) {
+    // matchmaking lives on its OWN socket so it can run alongside a room you created (create + queue).
+    if (mode === 'matchmake') return startMatchmake(name, deck!)
     myDeckFromCollection.current = !!deck?.fromCollection
     recordingRef.current = null // online games are recorded server-side, not here
     onlineReplayRef.current = null
@@ -802,7 +820,6 @@ export default function App() {
       const authToken = auth.getToken() // when signed in, the server uses the account username
       if (mode === 'create') net.create(name, withCollection(deck!), clock ?? null, !!isPublic, authToken, !!secondSeer)
       else if (mode === 'spectate') net.spectate(code!)
-      else if (mode === 'matchmake') net.matchmake(name, withCollection(deck!), authToken)
       // rejoin one of YOUR games (from anywhere): use the stored per-room token if this
       // browser has it, otherwise fall back to account-based rejoin (server matches by
       // account). `code` is the room id.
@@ -811,10 +828,51 @@ export default function App() {
     }
     net.connect()
   }
+
+  /** Queue for a random battle on a dedicated socket (matchRef), leaving any room session (netRef)
+   *  untouched. On a pairing the socket is promoted to the room session via the shared 'joined' path. */
+  function startMatchmake(name: string, deck: DeckList) {
+    matchRef.current?.close() // only one search at a time
+    const net = new Net()
+    matchRef.current = net
+    net.onMessage = (msg: ServerMsg) => onMatchMessage(net, msg)
+    net.onClose = () => {} // a dropped search socket just ends the search; no reconnect
+    net.onOpen = () => net.matchmake(name, withCollection(deck), auth.getToken())
+    net.connect()
+    setSearching(true)
+  }
+
+  /** messages on the matchmaking socket: stay quiet until paired, then promote to the full session. */
+  function onMatchMessage(net: Net, msg: ServerMsg) {
+    if (msg.t === 'searching') { setSearching(true); return }
+    if (msg.t === 'matchCancelled') {
+      setSearching(false)
+      if (matchRef.current === net) { net.close(); matchRef.current = null }
+      return
+    }
+    if (msg.t === 'error') {
+      setError(msg.msg); setSearching(false)
+      if (matchRef.current === net) { net.close(); matchRef.current = null }
+      return
+    }
+    if (msg.t === 'joined') {
+      // paired! this socket becomes the game session. Tear down any room session we were also holding
+      // (the server already closed that room) and hand the match socket to the normal online pipeline.
+      setSearching(false)
+      matchRef.current = null
+      if (netRef.current && netRef.current !== net) { leavingRef.current = true; netRef.current.close() }
+      netRef.current = net
+      wireNet(net) // swap in the full session wiring for all SUBSEQUENT messages…
+      onNetMessage(net, msg) // …and run the normal 'joined' handling for THIS one
+      return
+    }
+    // anything else before promotion is ignored
+  }
+
   function cancelMatchmaking() {
-    netRef.current?.cancelMatch()
-    netRef.current?.close()
-    netRef.current = null
+    matchRef.current?.cancelMatch()
+    matchRef.current?.close()
+    matchRef.current = null
     setSearching(false)
   }
 
@@ -958,8 +1016,9 @@ export default function App() {
       )}
       {error && <div className="toast error">{error}</div>}
       <AchievementToasts toasts={achvToasts} onDismiss={(key) => setAchvToasts((c) => c.filter((t) => t.key !== key))} />
-      {/* Non-blocking so you can keep browsing (decks, collection…) while you queue. */}
-      {searching && !session && (
+      {/* Non-blocking so you can keep browsing (decks, collection…) while you queue — and it runs on its
+          own socket, so it stacks with a room you're also holding (create + queue at once). */}
+      {searching && (!session || !session.view) && (
         <div className="waitbanner">
           <span className="spinner">⚔</span>
           <span>Looking for an opponent… <span className="wb-sub">you'll be matched with the next player who queues</span></span>
@@ -977,6 +1036,8 @@ export default function App() {
             netRef.current?.close(); netRef.current = null
             clearRoom(); clearRoomUrl(); setSession(null)
           }}>Leave</button>
+          {/* Leave keeps the room open for rejoin; Close deletes it (server replies roomClosed). */}
+          <button onClick={() => netRef.current?.closeRoom()} title="Delete this room">Close room</button>
         </div>
       )}
       {undoAsk && (
