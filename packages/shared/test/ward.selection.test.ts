@@ -9,7 +9,7 @@ import { getScript } from '../src/cards/scripts/registry'
 describe('Divine Lance: choose which allied Wards to break (units AND sites)', () => {
   function setup() {
     const g = newGame(42, 0); keepBoth(g); waiveThreshold(g, 0)
-    const myUnit = summonCard(g, 0, 'Escyllion Cyclops', 0, 0); myUnit.ward = true; myUnit.enteredTurn = 0
+    const myUnit = summonCard(g, 0, 'Sir Bedivere', 0, 0); myUnit.ward = true; myUnit.enteredTurn = 0
     const mySite = placeSite(g, 0, 'Great Wall', 4, 3); mySite.ward = true
     const tgtSite = placeSite(g, 1, 'Great Wall', 2, 2)
     const enemy = summonCard(g, 1, 'Escyllion Cyclops', 2, 2); enemy.enteredTurn = 0 // 6/6, survives 3
@@ -48,7 +48,7 @@ describe('Heretics of Seth: pick which nearby Ward to steal (unit or site)', () 
   it('prompts when 2+ nearby Wards, and can steal a SITE Ward', () => {
     const g = newGame(42, 0); keepBoth(g)
     const heretics = summonCard(g, 0, 'Heretics of Seth', 3, 3); heretics.enteredTurn = 0
-    const enemyUnit = summonCard(g, 1, 'Escyllion Cyclops', 3, 2); enemyUnit.ward = true; enemyUnit.enteredTurn = 0
+    const enemyUnit = summonCard(g, 1, 'Sir Bedivere', 3, 2); enemyUnit.ward = true; enemyUnit.enteredTurn = 0
     const enemySite = placeSite(g, 1, 'Great Wall', 2, 3); enemySite.ward = true
     getScript('Heretics of Seth')!.genesis!(makeCtx(g, heretics.id, 0, []))
     const p = g.prompts[0]

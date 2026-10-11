@@ -29,7 +29,7 @@ describe('Ward cancels strike damage', () => {
   it('a single defender: the warded attacker takes 0 and the ward breaks', () => {
     const g = board()
     // 6/6 warded attacker (Escyllion Cyclops), one 3/3 defender (Stygian Archers)
-    const cyclops = summonCard(g, 0, 'Escyllion Cyclops', 2, 0); cyclops.enteredTurn = -1; cyclops.ward = true
+    const cyclops = summonCard(g, 0, 'Sir Bedivere', 2, 0); cyclops.enteredTurn = -1; cyclops.ward = true
     const archer = summonCard(g, 1, 'Stygian Archers', 2, 0); archer.enteredTurn = -1
     act(g, 0, { t: 'moveAttack', unitId: cyclops.id, path: [], attack: { unit: archer.id } })
     while (g.prompts.length) {
@@ -43,7 +43,7 @@ describe('Ward cancels strike damage', () => {
 
   it('MULTIPLE simultaneous defenders: ONE ward prevents ALL their strikes (not just the first)', () => {
     const g = board()
-    const cyclops = summonCard(g, 0, 'Escyllion Cyclops', 2, 0); cyclops.enteredTurn = -1; cyclops.ward = true
+    const cyclops = summonCard(g, 0, 'Sir Bedivere', 2, 0); cyclops.enteredTurn = -1; cyclops.ward = true
     // two 3/3 defenders — together 6 damage, enough to kill the 6/6 Cyclops if the ward only
     // stopped the first strike (the pre-fix bug).
     const archer1 = summonCard(g, 1, 'Stygian Archers', 2, 0); archer1.enteredTurn = -1

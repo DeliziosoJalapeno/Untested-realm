@@ -23,7 +23,7 @@ describe('River Rapids', () => {
     const g = newGame(42, 0); keepBoth(g)
     const rr = placeSite(g, 0, 'River Rapids', 2, 1)
     placeSite(g, 0, 'River Rapids', 3, 1) // a connected river to push into
-    const warded = summonCard(g, 1, 'Escyllion Cyclops', 2, 1); warded.ward = true; warded.enteredTurn = 0
+    const warded = summonCard(g, 1, 'Sir Bedivere', 2, 1); warded.ward = true; warded.enteredTurn = 0
     act(g, 0, { t: 'activate', sourceId: rr.id, ability: 'rapids' })
     answer(g, [warded.id]) // choose to push the warded enemy minion
     expect(g.units[warded.id]?.ward, 'a pushed (not targeted) minion keeps its ward').toBe(true)

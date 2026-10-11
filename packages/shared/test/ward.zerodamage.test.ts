@@ -20,7 +20,7 @@ describe('Ward is not broken by a 0-damage strike', () => {
     const g = board()
     // 0/0 Aethermoeba (a genuine 0-power striker) attacks a warded 3/3 Stygian Archers.
     const zero = summonCard(g, 0, 'Aethermoeba', 2, 0); zero.enteredTurn = -1
-    const warded = summonCard(g, 1, 'Stygian Archers', 2, 0); warded.enteredTurn = -1; warded.ward = true
+    const warded = summonCard(g, 1, 'Sir Bedivere', 2, 0); warded.enteredTurn = -1; warded.ward = true
 
     act(g, 0, { t: 'moveAttack', unitId: zero.id, path: [], attack: { unit: warded.id } })
     while (g.prompts.length) {

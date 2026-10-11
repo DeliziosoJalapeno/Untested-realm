@@ -2109,7 +2109,7 @@ describe('FAQ: Ward (codex semantics)', () => {
 
   it('a destruction effect breaks the ward instead of killing (Detonate FAQ), then the explosion still damages', () => {
     const g = board()
-    const bomb = summonCard(g, 0, 'Bane of Aventis', 2, 0) // 4/4 own minion
+    const bomb = summonCard(g, 0, 'Sir Bedivere', 2, 0) // 3/4 non-Evil own minion (Evil minions can't be warded)
     bomb.ward = true
     const bystander = summonToken(g, 'Foot Soldier', 1, 2, 0)!
     waiveThreshold(g, 0)

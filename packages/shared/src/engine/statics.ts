@@ -350,7 +350,7 @@ export function effKeywords(state: GameState, unit: UnitState, seen: Set<string>
   // minion is void too (an Evil AVATAR is not a minion, so it keeps its ward).
   // isEvilUnit → effSubtypes only (no subtype hook calls effKeywords), so no
   // recursion; the `seen` guard above already covers the carrier path regardless.
-  if (kw.ward && !unit.isAvatar && isEvilUnit(state, unit)) delete kw.ward
+  if (kw.ward && !unit.isAvatar && isEvilUnitIntrinsic(state, unit)) delete kw.ward // real Evil can't be warded — a Persecutor brand doesn't count
   return kw
 }
 
@@ -942,9 +942,10 @@ export function saintWatches(state: GameState): boolean {
   return Object.values(state.units).some((x) => x.name === 'Saint of Redemption' && !x.silenced)
 }
 
-/** is this unit Evil? Demon/Undead/Monster (honoring subtype overrides and
- *  Persecutor's brand), all overridden by Saint of Redemption */
-export function isEvilUnit(state: GameState, u: UnitState): boolean {
+/** INTRINSIC Evil: Demon/Undead/Monster by subtype (honoring real subtype overrides like Corruptor) or
+ *  an Evil-copy (Evil Twin), overridden by Saint of Redemption. This is "really Evil" — the rulebook's
+ *  "Evil minions can't be warded" keys off THIS, not off Persecutor's brand (branding isn't real Evil). */
+export function isEvilUnitIntrinsic(state: GameState, u: UnitState): boolean {
   if (saintWatches(state)) return false
   // A Demon/Undead/Monster Avatar IS Evil (Mephistopheles stays an Evil Demon Avatar, FAQ 1953). The
   // "Evil minions can't be warded" clause is enforced separately in wardUnit (gated on !isAvatar), so an
@@ -954,6 +955,17 @@ export function isEvilUnit(state: GameState, u: UnitState): boolean {
   if (u.counters?.evilTwin) return true
   const st = effSubtypes(state, u)
   return st.includes('Demon') || st.includes('Undead') || st.includes('Monster')
+}
+
+/** is this unit treated as Evil for card effects (targeting/affecting Evil)? Intrinsic Evil, OR branded
+ *  by a Persecutor this turn. Persecutor's brand ("your cards treat them as Evil") is NOT real Evil — it
+ *  does NOT change subtypes and does NOT break Wards (ward-strip uses isEvilUnitIntrinsic) — it only makes
+ *  the minion a valid "Evil" target/subject for cards. The brand lasts the branding player's turn only. */
+export function isEvilUnit(state: GameState, u: UnitState): boolean {
+  if (isEvilUnitIntrinsic(state, u)) return true
+  if (saintWatches(state)) return false // the Saint redeems even the branded
+  const b = state.flow?.branded
+  return !!(b && b.unitId === u.id && b.turn === state.turn)
 }
 
 /** is this card name printed-Evil? (for hand/spellbook checks — the Saint

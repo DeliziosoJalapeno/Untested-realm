@@ -5,7 +5,7 @@ import { getCard, getKeywords, findCard } from '../cards/db'
 import { getScript, type DamageSource, type EffectAPI, type TargetRef, type TargetSpec } from '../cards/scripts/registry'
 import type { GameState, PlayerId, Region, UnitState, SiteState, Prompt, DeckName } from './types'
 import { avatarOf, siteAt, unitsAt, edgesConnected, aura2x2Squares, occupiedSquares, inBounds, GRID_W, GRID_H, squareLabel, nearbySquaresW, orthAdjacentWrapped } from './grid'
-import { affinity, effAttack, effDefence, effKeywords, canExistIn, siteSilenced, artifactSilenced, artScript, isEvilUnit, isDisabled, isUnmodifiable, silenceImmune, footprintAllTerrain, terrainAt, buildStaticGrantIndex, isVoidAt } from './statics'
+import { affinity, effAttack, effDefence, effKeywords, canExistIn, siteSilenced, artifactSilenced, artScript, isEvilUnit, isEvilUnitIntrinsic, isDisabled, isUnmodifiable, silenceImmune, footprintAllTerrain, terrainAt, buildStaticGrantIndex, isVoidAt } from './statics'
 import { siteEntryAllowed } from './movement' // runtime-only use (teleport closure); import cycle is safe
 import { awardAchievement } from './achievements.catalog' // types-only module → no cycle
 
@@ -930,7 +930,7 @@ export function returnToDeck(state: GameState, cardId: string): PlayerId {
  *  Returns true iff this call actually placed a new ward. Sites have no Evil
  *  clause, so site wards stay direct writes (see script comments). */
 export function wardUnit(state: GameState, unit: UnitState): boolean {
-  if (!unit.isAvatar && isEvilUnit(state, unit)) {
+  if (!unit.isAvatar && isEvilUnitIntrinsic(state, unit)) { // a Persecutor brand is NOT real Evil — it doesn't block warding
     pushLog(state, unit.controller, `${unit.name} is Evil — it cannot be warded.`)
     return false
   }
@@ -2060,7 +2060,14 @@ export function emitUnitEnters(state: GameState, unit: UnitState): void {
   if (state.units[unit.id]) {
     const isEntering = ((state.flow?.entering as string[] | undefined) ?? []).includes(unit.id)
     if (isEntering) {
-      state.flow.pendingSquareEntry = [...(((state.flow.pendingSquareEntry as string[] | undefined)) ?? []), unit.id]
+      // Remember WHERE it entered. If its Genesis then moves it off this square (Hotwheel rolling
+      // forward), each move already fires the square-entry triggers along the way — including the
+      // final square — so the deferred summon-entry must NOT re-fire at that final square, or the
+      // last site is entered twice (a flipped-Druid site deals its 1 damage one time too many).
+      state.flow.pendingSquareEntry = [
+        ...(((state.flow.pendingSquareEntry as Array<{ id: string; x: number; y: number; region: Region }> | undefined)) ?? []),
+        { id: unit.id, x: unit.x, y: unit.y, region: unit.region },
+      ]
     } else {
       emitEvent(state, 'onUnitEntersSquare', unit, { x: -1, y: -1, region: 'offboard' as Region })
     }
@@ -2270,11 +2277,17 @@ export function settleEntering(state: GameState, unitId: string): void {
   // the unit's Genesis — including any prompt it raised — is fully resolved now, so fire its DEFERRED
   // location-entry trigger (see emitUnitEnters): a site that kills or relocates on entry (Bottomless
   // Pit, Dark Alley) only acts once the Genesis has completely resolved and chosen its targets.
-  const pend = state.flow?.pendingSquareEntry as string[] | undefined
-  if (pend?.includes(unitId)) {
-    state.flow.pendingSquareEntry = pend.filter((id) => id !== unitId)
+  const pend = state.flow?.pendingSquareEntry as Array<{ id: string; x: number; y: number; region: Region }> | undefined
+  const rec = pend?.find((p) => p.id === unitId)
+  if (rec) {
+    state.flow.pendingSquareEntry = pend!.filter((p) => p.id !== unitId)
     const u = state.units[unitId]
-    if (u) emitEvent(state, 'onUnitEntersSquare', u, { x: -1, y: -1, region: 'offboard' as Region })
+    // Only fire the deferred summon-entry if the unit is STILL on the square it was summoned onto. If
+    // its Genesis moved it (Hotwheel's roll), emitUnitMoved already fired the entry triggers for every
+    // square it travelled through, so re-firing here would double the final square.
+    if (u && u.x === rec.x && u.y === rec.y && u.region === rec.region) {
+      emitEvent(state, 'onUnitEntersSquare', u, { x: -1, y: -1, region: 'offboard' as Region })
+    }
   }
 }
 registerCont('summon:settle', (state, ctx: { unitId: string }) => {
@@ -2682,7 +2695,10 @@ export function checkStateBased(state: GameState): void {
     // Ward is an ability: only a DISABLED (or silenced) minion loses it. A Basilisk's at-rest gaze
     // disables a unit sitting still (→ ward gone), but a unit that is acting / entering / PARTAKING IN
     // A BATTLE is not disabled, so it KEEPS its ward for that fight (isDisabled already exempts those).
-    if (u.silenced || isDisabled(state, u)) {
+    // "Evil minions can't be warded" (rulebook): a minion that BECOMES Evil immediately loses its ward —
+    // whether printed-Evil, a Corruptor's subtype rewrite, a transform, or a control change that puts it
+    // under a Corruptor. Uses INTRINSIC Evil, so a Persecutor BRAND (not real Evil) does NOT strip it.
+    if (u.silenced || isDisabled(state, u) || (!u.isAvatar && isEvilUnitIntrinsic(state, u))) {
       u.ward = false
       pushLog(state, u.controller, `${u.name} loses its ward.`)
     }
@@ -2965,6 +2981,14 @@ export function checkStateBased(state: GameState): void {
             awardAchievement(state, 'spider-power-washing', state.activePlayer)
           killUnit(state, unit.id)
         }
+        changed = true
+      }
+    }
+    // A sited square has no void: a GROUND artifact left in the void of a now-sited square is lifted
+    // atop it — the same rule as the void-unit lift above (e.g. playing a site under a conjured artifact).
+    for (const art of Object.values(state.artifacts)) {
+      if (!art.carriedBy && art.region === 'void' && siteAt(state, art.x, art.y) && !isVoidAt(state, art.x, art.y)) {
+        art.region = 'surface'
         changed = true
       }
     }

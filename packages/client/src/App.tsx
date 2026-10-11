@@ -115,11 +115,12 @@ function clearRoomUrl(): void {
 
 /** playing a CARD (a spell/minion/aura/artifact cast, or a site play) — the only
  *  actions that arm the "↩ Go back" free-undo on their first prompt. */
+// activated abilities that are held TENTATIVELY (tentativePlay) and may be backed out of freely until
+// they commit — their prompts get the same "↩ Go back" free-undo as a card play.
+const TENTATIVE_ACTIVATE_ABILITIES = new Set(['animate', 'zeal'])
 function isCardPlay(a: Action): boolean {
   return a.t === 'castSpell' || (a.t === 'avatarSite' && a.mode === 'play')
-    // Animist "cast a magic as a Spirit" is held tentatively like a play (recorded only if it casts),
-    // so its first prompt gets the same "↩ Go back" free-undo.
-    || (a.t === 'activate' && a.ability === 'animate')
+    || (a.t === 'activate' && TENTATIVE_ACTIVATE_ABILITIES.has(a.ability))
 }
 /** every deck carries a stable id; starters get a deterministic one */
 function ensureDeckId(d: DeckList): DeckList {
@@ -250,6 +251,9 @@ export default function App() {
   // true while a just-played card's FIRST prompt is open → its "↩ Go back" free undo
   // is available (armed on a card play, disarmed on any answer/other action).
   const [playPending, setPlayPending] = useState(false)
+  // true while we're inside a TENTATIVE-ACTIVATE flow (Animist, Persecutor): the "↩ Go back" stays
+  // available across ALL its prompts (not just the first), since nothing commits until the end.
+  const tentFlowRef = useRef(false)
   const localHistory = useRef<string[]>([])
   // chess clock (local modes only — online is server-authoritative): last wall-clock
   // ms we charged the running seat; `clockNow` just drives a 4Hz display re-render.
@@ -486,13 +490,35 @@ export default function App() {
 
   // arm/disarm the "↩ Go back" free undo: a card play arms it (its first prompt can
   // be undone free); answering that prompt — or any other action — disarms it.
-  function armGoBack(action: Action) { setPlayPending(isCardPlay(action)) }
+  function armGoBack(action: Action) {
+    if (isCardPlay(action)) {
+      // a tentative-ACTIVATE flow keeps "↩ Go back" armed across all its prompts; a plain card play
+      // (cast / site) only offers it on the first prompt (disarmed on the first answer).
+      tentFlowRef.current = action.t === 'activate' && TENTATIVE_ACTIVATE_ABILITIES.has(action.ability)
+      setPlayPending(true)
+    } else if (action.t === 'prompt' && tentFlowRef.current) {
+      setPlayPending(true) // still mid tentative-activate flow → keep the go-back
+    } else {
+      tentFlowRef.current = false
+      setPlayPending(false)
+    }
+  }
+  // A tentative-activate flow (Persecutor/Animist) keeps the go-back armed across its prompts; once the
+  // flow ENDS (committed or rolled back → no prompt left to answer), disarm so a later, unrelated prompt
+  // never shows a stale "↩ Go back". (Normal card plays are unaffected — tentFlowRef is false for them.)
+  useEffect(() => {
+    if (!tentFlowRef.current) return
+    const v: any = session?.view ?? session?.local
+    if (v && (!v.prompts || v.prompts.length === 0)) { tentFlowRef.current = false; setPlayPending(false) }
+  }, [session])
+
   /** discard a just-played card while its first prompt is open. Local: restore the
    *  pre-cast snapshot. Online: ask the server to roll back the tentative cast (which
    *  the opponent never saw). */
   function freeGoBack() {
     if (session?.kind === 'online') netRef.current?.cancelCast()
     else localUndo()
+    tentFlowRef.current = false
     setPlayPending(false)
   }
 

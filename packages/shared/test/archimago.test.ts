@@ -2,7 +2,7 @@
 // CHOOSES the magic to echo AND the two burned alongside it (was an arbitrary "first three"), then
 // the copy is CAST for real (never a token left in hand).
 import { describe, it, expect } from 'vitest'
-import { newGame, keepBoth, act, answer, giveMana, waiveThreshold } from './helpers'
+import { newGame, keepBoth, act, answer, giveMana, waiveThreshold, summonCard } from './helpers'
 import { avatarOf, type GameState, type PlayerId } from '../src'
 
 function toCemetery(g: GameState, player: PlayerId, name: string): string {
@@ -31,6 +31,24 @@ describe('Archimago echo', () => {
     expect(g.players[0].banished.length, 'three magics banished as the cost').toBe(3)
     expect(g.players[0].hand.filter((id) => (g.cards[id] as any).isToken).length, 'no free token left in hand').toBe(0)
     expect(g.prompts.length).toBe(0)
+  })
+
+  it('the echoed copy VANISHES — it never lands in the cemetery (no re-echo loop)', () => {
+    const g = newGame(); keepBoth(g)
+    const avatar = avatarOf(g, 0)
+    avatar.name = 'Archimago'; avatar.life = 10
+    for (let i = 0; i < 3; i++) toCemetery(g, 0, 'Divine Healing')
+    giveMana(g, 0, 5); waiveThreshold(g, 0)
+
+    act(g, 0, { t: 'activate', sourceId: avatar.id, ability: 'echo' })
+    answer(g, [0])
+    answer(g, [0, 1])
+
+    expect(avatar.life, 'the copy resolved').toBe(17)
+    // the three cost cards are banished; the COPY left no card behind — cemetery is empty, so you
+    // can't re-echo the copy for an infinite loop.
+    expect(g.players[0].cemetery.length, 'the copy did NOT return to the cemetery').toBe(0)
+    expect(g.players[0].banished.length, 'exactly the three cost cards are banished (not a 4th copy)').toBe(3)
   })
 
   it('the echoed copy PAYS mana (not free) — deducts Divine Healing\'s (1)', () => {
@@ -98,5 +116,63 @@ describe('Archimago echo', () => {
     expect(p.cemetery, 'cemetery untouched').toEqual(cemBefore)
     expect(p.banished.length, 'nothing banished').toBe(0)
     expect(g.prompts.length, 'no dangling prompt').toBe(0)
+  })
+})
+
+// FAQ: "When using this ability, must the Archimago be the caster? No, any of your spellcasters can
+// cast the copied spell." So whenever you control MORE THAN ONE legal spellcaster, Archimago must ask
+// which one casts the copy — for EVERY spell, not just position-based ones (who casts can trigger
+// "whenever you cast" effects, Sturmgeist, Enchantress, caster-element locks, …).
+describe('Archimago — choose which spellcaster casts the copy', () => {
+  function echoSetup(g: GameState, echo: string, extraSpellcaster: boolean) {
+    const avatar = avatarOf(g, 0); avatar.name = 'Archimago'
+    if (extraSpellcaster) summonCard(g, 0, 'Apprentice Wizard', 3, 2) // a 2nd (plain) Spellcaster
+    for (let i = 0; i < 3; i++) toCemetery(g, 0, echo)
+    giveMana(g, 0, 20); waiveThreshold(g, 0)
+    act(g, 0, { t: 'activate', sourceId: avatar.id, ability: 'echo' })
+    answer(g, [0])    // echo the first
+    answer(g, [0, 1]) // banish the other two
+    return avatar
+  }
+
+  it('asks for the caster even for a NON-positional spell (All Mortals Gone) when you have two spellcasters', () => {
+    const g = newGame(); keepBoth(g)
+    const wiz = summonCard(g, 0, 'Apprentice Wizard', 3, 2)
+    const avatar = avatarOf(g, 0); avatar.name = 'Archimago'
+    for (let i = 0; i < 3; i++) toCemetery(g, 0, 'All Mortals Gone')
+    giveMana(g, 0, 20); waiveThreshold(g, 0)
+    act(g, 0, { t: 'activate', sourceId: avatar.id, ability: 'echo' })
+    answer(g, [0]); answer(g, [0, 1])
+    const p = g.prompts[0]
+    expect(p?.kind, 'a caster-choice prompt is offered').toBe('chooseTargets')
+    expect(String(p?.title)).toMatch(/which spellcaster/i)
+    expect((p?.data as any).candidates, 'both your spellcasters are offered')
+      .toEqual(expect.arrayContaining([avatar.id, wiz.id]))
+  })
+
+  it('does NOT ask when the avatar is your only spellcaster (nothing to choose)', () => {
+    const g = newGame(); keepBoth(g)
+    echoSetup(g, 'All Mortals Gone', false)
+    // no caster prompt — it auto-casts from the avatar and resolves straight away
+    expect(g.prompts.some((pr) => /which spellcaster/i.test(String(pr.title))), 'no needless caster prompt').toBe(false)
+  })
+
+  it('honours the chosen caster — the copy is cast THROUGH the picked spellcaster, not the avatar', () => {
+    const g = newGame(); keepBoth(g)
+    const avatar = avatarOf(g, 0); avatar.name = 'Archimago'
+    const wiz = summonCard(g, 0, 'Apprentice Wizard', 3, 2)
+    for (let i = 0; i < 3; i++) toCemetery(g, 0, 'Firebolts')
+    giveMana(g, 0, 20); waiveThreshold(g, 0)
+
+    act(g, 0, { t: 'activate', sourceId: avatar.id, ability: 'echo' })
+    answer(g, [0]); answer(g, [0, 1])
+    expect(String(g.prompts[0]?.title)).toMatch(/which spellcaster/i)
+    const before = g.log.length
+    answer(g, [wiz.id])     // cast the copy THROUGH the wizard
+    answer(g, 'e')          // resolve its direction (the copy actually casts here)
+    // the cast-start log names the CHOSEN caster — proving the copy is cast by the wizard, not the avatar
+    expect(g.log.slice(before).some((l) => /casts Firebolts with Apprentice Wizard/i.test(l.msg)),
+      'the copy was cast by the chosen spellcaster').toBe(true)
+    expect(g.prompts.length).toBe(0)
   })
 })

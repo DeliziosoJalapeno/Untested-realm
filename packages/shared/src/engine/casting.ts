@@ -3,7 +3,7 @@ import { getScript, type CardScript, type TargetRef, type TargetSpec } from '../
 import type { GameState, PlayerId, Region, Thresholds, UnitState } from './types'
 import { adjacentSquares, adjacentSquaresW, avatarOf, chebyshev, chebyshevW, orthAdjacentWrapped, nearbySquares, nearbySquaresW, siteAt, sitesOf, inBounds, unitsAt, occupies, occupiedSquares, GRID_W, GRID_H, edgesConnected, aura2x2Squares } from './grid'
 import { newId, pushLog, makeCtx, checkStateBased, opponent, emitUnitEnters, emitEvent, isMagicProtected, loseLife, checkWard, pushPrompt, registerCont, runCont, toCemetery, bumpManaSpent, beginAreaReveal, recordAffectedSites, snapshotRealm, recordTouchedSites, sealSpellReveal, setActionCredit, restoreActionCredit, firesGenesisOnEntry, recordManaGain, deferTurnStep, settleEntering, runDamageEvent } from './effects'
-import { affinity, effKeywords, isDisabled, disabledByEffect, canExistIn, siteSilenced, siteDisabledByArtifact, artifactSilenced, artScript, zoneAccessToll, applyKeywordString, isArtifactUnit, isEvilUnit, isEvilCardName, isEvilCardNameFor, cardSubtypesFor, collectionBanned, payZoneToll, takeFromCollection, carriedInside, isBlanked, isCarriableArtifact, terrainAt } from './statics'
+import { affinity, effKeywords, isDisabled, disabledByEffect, canExistIn, siteSilenced, siteDisabledByArtifact, artifactSilenced, artScript, zoneAccessToll, applyKeywordString, isArtifactUnit, isEvilUnit, isEvilUnitIntrinsic, isEvilCardName, isEvilCardNameFor, cardSubtypesFor, collectionBanned, payZoneToll, takeFromCollection, carriedInside, isBlanked, isCarriableArtifact, terrainAt } from './statics'
 import { siteEntryAllowed } from './movement'
 import { TRAP_DISGUISE, trapElementOf } from './traps'
 
@@ -535,6 +535,8 @@ export interface SpellDiscount {
   elements?: string[] | null
   /** restrict the discount to a spell cast BY this specific caster (Merlin's Tower — "ITS next magic") */
   casterId?: string
+  /** restrict the discount to MAGIC spells only (Merlin's Tower — "its next MAGIC costs 3 less") */
+  magicOnly?: boolean
   /** required subtype, e.g. Beast (Pond) */
   subtype?: string | null
   /** the card must be Evil (Den of Evil) */
@@ -555,6 +557,7 @@ export function spellDiscountMatches(
   if (d.player !== player || d.turn !== state.turn) return false
   if (d.casterId && d.casterId !== casterId) return false // "ITS next magic" — only when that caster casts
   const def = getCard(cardName)
+  if (d.magicOnly && def.type !== 'Magic') return false // "its next MAGIC costs 3 less" — not minions/artifacts/auras
   if (d.elements && !def.elements.some((e) => d.elements!.includes(e))) return false
   if (d.subtype && !cardSubtypesFor(state, player, cardName).includes(d.subtype)) return false
   if (d.evil && !isEvilCardNameFor(state, player, cardName)) return false
@@ -822,7 +825,7 @@ function summonCastMinion(
   state.units[unitId] = unit
   // rulebook: "Evil minions can't be warded" — strip a printed Ward that seeded onto an entering Evil
   // minion (defensive against future data / subtype-override entrants). Avatars keep it.
-  if (unit.ward && !unit.isAvatar && isEvilUnit(state, unit)) unit.ward = undefined
+  if (unit.ward && !unit.isAvatar && isEvilUnitIntrinsic(state, unit)) unit.ward = undefined
   // Lance: the minion enters play carrying a Lance artifact token
   if (kw.lance) {
     const lanceCardId = newId(state, 'c')
@@ -1514,6 +1517,10 @@ export function effectCastSpell(
     /** free + threshold-ignoring (Chaoswish copy). Default true. Collection casts
      *  (Silver Bullet / Toolbox / Malleus) pass free:false — they pay the cost. */
     free?: boolean
+    /** a COPY that still PAYS its cost + meets thresholds (free:false) but is a TOKEN — so it
+     *  VANISHES when it resolves instead of going to the cemetery (Archimago's echo: FAQ — the
+     *  copy pays mana/threshold, and a copy is a token that leaves no card behind). */
+    tokenCopy?: boolean
     /** force this unit as the caster (a bearer) instead of avatar-first. */
     caster?: string
     /** grant the forced caster the ability to cast it even if not a Spellcaster
@@ -1537,7 +1544,9 @@ export function effectCastSpell(
   // Magic that resolves, must go to the CEMETERY, not vanish. Only a FREE copy (Chaoswish) is a token
   // that vanishes. So: token iff free. This routes a slain collection-cast permanent AND a resolved
   // collection-cast Magic to the cemetery (toCemetery bails on isToken) — the fix for the whole family.
-  const asToken = free
+  // token iff free (Chaoswish) — OR an explicit paid token copy (Archimago). A token NEVER reaches the
+  // cemetery (toCemetery bails on isToken), so a tokenCopy resolves its effect and then vanishes.
+  const asToken = free || !!opts?.tokenCopy
   const cardId = `c${state.nextId++}`
   state.cards[cardId] = { id: cardId, name: cardName, owner: player, isToken: asToken } as any
   state.players[player].hand.push(cardId)
@@ -1560,7 +1569,7 @@ export function effectCastSpell(
   const caster = opts?.caster && canCast(state, player, cardId, opts.caster).ok ? opts.caster : pickEffectCaster(state, player, cardId)
   // a FREE effect-cast is a token COPY (Chaoswish) → labelled "Copy of X"; a PAID collection cast
   // (Silver Bullet, Toolbox, Malleus, Troubled Town…) is the REAL spell, not a copy → labelled by name.
-  const pc: PendingCast = { player, casterId: caster ?? state.players[player].avatarUnitId, targets: [], afterKey: opts?.afterKey, afterCtx: opts?.afterCtx, forcedAt: opts?.at, isCopy: free }
+  const pc: PendingCast = { player, casterId: caster ?? state.players[player].avatarUnitId, targets: [], afterKey: opts?.afterKey, afterCtx: opts?.afterCtx, forcedAt: opts?.at, isCopy: free || !!opts?.tokenCopy }
   if (caster === null) {
     pushLog(state, player, `${cardName} can't be cast right now — it fizzles.`)
     removeCastToken(state, cardId)
