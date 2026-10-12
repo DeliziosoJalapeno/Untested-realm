@@ -49,16 +49,16 @@ describe('Vivien copies DEATHRITE of realm Spellcasters', () => {
 })
 
 describe('Vivien copies HAND / CEMETERY / SPELLBOOK abilities of realm Spellcasters', () => {
-  it('in HAND, gains Moon Clan Werewolf\'s "sacrifice a Mortal -> summon me" ability', () => {
+  it('in HAND, gains Sir Gareth\'s "reveal -> a Mortal becomes me" hand ability', () => {
     const g: GameState = newGame(); keepBoth(g)
     placeSite(g, 0, 'Rustic Village', 3, 3)
-    const wolf = summonCard(g, 0, 'Moon Clan Werewolf', 3, 3)
-    wolf.modifiers.push(SPELLCASTER(g.turn))
+    const gareth = summonCard(g, 0, 'Sir Gareth', 3, 3)
+    gareth.modifiers.push(SPELLCASTER(g.turn))
     const vcard = `cv${g.nextId++}`; g.cards[vcard] = { id: vcard, name: 'Vivien the Enchantress', owner: 0 } as any
     g.players[0].hand.push(vcard)
     const avatar = g.units[g.players[0].avatarUnitId]
     const abils = grantedAbilities(g, avatar)
-    expect(abils.some((a) => /Moon Clan Werewolf/.test(a.label)), 'the Werewolf hand ability is offered on Vivien-in-hand').toBe(true)
+    expect(abils.some((a) => /Sir Gareth/.test(a.label)), 'the Sir Gareth hand ability is offered on Vivien-in-hand').toBe(true)
   })
 
   it('in the CEMETERY, gains Grigori Rasputin\'s "banish an Evil ally -> return me" ability', () => {

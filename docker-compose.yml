@@ -13,6 +13,12 @@ services:
     build: .
     restart: unless-stopped
     mem_limit: 768m
+    # Admin account for the in-game bug-report panel. On boot the server ensures this
+    # account exists and flags it admin (and promotes it if it already exists). CHANGE the
+    # password before exposing the demo — the default is public knowledge.
+    environment:
+      - SORCERY_ADMIN_USERNAME=admin
+      - SORCERY_ADMIN_PASSWORD=${SORCERY_ADMIN_PASSWORD:-sorcery-admin}
     # `docker exec <app> battles` shows live games (full detail — it queries the
     # server over loopback from inside the container; no token needed).
     # no `ports:` on purpose — unreachable from the LAN, only via the tunnel.

@@ -51,6 +51,8 @@ export type ServerMsg =
   | { t: 'roomClosed'; msg: string }
   // both players agreed to a rematch → the room is back at DECK SELECTION; pick a deck again.
   | { t: 'rematchStart'; mode: 'standard' | 'sealed' }
+  // the server filed your in-game bug report (captured the replay-so-far + scenario).
+  | { t: 'bugReported' }
 
 export class Net {
   private ws: WebSocket | null = null
@@ -168,5 +170,9 @@ export class Net {
   }
   action(action: Action): void {
     this.send({ t: 'action', action })
+  }
+  /** report a bug mid-game: the server captures the replay-so-far + a full scenario snapshot. */
+  reportBug(msg: string): void {
+    this.send({ t: 'reportBug', msg })
   }
 }

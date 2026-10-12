@@ -1053,6 +1053,19 @@ export function grantedAbilities(state: GameState, unit: UnitState): AbilityDef[
     const g = getScript(site.name)?.siteGrantsAbilities
     if (g && !siteSilenced(state, site)) out.push(...tag(g(state, site, unit), site.name))
   }
+  // Cards HELD IN HAND that grant an ability to an allied unit in play (Moon Clan Werewolf: each of your
+  // Mortals may sacrifice itself to summon the Werewolf onto its square). Surfaced on the UNIT — exactly
+  // like a Skeleton granting itself a bone-raise — not on the avatar. Scans the unit's controller's hand
+  // (view-safe via `?? []`; an opponent's hand is redacted, so nothing leaks).
+  {
+    const seen = new Set<string>()
+    for (const cardId of state.players[unit.controller]?.hand ?? []) {
+      const nm = state.cards[cardId]?.name
+      if (!nm || seen.has(nm)) continue
+      const g = getScript(nm)?.handAbilitiesForAlly
+      if (g) { seen.add(nm); out.push(...tag(g(state, cardId, unit.controller, unit), nm)) }
+    }
+  }
   // Persistent bindings stay releasable even after the SOURCE that made them has left play — Bind Evil
   // is a spell already in the cemetery, and a Gargantula may since have died. So the release ability is
   // surfaced from the DISABLED minion's own counter (not the vanished source), keyed uniquely per minion:

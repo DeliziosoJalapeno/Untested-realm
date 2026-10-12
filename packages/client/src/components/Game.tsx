@@ -410,6 +410,10 @@ function GameInner({
   const [showJudge, setShowJudge] = useState(false)
   const [editorAsked, setEditorAsked] = useState(false)
   const [showSymbols, setShowSymbols] = useState(false) // GUI symbol legend (Q / ❔ button)
+  // report-a-bug modal: a message + a snapshot (replay-so-far + scenario) captured by onReportBug
+  const [bugOpen, setBugOpen] = useState(false)
+  const [bugText, setBugText] = useState('')
+  const [bugState, setBugState] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
   const [faqView, setFaqView] = useState(false) // FAQ view (F / 📖 button): greys the board, cards
   // with a FAQ get a golden border, hovering/tapping one shows its FAQ text (action panels off)
   // Subtype view (Z / 🏷 button): dims the board & hand, glows every unit/site/artifact/hand
@@ -3218,6 +3222,11 @@ function GameInner({
           <button className={`railbtn ${stView ? 'selected' : ''}`} title="Subtype view — pick a subtype (Spellcasters, Evil, Beasts, Deserts…); its cards glow, all else dims. Z to toggle, ←/→ to cycle" onClick={toggleSubtype}>
             <span className="ri">🏷</span><span className="rl">Subtypes</span>
           </button>
+          {!isSpectator && session.onReportBug && (
+            <button className={`railbtn ${bugOpen ? 'selected' : ''}`} title="Report a bug — saves your message + this game's replay & board for the admins" onClick={() => { setBugState('idle'); setBugOpen(true) }}>
+              <span className="ri">🐛</span><span className="rl">Report bug</span>
+            </button>
+          )}
           {session.sendChat && (
             <button ref={chatBtnRef} className={`railbtn ${chatOpen ? 'selected' : ''}`} title="Chat — send a quick phrase to your opponent" onClick={() => setChatOpen((v) => !v)}>
               <span className="ri">💬</span><span className="rl">Chat</span>
@@ -3267,6 +3276,9 @@ function GameInner({
           <button title="What do the symbols mean?" className={showSymbols ? 'selected' : ''} onClick={() => setShowSymbols((v) => !v)}>❔</button>
           <button title="FAQ view — tap a glowing card to read its rulings" className={faqView ? 'selected' : ''} onClick={toggleFaq}>📖</button>
           <button title="Subtype view — a subtype's cards glow, all else dims (tap to open, use the top bar to pick)" className={stView ? 'selected' : ''} onClick={toggleSubtype}>🏷</button>
+          {session.onReportBug && (
+            <button title="Report a bug — saves your message + this game's replay & board" className={bugOpen ? 'selected' : ''} onClick={() => { setBugState('idle'); setBugOpen(true) }}>🐛</button>
+          )}
           {session.sendChat && (
             <button ref={chatBtnRef} title="Chat — send a quick phrase" className={chatOpen ? 'selected' : ''} onClick={() => setChatOpen((v) => !v)}>💬</button>
           )}
@@ -3412,6 +3424,50 @@ function GameInner({
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Report-a-bug modal: your message + an automatic snapshot (replay-so-far + full board scenario) */}
+      {bugOpen && (
+        <div className="modal bug-modal">
+          <div className="sym-head">
+            <h3>🐛 Report a bug</h3>
+            <button data-cancel="1" onClick={() => setBugOpen(false)}>✕ Close</button>
+          </div>
+          {bugState === 'sent' ? (
+            <div style={{ padding: '8px 4px' }}>
+              <p>Thanks! Your report was sent{session.kind === 'online' ? '' : ' with this game’s replay and board'}. The admins can open it from their panel.</p>
+              <div className="confirm-actions"><button data-confirm="1" onClick={() => setBugOpen(false)}>Done</button></div>
+            </div>
+          ) : (
+            <>
+              <p style={{ opacity: 0.85, fontSize: 13 }}>
+                Describe what went wrong. We’ll automatically attach the <b>replay up to this point</b> and a
+                <b> snapshot of the current board</b> so an admin can reproduce it.
+              </p>
+              <textarea
+                value={bugText}
+                onChange={(e) => setBugText(e.target.value)}
+                placeholder="e.g. Maelström pulled a swallowed minion out of the Bullfrog…"
+                rows={5}
+                maxLength={2000}
+                style={{ width: '100%', resize: 'vertical' }}
+              />
+              {bugState === 'error' && <div style={{ color: '#ff9a9a', fontSize: 13, marginTop: 4 }}>Couldn’t send the report — please try again.</div>}
+              <div className="confirm-actions">
+                <button
+                  data-confirm="1"
+                  disabled={!bugText.trim() || bugState === 'sending'}
+                  onClick={async () => {
+                    setBugState('sending')
+                    try { await Promise.resolve(session.onReportBug!(bugText.trim())); setBugState('sent'); setBugText('') }
+                    catch { setBugState('error') }
+                  }}
+                >{bugState === 'sending' ? 'Sending…' : 'Send report'}</button>
+                <button data-cancel="1" onClick={() => setBugOpen(false)}>Cancel</button>
+              </div>
+            </>
+          )}
         </div>
       )}
 

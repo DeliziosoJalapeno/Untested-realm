@@ -354,9 +354,8 @@ export function canCast(state: GameState, player: PlayerId, cardId: string, cast
   // named spells sealed away (Hyter Sprites)
   if ((state.flow?.castBans ?? []).some((b: { name: string }) => b.name === (morphed ?? card.name)))
     return { ok: false, reason: `${card.name} can't be cast right now.` }
-  // cards stolen by a living thief (Pith Imp) are sealed while it remains
-  if ((state.flow?.stolen ?? []).some((s: { cardId: string; unitId: string }) => s.cardId === cardId && state.units[s.unitId]))
-    return { ok: false, reason: `${card.name} is in the Pith Imp's clutches.` }
+  // (A Pith-Imp-stolen spell is held in the thief's hand under an innate caster-lock bound to the
+  // Imp — governed by the lockedCards block below, so no separate seal is needed here.)
 
   // caster-locked cards: only their designated caster may cast them. A grant-style
   // lock (Archangel Gabriel, "this unit may cast…") confers the Spellcaster ability
@@ -1176,6 +1175,10 @@ export function castSpell(
   }
   if (state.flow?.lockedCards?.length) {
     state.flow.lockedCards = state.flow.lockedCards.filter((e: any) => e.cardId !== cardId)
+  }
+  // a Pith-Imp-stolen spell that gets cast is spent — stop tracking it for return-to-owner
+  if (state.flow?.stolen?.length) {
+    state.flow.stolen = state.flow.stolen.filter((e: any) => e.cardId !== cardId)
   }
   if (state.flow?.offerCast?.length) {
     state.flow.offerCast = state.flow.offerCast.filter((e: any) => e.cardId !== cardId)

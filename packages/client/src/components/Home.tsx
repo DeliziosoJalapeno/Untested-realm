@@ -76,6 +76,8 @@ export default function Home({
   onCollection,
   onScenarios,
   onWatchReplay,
+  isAdmin,
+  onOpenBugs,
   initialRoomCode,
 }: {
   username: string | null
@@ -88,6 +90,8 @@ export default function Home({
   onCollection: () => void
   onScenarios: () => void
   onWatchReplay: () => void
+  isAdmin?: boolean
+  onOpenBugs?: () => void
   initialRoomCode?: string | null
 }) {
   const decks = loadDecks()
@@ -131,6 +135,13 @@ export default function Home({
   const [rooms, setRooms] = useState<RoomInfo[] | null>(null)
   const [myRooms, setMyRooms] = useState<auth.MyRoomInfo[]>([]) // YOUR live games (signed in)
   const [lobbyErr, setLobbyErr] = useState<string | null>(null)
+  // admin replies about YOUR bug reports → a dismissable home notification (signed in only)
+  const [myBugs, setMyBugs] = useState<auth.MyBug[]>([])
+  const [bugsDismissed, setBugsDismissed] = useState(false)
+  useEffect(() => {
+    if (!username) { setMyBugs([]); return }
+    auth.fetchMyBugs().then(setMyBugs).catch(() => { /* offline */ })
+  }, [username])
   function refreshRooms() {
     auth.fetchRooms().then((rs) => { setRooms(rs); setLobbyErr(null) }).catch((e) => setLobbyErr(e?.message ?? 'Could not load rooms.'))
     if (username) auth.fetchMyRooms().then(setMyRooms).catch(() => { /* offline */ })
@@ -381,6 +392,30 @@ export default function Home({
         )}
       </div>
 
+      {username && !bugsDismissed && (() => {
+        const noted = myBugs.filter((b) => b.adminMessages.some((m) => !m.read))
+        if (!noted.length) return null
+        const label = (k: string) => k === 'solved' ? '✅ Bug solved' : k === 'notbug' ? '🚫 Not a bug' : '👀 Acknowledged'
+        return (
+          <div className="panel bug-notify" style={{ borderColor: '#caa94a' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <b>🐛 Update{noted.length > 1 ? 's' : ''} on your bug report{noted.length > 1 ? 's' : ''}</b>
+              <button className="linklike" style={{ marginLeft: 'auto' }}
+                onClick={() => { setBugsDismissed(true); void auth.markBugsRead() }}>Dismiss</button>
+            </div>
+            {noted.map((b) => {
+              const last = [...b.adminMessages].reverse().find((m) => !m.read)!
+              return (
+                <div key={b.id} style={{ fontSize: 13, marginTop: 4 }}>
+                  <b>{label(last.kind)}</b> — <span style={{ opacity: 0.8 }}>“{b.message.slice(0, 60)}{b.message.length > 60 ? '…' : ''}”</span>
+                  {last.text && <div style={{ opacity: 0.9, marginTop: 2 }}>{last.text}</div>}
+                </div>
+              )
+            })}
+          </div>
+        )
+      })()}
+
       <div className="panel">
         <h2>Your setup</h2>
         <label>
@@ -406,6 +441,9 @@ export default function Home({
         <button onClick={() => setShowSettings(true)}>⚙ Settings</button>
         {achvGot > 0 && (
           <button onClick={() => setShowAchv(true)}>🏆 Achievements {achvGot}/{achvTotal}</button>
+        )}
+        {isAdmin && onOpenBugs && (
+          <button onClick={onOpenBugs} title="Admin: review reported bugs">🐛 Bug reports</button>
         )}
         <div className="clockcfg">
           <label>

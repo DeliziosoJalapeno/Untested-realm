@@ -591,6 +591,12 @@ h1, h2, h3 { font-weight: 600; }
    active prompt on both desktop and the mobile phone-frame. */
 .modal.symbols-modal { z-index: 120; }
 .symbols-modal { max-width: 560px; width: min(560px, 92vw); max-height: 80vh; overflow: hidden; display: flex; flex-direction: column; }
+
+/* Report-a-bug modal (🐛) — opened deliberately, so it sits above an active prompt like the legend does. */
+.modal.bug-modal { z-index: 120; max-width: 520px; width: min(520px, 92vw); }
+.modal.bug-modal textarea { margin-top: 8px; font: inherit; }
+/* home-page "admin replied about your bug" notice */
+.panel.bug-notify { background: rgba(202, 169, 74, 0.08); }
 .sym-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
 .sym-head h3 { margin: 0; }
 .sym-grid { overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 4px; }

@@ -18,12 +18,20 @@ db.exec('PRAGMA foreign_keys = ON')
   if (cols.length && !cols.some((c) => c.name === 'deck_id')) db.exec('DROP TABLE decks')
 }
 
+// add the is_admin flag to a users table created before the admin feature existed
+{
+  const cols = db.prepare('PRAGMA table_info(users)').all() as { name: string }[]
+  if (cols.length && !cols.some((c) => c.name === 'is_admin'))
+    db.exec('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0')
+}
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     username   TEXT NOT NULL UNIQUE COLLATE NOCASE,
     pass_hash  TEXT NOT NULL,
     pass_salt  TEXT NOT NULL,
+    is_admin   INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL
   );
   CREATE TABLE IF NOT EXISTS sessions (
@@ -76,9 +84,26 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_replays_owner ON replays(owner_id);
   CREATE INDEX IF NOT EXISTS idx_replays_public ON replays(is_public);
+  -- in-game bug reports: a player's message + the replay-so-far + a full GameState scenario snapshot.
+  -- reporter_id NULL = a guest (admin still sees it, but there's no account to notify back). The admin's
+  -- replies live in admin_messages (JSON [{kind,text,at,read}]); status tracks open/solved/notbug.
+  CREATE TABLE IF NOT EXISTS bug_reports (
+    id             TEXT PRIMARY KEY,
+    reporter_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    reporter_name  TEXT NOT NULL,
+    message        TEXT NOT NULL,
+    mode           TEXT NOT NULL,
+    replay         TEXT,
+    scenario       TEXT,
+    status         TEXT NOT NULL DEFAULT 'open',
+    admin_messages TEXT NOT NULL DEFAULT '[]',
+    created_at     INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_bugs_reporter ON bug_reports(reporter_id);
+  CREATE INDEX IF NOT EXISTS idx_bugs_status ON bug_reports(status);
 `)
 
-export interface UserRow { id: number; username: string; pass_hash: string; pass_salt: string; created_at: number }
+export interface UserRow { id: number; username: string; pass_hash: string; pass_salt: string; is_admin: number; created_at: number }
 
 const q = {
   userByName: db.prepare('SELECT * FROM users WHERE username = ?'),
@@ -123,6 +148,21 @@ const q = {
     INSERT INTO replays (id, owner_id, name, is_public, data, updated_at) VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET name = excluded.name, is_public = excluded.is_public, data = excluded.data, updated_at = excluded.updated_at`),
   repDelete: db.prepare('DELETE FROM replays WHERE id = ? AND owner_id = ?'),
+  setAdmin: db.prepare('UPDATE users SET is_admin = ? WHERE id = ?'),
+  bugInsert: db.prepare(`
+    INSERT INTO bug_reports (id, reporter_id, reporter_name, message, mode, replay, scenario, status, admin_messages, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'open', '[]', ?)`),
+  bugById: db.prepare('SELECT * FROM bug_reports WHERE id = ?'),
+  // list for the admin panel: metadata + whether a replay/scenario is attached, never the heavy blobs
+  bugListAll: db.prepare(`
+    SELECT id, reporter_id, reporter_name, message, mode, status, admin_messages, created_at,
+           (replay IS NOT NULL) AS has_replay, (scenario IS NOT NULL) AS has_scenario
+    FROM bug_reports ORDER BY created_at DESC`),
+  bugByReporter: db.prepare(`
+    SELECT id, reporter_name, message, mode, status, admin_messages, created_at
+    FROM bug_reports WHERE reporter_id = ? ORDER BY created_at DESC`),
+  bugSetAdminMsgs: db.prepare('UPDATE bug_reports SET admin_messages = ?, status = ? WHERE id = ?'),
+  bugDelete: db.prepare('DELETE FROM bug_reports WHERE id = ?'),
 }
 
 export interface ScenarioRow { id: string; owner_id: number | null; name: string; is_public: number; data: string; updated_at: number }
@@ -134,6 +174,47 @@ export const users = {
   byId: (id: number) => q.userById.get(id) as UserRow | undefined,
   create: (username: string, passHash: string, passSalt: string) =>
     q.insertUser.run(username, passHash, passSalt, Date.now()),
+  setAdmin: (id: number, isAdmin: boolean) => q.setAdmin.run(isAdmin ? 1 : 0, id),
+}
+
+export interface AdminMsg { kind: 'solved' | 'notbug' | 'ack'; text: string; at: number; read: boolean }
+export interface BugRow {
+  id: string; reporter_id: number | null; reporter_name: string; message: string; mode: string
+  replay: string | null; scenario: string | null; status: string; admin_messages: string; created_at: number
+}
+
+export const bugs = {
+  create: (id: string, reporterId: number | null, reporterName: string, message: string, mode: string, replay: unknown, scenario: unknown) =>
+    q.bugInsert.run(id, reporterId, reporterName, message, mode,
+      replay != null ? JSON.stringify(replay) : null,
+      scenario != null ? JSON.stringify(scenario) : null, Date.now()),
+  get: (id: string) => q.bugById.get(id) as unknown as BugRow | undefined,
+  listAll: () => q.bugListAll.all() as unknown as (BugRow & { has_replay: number; has_scenario: number })[],
+  byReporter: (userId: number) => q.bugByReporter.all(userId) as unknown as BugRow[],
+  /** append an admin reply and set the new status (ack keeps the current status). */
+  addAdminMessage: (id: string, msg: AdminMsg, status: string): boolean => {
+    const row = q.bugById.get(id) as unknown as BugRow | undefined
+    if (!row) return false
+    const msgs = (JSON.parse(row.admin_messages) as AdminMsg[])
+    msgs.push(msg)
+    q.bugSetAdminMsgs.run(JSON.stringify(msgs), status, id)
+    return true
+  },
+  /** mark every admin reply on this user's reports as read (dismiss their home notifications). */
+  markReadForUser: (userId: number) => {
+    const list = q.bugByReporter.all(userId) as unknown as BugRow[]
+    db.prepare('BEGIN').run()
+    try {
+      for (const r of list) {
+        const msgs = JSON.parse(r.admin_messages) as AdminMsg[]
+        if (!msgs.some((m) => !m.read)) continue
+        for (const m of msgs) m.read = true
+        q.bugSetAdminMsgs.run(JSON.stringify(msgs), r.status, r.id)
+      }
+      db.prepare('COMMIT').run()
+    } catch (e) { db.prepare('ROLLBACK').run(); throw e }
+  },
+  remove: (id: string) => q.bugDelete.run(id),
 }
 
 export const sessions = {

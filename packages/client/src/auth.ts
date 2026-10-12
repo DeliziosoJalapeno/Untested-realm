@@ -19,9 +19,13 @@ function setAuth(token: string, username: string) {
   localStorage.setItem(TOKEN_KEY, token)
   localStorage.setItem(USER_KEY, username)
 }
+let cachedAdmin = false
+/** whether the signed-in account is an admin (set by fetchMe / login flows that check it). */
+export function isAdminUser(): boolean { return cachedAdmin }
 export function clearAuth() {
   localStorage.removeItem(TOKEN_KEY)
   localStorage.removeItem(USER_KEY)
+  cachedAdmin = false
 }
 
 async function api(path: string, opts: RequestInit = {}): Promise<any> {
@@ -42,21 +46,23 @@ async function api(path: string, opts: RequestInit = {}): Promise<any> {
 export async function register(username: string, password: string): Promise<string> {
   const r = await api('/api/register', { method: 'POST', body: JSON.stringify({ username, password }) })
   setAuth(r.token, r.user.username)
+  cachedAdmin = !!r.user?.isAdmin
   return r.user.username
 }
 export async function login(username: string, password: string): Promise<string> {
   const r = await api('/api/login', { method: 'POST', body: JSON.stringify({ username, password }) })
   setAuth(r.token, r.user.username)
+  cachedAdmin = !!r.user?.isAdmin
   return r.user.username
 }
 export async function logout(): Promise<void> {
   try { await api('/api/logout', { method: 'POST' }) } catch { /* best effort */ }
   clearAuth()
 }
-/** verify the stored token is still valid; returns the username or null */
+/** verify the stored token is still valid; returns the username or null (and caches isAdmin). */
 export async function fetchMe(): Promise<string | null> {
   if (!getToken()) return null
-  try { const r = await api('/api/me'); return r.user.username } catch { clearAuth(); return null }
+  try { const r = await api('/api/me'); cachedAdmin = !!r.user.isAdmin; return r.user.username } catch { clearAuth(); return null }
 }
 export async function fetchDecks(): Promise<DeckList[]> {
   const r = await api('/api/decks')
@@ -183,6 +189,39 @@ export async function fetchCollection(): Promise<any | null> {
 export async function pushCollection(collection: unknown): Promise<void> {
   if (!getToken()) return
   await api('/api/collection', { method: 'PUT', body: JSON.stringify({ collection }) })
+}
+
+// ---- bug reports ----
+export interface BugAdminMsg { kind: 'solved' | 'notbug' | 'ack'; text: string; at: number; read: boolean }
+export interface MyBug { id: string; message: string; mode: string; status: string; createdAt: number; adminMessages: BugAdminMsg[] }
+export interface AdminBug { id: string; reporter: string; mode: string; message: string; status: string; createdAt: number; hasReplay: boolean; hasScenario: boolean; adminMessages: BugAdminMsg[] }
+export interface AdminBugFull extends AdminBug { replay: ReplayRecord | null; scenario: GameState | null }
+
+/** file a bug report (works signed-out — a guest just gets no reply notification). */
+export async function reportBug(payload: { message: string; mode: string; replay?: ReplayRecord | null; scenario?: GameState | null; name?: string }): Promise<void> {
+  await api('/api/bugs', { method: 'POST', body: JSON.stringify(payload) })
+}
+/** this signed-in reporter's own bugs + any admin replies (drives the home notification). */
+export async function fetchMyBugs(): Promise<MyBug[]> {
+  if (!isSignedIn()) return []
+  try { const r = await api('/api/my-bugs'); return (r.bugs ?? []) as MyBug[] } catch { return [] }
+}
+/** dismiss the home notifications (mark every admin reply on your reports as read). */
+export async function markBugsRead(): Promise<void> {
+  if (!isSignedIn()) return
+  try { await api('/api/my-bugs/read', { method: 'POST' }) } catch { /* best effort */ }
+}
+export async function fetchAdminBugs(): Promise<AdminBug[]> {
+  const r = await api('/api/admin/bugs'); return (r.bugs ?? []) as AdminBug[]
+}
+export async function fetchAdminBug(id: string): Promise<AdminBugFull> {
+  const r = await api(`/api/admin/bugs/${encodeURIComponent(id)}`); return r.bug as AdminBugFull
+}
+export async function replyBug(id: string, kind: 'solved' | 'notbug' | 'ack', text: string): Promise<void> {
+  await api('/api/admin/bug-reply', { method: 'POST', body: JSON.stringify({ id, kind, text }) })
+}
+export async function deleteBugReport(id: string): Promise<void> {
+  await api('/api/admin/bug-delete', { method: 'POST', body: JSON.stringify({ id }) })
 }
 
 export async function fetchAchievements(): Promise<Record<string, number> | null> {

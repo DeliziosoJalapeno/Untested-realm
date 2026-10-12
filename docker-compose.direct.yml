@@ -22,6 +22,10 @@ services:
     # PORT (8787), SORCERY_DB (/data/sorcery.db) and NODE_ENV=production all come
     # from the image; override PORT here only if you also change the mapping.
     # (`docker exec <app> battles` shows live games — loopback-only detail, no token.)
+    # Admin account for the bug-report panel (seeded/promoted on boot). SET A PASSWORD.
+    environment:
+      - SORCERY_ADMIN_USERNAME=${SORCERY_ADMIN_USERNAME:-admin}
+      - SORCERY_ADMIN_PASSWORD=${SORCERY_ADMIN_PASSWORD:-sorcery-admin}
     # accounts/decks persist across restarts/redeploys (unlike the throwaway demo)
     volumes:
       - app-db:/data

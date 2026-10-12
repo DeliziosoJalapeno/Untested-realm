@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync, existsSync, statSync } from 'node:fs'
 import { join, extname, resolve } from 'node:path'
 import { WebSocketServer, WebSocket } from 'ws'
-import { users, sessions, decks as deckStore, collections as collectionStore, scenarios as scenarioStore, replays as replayStore, achievements as achievementStore, type UserRow } from './db'
+import { users, sessions, decks as deckStore, collections as collectionStore, scenarios as scenarioStore, replays as replayStore, achievements as achievementStore, bugs as bugStore, type UserRow } from './db'
 import {
   hashPassword, verifyPassword, newSessionToken, sha256,
   validateUsername, validatePassword, rateAllow, rateReset, SESSION_TTL_MS,
@@ -922,6 +922,24 @@ wss.on('connection', (ws) => {
           broadcastState(m.room)
           break
         }
+        case 'reportBug': {
+          // a seated player reports a bug mid-game: capture the message + the replay-so-far + a full
+          // GameState snapshot (the "scenario"). Done server-side because the online client only holds a
+          // redacted view. Guests may report (reporter_id null → admin sees it, but no reply notification).
+          if (!m.room || m.seat === null || !m.room.game) return send(ws, { t: 'error', msg: 'Not in a game.' })
+          const message = String(msg.msg ?? '').trim().slice(0, 2000)
+          if (!message) return send(ws, { t: 'error', msg: 'Describe the bug first.' })
+          const seat = m.room.seats[m.seat]
+          const reporterId = seat?.account ? (users.byName(seat.account)?.id ?? null) : null
+          try {
+            bugStore.create(
+              makeId(), reporterId, seat?.name ?? 'Player', message, 'online',
+              liveReplay(m.room), JSON.parse(JSON.stringify(m.room.game)),
+            )
+            send(ws, { t: 'bugReported' })
+          } catch (e) { console.error('bug report failed:', e); send(ws, { t: 'error', msg: 'Could not file the report.' }) }
+          break
+        }
         case 'undoRequest': {
           if (!m.room || m.seat === null || !m.room.game) return
           if (m.room.history.length === 0) return send(ws, { t: 'error', msg: 'Nothing to undo.' })
@@ -1142,7 +1160,7 @@ function userFromReq(req: IncomingMessage): UserRow | null {
   if (!sess || sess.expires_at < Date.now()) return null
   return users.byId(sess.user_id) ?? null
 }
-function publicUser(u: UserRow) { return { username: u.username } }
+function publicUser(u: UserRow) { return { username: u.username, isAdmin: !!u.is_admin } }
 
 /** a deck must have a stable id + name and the two card maps (public-facing) */
 function validDeck(d: any): d is { id: string; name: string; avatar: string; spellbook: object; atlas: object } {
@@ -1224,6 +1242,41 @@ function validReplayData(r: any): boolean {
 try {
   for (const s of builtinScenarios()) scenarioStore.seedBuiltin(s.id, s.name, s.state)
 } catch (e) { console.error('scenario seed failed:', e) }
+
+// ensure an admin account exists, seeded from env with a default so no container shell is needed:
+//   SORCERY_ADMIN_USERNAME (default 'admin'), SORCERY_ADMIN_PASSWORD (default 'sorcery-admin').
+// If the account already exists it is (re)flagged admin — so you can promote an existing login too.
+try {
+  const adminName = (process.env.SORCERY_ADMIN_USERNAME ?? 'admin').trim()
+  const adminPass = process.env.SORCERY_ADMIN_PASSWORD ?? 'sorcery-admin'
+  if (!users.byName(adminName)) {
+    const { hash, salt } = hashPassword(adminPass)
+    users.create(adminName, hash, salt)
+  }
+  const u = users.byName(adminName)
+  if (u && !u.is_admin) users.setAdmin(u.id, true)
+  console.log(`[admin] admin account ready: "${adminName}"`)
+} catch (e) { console.error('admin seed failed:', e) }
+
+/** Build a replay record from a room's LIVE recording (for a mid-game bug report) — the same shape
+ *  offerRematch freezes at game-over, but snapshotting the actions so far instead of at the end. */
+function liveReplay(room: Room): ServerReplay | null {
+  if (!room.replayDecks || !room.replayNames || !room.replayActions
+      || room.replaySeed === undefined || room.replayFirst === undefined) return null
+  return {
+    replayVersion: REPLAY_VERSION,
+    createdAt: Date.now(),
+    mode: 'online',
+    decks: room.replayDecks,
+    names: room.replayNames,
+    seed: room.replaySeed,
+    firstPlayer: room.replayFirst,
+    clock: room.clock,
+    secondSeer: room.secondSeer,
+    actions: [...room.replayActions],
+    winner: room.game?.winner ?? null,
+  }
+}
 
 async function handleApi(req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {
   const method = req.method ?? 'GET'
@@ -1395,9 +1448,81 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, path: string
       return sendJson(res, 405, { error: 'Method not allowed.' })
     }
 
+    // --- file a bug report (sign-in NOT required: guests may report, they just get no reply) ---
+    if (path === '/api/bugs' && method === 'POST') {
+      const body = await readJsonBody(req, 3 * 1024 * 1024) // replay+scenario blobs can be large
+      const message = String(body.message ?? '').trim().slice(0, 2000)
+      if (!message) return sendJson(res, 400, { error: 'Describe the bug first.' })
+      const mode = ['hotseat', 'bot', 'scenario', 'online'].includes(body.mode) ? body.mode : 'local'
+      const replay = body.replay && validReplayData(body.replay) ? body.replay : null
+      const scenario = body.scenario && validScenarioState(body.scenario) ? body.scenario : null
+      const reporterName = user?.username ?? (String(body.name ?? 'Guest').slice(0, 24).trim() || 'Guest')
+      bugStore.create(makeId(), user?.id ?? null, reporterName, message, mode, replay, scenario)
+      return sendJson(res, 200, { ok: true })
+    }
+
     if (!user) return sendJson(res, 401, { error: 'Not signed in.' })
 
     if (path === '/api/me' && method === 'GET') return sendJson(res, 200, { user: publicUser(user) })
+
+    // --- a signed-in reporter's own bugs + the admin replies (drives the home notification) ---
+    if (path === '/api/my-bugs' && method === 'GET') {
+      const list = bugStore.byReporter(user.id).map((b) => ({
+        id: b.id, message: b.message, mode: b.mode, status: b.status,
+        createdAt: b.created_at, adminMessages: JSON.parse(b.admin_messages),
+      }))
+      return sendJson(res, 200, { bugs: list })
+    }
+    if (path === '/api/my-bugs/read' && method === 'POST') {
+      bugStore.markReadForUser(user.id)
+      return sendJson(res, 200, { ok: true })
+    }
+
+    // --- admin-only bug management ---
+    if (path === '/api/admin/bugs' && method === 'GET') {
+      if (!user.is_admin) return sendJson(res, 403, { error: 'Admins only.' })
+      const list = bugStore.listAll().map((b) => ({
+        id: b.id, reporter: b.reporter_name, mode: b.mode, message: b.message,
+        status: b.status, createdAt: b.created_at,
+        hasReplay: !!b.has_replay, hasScenario: !!b.has_scenario,
+        adminMessages: JSON.parse(b.admin_messages),
+      }))
+      return sendJson(res, 200, { bugs: list })
+    }
+    if (path.startsWith('/api/admin/bugs/') && method === 'GET') {
+      if (!user.is_admin) return sendJson(res, 403, { error: 'Admins only.' })
+      const id = decodeURIComponent(path.slice('/api/admin/bugs/'.length))
+      const row = id ? bugStore.get(id) : undefined
+      if (!row) return sendJson(res, 404, { error: 'No such report.' })
+      return sendJson(res, 200, {
+        bug: {
+          id: row.id, reporter: row.reporter_name, mode: row.mode, message: row.message,
+          status: row.status, createdAt: row.created_at,
+          adminMessages: JSON.parse(row.admin_messages),
+          replay: row.replay ? JSON.parse(row.replay) : null,
+          scenario: row.scenario ? JSON.parse(row.scenario) : null,
+        },
+      })
+    }
+    if (path === '/api/admin/bug-reply' && method === 'POST') {
+      if (!user.is_admin) return sendJson(res, 403, { error: 'Admins only.' })
+      const body = await readJsonBody(req)
+      const id = String(body.id ?? '')
+      const kind = ['solved', 'notbug', 'ack'].includes(body.kind) ? body.kind : null
+      if (!kind) return sendJson(res, 400, { error: 'Bad reply kind.' })
+      const text = String(body.text ?? '').slice(0, 2000)
+      // solved/notbug close the report; ack just notifies and leaves it open
+      const status = kind === 'ack' ? (bugStore.get(id)?.status ?? 'open') : kind
+      if (!bugStore.addAdminMessage(id, { kind, text, at: Date.now(), read: false }, status))
+        return sendJson(res, 404, { error: 'No such report.' })
+      return sendJson(res, 200, { ok: true })
+    }
+    if (path === '/api/admin/bug-delete' && method === 'POST') {
+      if (!user.is_admin) return sendJson(res, 403, { error: 'Admins only.' })
+      const body = await readJsonBody(req)
+      bugStore.remove(String(body.id ?? ''))
+      return sendJson(res, 200, { ok: true })
+    }
 
     // rooms where THIS account holds a seat (public OR private), still live — so a signed-in
     // player can rejoin their own games from any browser/device.

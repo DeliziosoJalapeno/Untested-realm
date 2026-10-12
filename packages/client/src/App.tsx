@@ -30,6 +30,7 @@ import SealedDeckbuild from './components/SealedDeckbuild'
 import Game from './components/Game'
 import ReplayViewer from './components/ReplayViewer'
 import ReplaysPage from './components/ReplaysPage'
+import BugsAdminPage from './components/BugsAdminPage'
 import { startReplay, type ReplayRecord } from './replay'
 import { loadCollection, ownedCopies, ripEriksCuriosa, syncCollectionOnSignIn, clearCollectionOnLogout, keepSealedPool } from './collection'
 import { markUnlocked, syncAchievementsOnSignIn, clearAchievementsOnLogout } from './achievements'
@@ -52,6 +53,8 @@ export interface Session {
   sendChat?: (msg: string) => void
   /** local games (hotseat / vs-computer): save a replay of the game to your account */
   onSaveReplay?: (name: string, isPublic: boolean) => Promise<void>
+  /** report a bug mid-game: captures the replay-so-far + a scenario snapshot (online = server-side) */
+  onReportBug?: (msg: string) => Promise<void> | void
   /** online creator, before an opponent joins: change your deck and/or the room clock */
   updateRoom?: (deck: DeckList, clock: ClockConfig | null) => void
   /** online: has the opponent granted this seat editor access? (always true offline) */
@@ -218,8 +221,10 @@ function fmtRestart(ms: number): string {
 }
 
 export default function App() {
-  const [page, setPage] = useState<'home' | 'decks' | 'game' | 'collection' | 'scenarios' | 'replays' | 'replay'>('home')
+  const [page, setPage] = useState<'home' | 'decks' | 'game' | 'collection' | 'scenarios' | 'replays' | 'replay' | 'bugs'>('home')
   const [replayData, setReplayData] = useState<ReplayRecord | null>(null)
+  // where the full-screen replay viewer returns on leave — the replay list, or the admin bugs panel
+  const [replayReturn, setReplayReturn] = useState<'replays' | 'bugs'>('replays')
   const [session, setSession] = useState<Session | null>(null)
   const [username, setUsername] = useState<string | null>(auth.getUsername())
   const [error, setError] = useState<string | null>(null)
@@ -537,6 +542,7 @@ export default function App() {
       noAchv,
       requestUndo: localUndo, // both players share the screen: undo is by consent
       onSaveReplay: saveReplay,
+      onReportBug: reportBugLocal,
       send: (action: Action) => {
         // in hotseat the acting player is whoever the UI says is acting
         armGoBack(action)
@@ -604,6 +610,19 @@ export default function App() {
     await auth.pushReplay({ id, name, isPublic, data: r })
   }
 
+  /** report a bug in a LOCAL game (hotseat / vs-bot / scenario): send the message + the replay-so-far
+   *  + a full scenario snapshot of the current board. The ReplayRecord's own `mode` tags it. */
+  async function reportBugLocal(msg: string): Promise<void> {
+    const state = localRef.current
+    const replay = recordingRef.current
+    await auth.reportBug({
+      message: msg,
+      mode: replay?.mode ?? 'scenario', // scenarios don't record → no replay → tag as 'scenario'
+      replay: replay ?? null,
+      scenario: state ? (JSON.parse(JSON.stringify(state)) as GameState) : null,
+    })
+  }
+
   /** save the just-finished ONLINE game (the server handed us the full record at game-over). */
   async function saveOnlineReplay(name: string, isPublic: boolean): Promise<void> {
     const r = onlineReplayRef.current
@@ -632,6 +651,7 @@ export default function App() {
       botDifficulty: difficulty,
       requestUndo: localUndo, // the computer is a gracious opponent
       onSaveReplay: saveReplay,
+      onReportBug: reportBugLocal,
       send: (action: Action) => {
         armGoBack(action)
         runLocal(0, action)
@@ -760,6 +780,7 @@ export default function App() {
         roomCode: msg.code,
         mode: msg.mode ?? 'standard',
         send: (action: Action) => { armGoBack(action); net.action(action) },
+        onReportBug: (m: string) => net.reportBug(m), // server captures the replay-so-far + scenario
         requestUndo: () => net.send({ t: 'undoRequest' }),
         requestEditor: () => net.send({ t: 'editorRequest' }),
         sendChat: (msg: string) => net.chat(msg),
@@ -1125,6 +1146,8 @@ export default function App() {
           onCollection={() => setPage('collection')}
           onScenarios={() => setPage('scenarios')}
           onWatchReplay={() => setPage('replays')}
+          isAdmin={auth.isAdminUser()}
+          onOpenBugs={() => setPage('bugs')}
           initialRoomCode={pendingJoin}
         />
       )}
@@ -1132,14 +1155,21 @@ export default function App() {
         <ReplaysPage
           username={username}
           onBack={() => setPage('home')}
-          onWatch={(r) => { setReplayData(r); setPage('replay') }}
+          onWatch={(r) => { setReplayReturn('replays'); setReplayData(r); setPage('replay') }}
         />
       )}
       {page === 'replay' && replayData && (
         <ReplayViewer
           replay={replayData}
           mobile={mm.mobile}
-          onLeave={() => { setReplayData(null); setPage('replays') }}
+          onLeave={() => { setReplayData(null); setPage(replayReturn) }}
+        />
+      )}
+      {page === 'bugs' && (
+        <BugsAdminPage
+          onBack={() => setPage('home')}
+          onOpenReplay={(r) => { setReplayReturn('bugs'); setReplayData(r); setPage('replay') }}
+          onOpenScenario={(state) => startScenario(state)}
         />
       )}
       {page === 'decks' && <DeckBuilder onBack={() => setPage('home')} />}

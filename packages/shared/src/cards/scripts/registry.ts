@@ -519,8 +519,12 @@ export interface CardScript {
   /** an ally just tapped to defend (Valor's response window) */
   onAllyDefends?: (ctx: EffectAPI, defender: UnitState) => void
   /** abilities usable straight from the hand, surfaced on the owner's Avatar
-   *  (Moon Clan Werewolf, Sir Gareth, Slimy Mutants) */
+   *  (Sir Gareth, Slimy Mutants, I Am Colossus) */
   handAbilities?: (state: GameState, cardId: string, owner: PlayerId) => AbilityDef[]
+  /** while this card is held in `owner`'s hand, it grants an activated ability to each eligible ALLIED
+   *  unit in play — surfaced ON that unit (not the avatar), like a Skeleton raising a bone-raiser.
+   *  Moon Clan Werewolf: each of your Mortals may sacrifice itself to summon the Werewolf onto its square. */
+  handAbilitiesForAlly?: (state: GameState, cardId: string, owner: PlayerId, ally: UnitState) => AbilityDef[]
   /** site: extra threshold this instance provides (Valley of Delight, Sow the Earth) */
   siteExtraThreshold?: (state: GameState, site: { id: string; x: number; y: number; controller: PlayerId | null }) => Partial<Thresholds>
   /** site: provides no mana at all (Wedding Hall) */

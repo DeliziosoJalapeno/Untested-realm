@@ -2416,6 +2416,28 @@ export function removeUnitFromRealm(state: GameState, unitId: string): boolean {
       return rec.unitId !== unitId // the claimed unit itself left → forget it
     })
   }
+
+  // Pith Imp: a spell "stolen ... until it leaves the realm" returns to its OWNER's hand when the
+  // thieving Imp leaves (die/banish/bounce), if still unspent. A cast stolen spell is already gone
+  // (filtered out of flow.stolen at cast resolution), so it won't be found in a hand and is skipped.
+  const stolen = state.flow?.stolen as { cardId: string; unitId: string }[] | undefined
+  if (stolen?.length) {
+    state.flow!.stolen = stolen.filter((s) => {
+      if (s.unitId !== unitId) return true
+      const card = state.cards[s.cardId]
+      if (card) {
+        for (const p of state.players) { const i = p.hand.indexOf(s.cardId); if (i >= 0) { p.hand.splice(i, 1); break } }
+        const owner = state.players[card.owner]
+        if (!owner.hand.includes(s.cardId) && !owner.cemetery.includes(s.cardId)) {
+          owner.hand.push(s.cardId)
+          pushLog(state, card.owner, `${card.name} returns to its owner as the Pith Imp loses its grip.`)
+        }
+      }
+      // release the Imp-bound caster-lock on the returned card
+      if (state.flow?.lockedCards?.length) state.flow.lockedCards = state.flow.lockedCards.filter((l: any) => l.cardId !== s.cardId)
+      return false
+    })
+  }
   return true
 }
 
