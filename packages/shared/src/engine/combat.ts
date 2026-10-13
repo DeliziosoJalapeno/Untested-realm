@@ -510,12 +510,17 @@ registerCont('combat:defenders', (state, ctx: FightCtx, choice: string[]) => {
   if (!attacker) return
   const loc: Step = { x: attacker.x, y: attacker.y, region: attacker.region }
   let chosen = Array.isArray(choice) ? choice : []
-  // Lord of Fear: enemies can't defend alone
+  // Lord of Fear: enemies can't defend alone. FAQ (Oct 2026): a single ADDED defender IS allowed when
+  // the originally-attacked unit remains in the fight — then the chosen unit isn't defending alone (the
+  // attacked unit fights alongside it). Only a truly lone defender (attack on a site, or the attacked
+  // unit already gone) is cowed.
   if (chosen.length === 1) {
     const fear = Object.values(state.units).some(
       (u) => u.controller === attacker.controller && !u.silenced && getScript(u.name)?.enemiesCantDefendAlone,
     )
-    if (fear) {
+    const attacked = ctx.targetUnitId ? state.units[ctx.targetUnitId] : undefined
+    const attackedStillInFight = !!attacked && attacked.x === loc.x && attacked.y === loc.y && attacked.region === loc.region
+    if (fear && !attackedStillInFight) {
       pushLog(state, opponent(attacker.controller), 'Terror grips the lone defender — enemies of the Lord of Fear cannot defend alone.')
       chosen = []
     }

@@ -2,7 +2,7 @@ import { getCard } from '../cards/db'
 import { getScript, type AbilityDef, type EffectAPI } from '../cards/scripts/registry'
 import type { Action, ActionResult, GameState, PlayerId, UnitState } from './types'
 import { doMulligan, keepHand } from './setup'
-import { endTurn } from './turn'
+import { endTurn, reconcileControlledMana } from './turn'
 import { activePrompt, resolvePrompt, pushLog, pushPrompt, registerCont, drawCards, opponent, makeCtx, checkStateBased, killUnit, tapUnit, checkWard, luckyCandidates, bumpManaSpent, beginAreaReveal, sealAbilityReveal, revealAbility, setActionCredit, restoreActionCredit, reconcileSummonTax, completeDeferredDeaths, finishBattleCapture, runDamageEvent } from './effects'
 import { castSpell, playSite, affinity, validateTarget, legalTargetOptions, sameTargetRef, resolvePendingCast } from './casting'
 import { moveAttack, shootProjectile, pickUp, drop, enforceForcedAttacks, resolvePendingMoveAttack } from './combat'
@@ -38,6 +38,8 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
   // The Green Knight: proactively compel any enemy minion that can now attack it (at turn start and
   // after every action). Runs only when no prompt is open; it may open its own (order / defend) prompt.
   if (state.prompts.length === 0) enforceForcedAttacks(state)
+  // mana sources provide while controlled — a source lost this turn takes its mana back (Oct 2026)
+  if (state.prompts.length === 0) reconcileControlledMana(state)
   // a card effect may force the turn to end (e.g. Candlemas Monks' deathrite)
   if (state.flow?.endPhaseNow && state.phase === 'main' && state.prompts.length === 0) {
     state.flow.endPhaseNow = false

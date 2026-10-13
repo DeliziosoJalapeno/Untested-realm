@@ -402,6 +402,7 @@ function GameInner({
   const [zoneView, setZoneView] = useState<{ pid: PlayerId; zone: 'cemetery' | 'banished' | 'collection' } | null>(null)
   const [barInfo, setBarInfo] = useState<PlayerId | null>(null) // expandable player detail popup (thresholds, zones…)
   const [confirmConcede, setConfirmConcede] = useState(false) // concede asks first (it ends the game)
+  const [confirmEndTurn, setConfirmEndTurn] = useState(false) // ending with an untapped avatar asks first
   const [confirmKeep, setConfirmKeep] = useState(false) // keeping the opening hand asks first (mulligan doesn't)
   const [addTimeOpen, setAddTimeOpen] = useState(false) // gift-time-to-opponent chooser (click their clock)
   const [logsOpen, setLogsOpen] = useState(false) // mobile: the log is a toggleable overlay panel
@@ -1496,6 +1497,13 @@ function GameInner({
     ...(getScript(avatar.name)?.abilities ?? []),
     ...(() => { try { return grantedAbilities(st, avatar) } catch { return [] } })(),
   ].some((a: any) => a.key === 'animate')
+
+  // End your turn — but if it's actually YOUR turn and your avatar is still UNTAPPED (you never played
+  // a site / used its tap action), confirm first so you don't skip it by reflex.
+  function tryEndTurn() {
+    if (myTurn && avatar && !avatar.tapped) { setConfirmEndTurn(true); return }
+    send({ t: 'endTurn' })
+  }
 
   // Doomsday Cult: when MY revealed spellbook top is an Evil minion, clicking it in the player bar fires the
   // avatar's granted Cult ability (→ card to hand + auto-opened cast at the Cult). We judge castability from
@@ -3188,7 +3196,7 @@ function GameInner({
           <>
             <span className="spacer" />
             {!isSpectator && view.phase !== 'over' && (
-              <button className="tb-endturn" disabled={!myTurn && view.interject?.player !== me} onClick={() => send({ t: 'endTurn' })}>End turn</button>
+              <button className="tb-endturn" disabled={!myTurn && view.interject?.player !== me} onClick={tryEndTurn}>End turn</button>
             )}
             {isSpectator && <button onClick={onLeave}>Leave</button>}
           </>
@@ -3239,11 +3247,6 @@ function GameInner({
                   <span className="ri">↩</span><span className="rl">Undo</span>
                 </button>
               )}
-              {view.activePlayer !== me && view.phase === 'main' && !view.interject && !prompt && view.turn >= 2 && (
-                <button className="railbtn" title="Ask to take some forgotten actions" onClick={() => send({ t: 'requestInterject' })}>
-                  <span className="ri">✋</span><span className="rl">Wait!</span>
-                </button>
-              )}
               {view.interject?.player === me && (
                 <button className="railbtn selected" title="Resume their turn" onClick={() => send({ t: 'endInterject' })}>
                   <span className="ri">✅</span><span className="rl">Done</span>
@@ -3252,7 +3255,7 @@ function GameInner({
               <button className="railbtn danger" title="Concede the game" onClick={() => setConfirmConcede(true)}>
                 <span className="ri">🏳</span><span className="rl">Concede</span>
               </button>
-              <button className="railbtn railturn" title="End your turn" disabled={!myTurn && view.interject?.player !== me} onClick={() => send({ t: 'endTurn' })}>
+              <button className="railbtn railturn" title="End your turn" disabled={!myTurn && view.interject?.player !== me} onClick={tryEndTurn}>
                 <span className="ri">▶</span><span className="rl">End turn</span>
               </button>
             </>
@@ -3283,9 +3286,6 @@ function GameInner({
             <button ref={chatBtnRef} title="Chat — send a quick phrase" className={chatOpen ? 'selected' : ''} onClick={() => setChatOpen((v) => !v)}>💬</button>
           )}
           <button title="Log" className={logsOpen ? 'selected' : ''} onClick={() => setLogsOpen((v) => !v)}>📜</button>
-          {view.activePlayer !== me && view.phase === 'main' && !view.interject && !prompt && view.turn >= 2 && (
-            <button title="Wait, I forgot!" onClick={() => send({ t: 'requestInterject' })}>✋</button>
-          )}
           {view.interject?.player === me && (<button title="Done — resume their turn" className="selected" onClick={() => send({ t: 'endInterject' })}>✅</button>)}
           {/* vs-computer: fast (auto) / slow (step-through) as two icon buttons */}
           {botControl && view.phase !== 'over' && (<>
@@ -3372,6 +3372,17 @@ function GameInner({
           <div className="confirm-actions">
             <button data-confirm="1" className="danger" onClick={() => { setConfirmConcede(false); send({ t: 'concede' }) }}>🏳 Concede</button>
             <button data-cancel="1" onClick={() => setConfirmConcede(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {confirmEndTurn && (
+        <div className="modal confirm-concede" data-confirm-endturn>
+          <h3>End your turn?</h3>
+          <p>You didn't tap your avatar this turn (no site played or avatar ability used).</p>
+          <div className="confirm-actions">
+            <button data-confirm="1" onClick={() => { setConfirmEndTurn(false); send({ t: 'endTurn' }) }}>▶ End turn</button>
+            <button data-cancel="1" onClick={() => setConfirmEndTurn(false)}>Cancel</button>
           </div>
         </div>
       )}
@@ -3532,7 +3543,7 @@ function GameInner({
             <div className="idle-nudge-body">It’s been a couple of minutes since your last move.</div>
             <div className="idle-nudge-btns">
               <button className="idle-dismiss" onClick={() => setIdleNudge(false)}>Keep playing</button>
-              <button className="idle-endturn" onClick={() => { setIdleNudge(false); send({ t: 'endTurn' }) }}>End turn</button>
+              <button className="idle-endturn" onClick={() => { setIdleNudge(false); tryEndTurn() }}>End turn</button>
             </div>
           </div>
         </div>

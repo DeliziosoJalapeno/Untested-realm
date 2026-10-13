@@ -291,7 +291,7 @@ export function isBlanked(unit: UnitState): boolean {
 // effKeywords skips its own disable check (returns keywords un-stripped) so the cycle can't loop.
 let inDisableCheck = false
 export function effKeywords(state: GameState, unit: UnitState, seen: Set<string> = new Set()): ParsedKeywords {
-  if (unit.silenced || isBlanked(unit) || seen.has(unit.id)) return {}
+  if (isBlanked(unit) || seen.has(unit.id)) return {}
   // A DISABLED minion has NO abilities — including basic keyword abilities (Airborne, Burrowing,
   // Submerge, Voidwalk, Ranged, Charge, Stealth, Ward, Spellcaster, Strike-first, Lethal…). Same
   // blanket wipe as silence — so a disabled subsurface unit even loses Burrowing/Submerge and
@@ -304,8 +304,14 @@ export function effKeywords(state: GameState, unit: UnitState, seen: Set<string>
     if (dis) return {}
   }
   seen.add(unit.id)
-  const kw: ParsedKeywords = { ...getKeywords(unit.name) }
-  if (unit.isAvatar) kw.spellcaster = true
+  // SILENCE (rules: Oct 2026) removes only a card's own PRINTED keyword abilities and its ability to
+  // cast — NOT its characteristics, basic abilities, or keywords it gains from OTHER sources. So a
+  // silenced unit starts with NO printed keywords, but still collects every EXTERNAL grant below
+  // (carrier, carried artifacts, modifier grants, static grants). Codex example: a silenced Pudge
+  // Butcher keeps Immobile granted by Entangle Terrain but loses its own printed Immobile.
+  const silenced = !!unit.silenced
+  const kw: ParsedKeywords = silenced ? {} : { ...getKeywords(unit.name) }
+  if (unit.isAvatar && !silenced) kw.spellcaster = true // innate avatar Spellcaster — silence revokes it
   for (const mod of unit.modifiers) {
     if (mod.kind === 'keyword' && mod.keyword && !mod.remove) applyKeywordString(kw, mod.keyword)
   }
@@ -329,9 +335,12 @@ export function effKeywords(state: GameState, unit: UnitState, seen: Set<string>
       for (const k of script.bearerKeywords) applyKeywordString(kw, k)
     }
   }
-  // self-granted conditional keywords (Realm-Eater's post-meal torpor)
-  const selfKw = getScript(unit.name)?.selfKeywords
-  if (selfKw) for (const k of selfKw(state, unit)) applyKeywordString(kw, k)
+  // self-granted conditional keywords (Realm-Eater's post-meal torpor) are the card's OWN ability →
+  // removed by silence (printed-only rule); external grants below still apply.
+  if (!silenced) {
+    const selfKw = getScript(unit.name)?.selfKeywords
+    if (selfKw) for (const k of selfKw(state, unit)) applyKeywordString(kw, k)
+  }
   // (Evil Twin's strike-first is NOT a blanket keyword: it applies only when the
   // twin fights the minion it copied — handled target-aware in combat.ts.)
   // scripted global/static keyword grants
