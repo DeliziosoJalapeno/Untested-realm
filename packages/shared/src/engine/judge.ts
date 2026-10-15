@@ -14,6 +14,7 @@ import {
   drawCards,
   summonToken,
   destroySite,
+  banishSite,
   checkStateBased,
   newId,
   makeCtx,
@@ -230,12 +231,11 @@ export function applyJudge(state: GameState, player: PlayerId, op: JudgeOp): str
       const s = state.sites[op.siteId]
       if (!s) return 'No such site.'
       if (op.toBanish) {
-        // editor "remove completely": the site leaves the game (no cemetery, no
-        // rubble) and the square is cleared. Bypasses indestructible/ward guards.
-        const card = state.cards[s.cardId]
-        delete state.sites[op.siteId]
-        if (card && !card.isToken) state.players[card.owner].banished.push(card.id)
+        // editor "remove completely": the site leaves the game (banished, no cemetery, no rubble) and the
+        // square becomes an empty void — everything on it sinks into the void (banishSite). Same behaviour
+        // as Lord of the Void; distinct from "replace" (replaceSite) which keeps a site on the square.
         j(`removed ${s.name} from the game`)
+        banishSite(state, op.siteId)
       } else {
         j(`destroyed ${s.name}`)
         destroySite(state, op.siteId, player)

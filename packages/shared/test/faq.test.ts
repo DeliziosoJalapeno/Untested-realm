@@ -2464,20 +2464,38 @@ describe('FAQ: Mismanaged Mortuary', () => {
 })
 
 describe('FAQ: Lord of Fear', () => {
-  it('a lone defender is removed from the fight (enemies cannot defend alone)', () => {
+  // Oct 2026 FAQ: a single ADDED defender IS allowed as long as the originally-attacked unit stays in
+  // the fight — then the added unit isn't defending *alone*. Both strike the attacker.
+  it('allows a single added defender when the attacked unit remains in the fight', () => {
     const g = board()
     summonCard(g, 0, 'Lord of Fear', 2, 0)
     const attacker = summonToken(g, 'Foot Soldier', 0, 3, 0)!
     attacker.enteredTurn = 0
     const target = summonToken(g, 'Foot Soldier', 1, 3, 0)!
-    const wouldBe = summonToken(g, 'Foot Soldier', 1, 3, 0)!
-    wouldBe.enteredTurn = 0
+    const helper = summonToken(g, 'Foot Soldier', 1, 3, 0)!
+    helper.enteredTurn = 0
     act(g, 0, { t: 'moveAttack', unitId: attacker.id, path: [], attack: { unit: target.id } })
-    answer(g, [wouldBe.id]) // tries to defend alone
-    while (g.prompts.length) answer(g, g.prompts[0].kind === 'defend' ? [] : true)
-    // fear stripped the lone defender: the original target took the hit instead
+    answer(g, [helper.id])                                               // add one defender…
+    answer(g, true)                                                      // …and the target stays → not alone
+    answer(g, { strikerId: attacker.id, allocation: { [target.id]: 1 } }) // attacker's lone blow lands on target
+    // both defenders struck the 1/1 attacker (2 damage) → it dies; the target took the blow, helper lives
+    expect(g.units[attacker.id]).toBeUndefined()
     expect(g.units[target.id]).toBeUndefined()
-    expect(g.units[wouldBe.id]).toBeDefined()
+    expect(g.units[helper.id]).toBeDefined()
+  })
+
+  it('cows a TRULY lone defender — an enemy cannot defend a site alone', () => {
+    const g = board()
+    summonCard(g, 0, 'Lord of Fear', 2, 0)
+    const enemySite = siteAt(g, 3, 0)!; enemySite.controller = 1 // the attacker stands on this enemy site
+    const attacker = summonToken(g, 'Foot Soldier', 0, 3, 0)!; attacker.enteredTurn = -1
+    const wouldBe = summonToken(g, 'Foot Soldier', 1, 3, 0)!; wouldBe.enteredTurn = -1
+    act(g, 0, { t: 'moveAttack', unitId: attacker.id, path: [], attack: { site: enemySite.id } })
+    answer(g, [wouldBe.id]) // tries to defend the site alone → cowed, never commits
+    expect(wouldBe.tapped, 'the lone site-defender was cowed').toBe(false)
+    let guard = 0
+    while (g.prompts.length && guard++ < 10) answer(g, g.prompts[0].kind === 'defend' ? [] : true)
+    expect(guard, 'the fight resolved without an endless prompt loop').toBeLessThan(10)
   })
 })
 

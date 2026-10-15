@@ -202,7 +202,7 @@ export default function DeckBuilder({ onBack }: { onBack: () => void }) {
             <input
               value={importUrl}
               onChange={(e) => setImportUrl(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') importDeckFromLink() }}
+              onKeyDown={(e) => { if (e.key === 'Enter') void importDeckFromLink() }}
               placeholder="Paste a sorcerytcg.com deck link (https://sorcerytcg.com/decks/…)"
               style={{ flex: 1, padding: 6 }}
             />

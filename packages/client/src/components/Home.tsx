@@ -376,9 +376,9 @@ export default function Home({
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <b>{authMode === 'register' ? 'Create account' : 'Sign in'}</b>
               <input value={authUser} onChange={(e) => setAuthUser(e.target.value)} placeholder="username" maxLength={24}
-                onKeyDown={(e) => { if (e.key === 'Enter') submitAuth() }} />
+                onKeyDown={(e) => { if (e.key === 'Enter') void submitAuth() }} />
               <input type="password" value={authPass} onChange={(e) => setAuthPass(e.target.value)} placeholder="password"
-                onKeyDown={(e) => { if (e.key === 'Enter') submitAuth() }} />
+                onKeyDown={(e) => { if (e.key === 'Enter') void submitAuth() }} />
               <button onClick={submitAuth} disabled={authBusy || !authUser.trim() || !authPass}>
                 {authBusy ? '…' : authMode === 'register' ? 'Register' : 'Log in'}
               </button>

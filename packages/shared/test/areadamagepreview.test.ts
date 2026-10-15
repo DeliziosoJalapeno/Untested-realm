@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { newGame, keepBoth, placeSite, giveMana, waiveThreshold } from './helpers'
+import { newGame, keepBoth, placeSite, giveMana, waiveThreshold, fillSites } from './helpers'
 import { avatarOf, areaDamagePreview } from '../src'
 
 // The preview must return the exact ABSOLUTE squares (and printed damage) that the
@@ -59,6 +59,20 @@ describe('areaDamagePreview', () => {
     const g: any = newGame(); keepBoth(g)
     const av = avatarOf(g, 0); av.x = 0; av.y = 0
     expect(areaDamagePreview(g, 'Major Explosion', av.id, { at: { x: 4, y: 0 } })).toBeNull()
+  })
+
+  it('Major Explosion cast by an OMPHALOS: range is measured from the artifact, not the avatar', () => {
+    const g: any = newGame(); keepBoth(g); fillSites(g, 0)
+    avatarOf(g, 0).x = 0; avatarOf(g, 0).y = 0 // avatar FAR away
+    // a ground Char Omphalos (spellcaster artifact) at (2,2)
+    const acid = `comph${g.nextId++}`; g.cards[acid] = { id: acid, name: 'Char Omphalos', owner: 0 }
+    const artId = `aomph${g.nextId++}`
+    g.artifacts[artId] = { id: artId, cardId: acid, name: 'Char Omphalos', conjuredBy: 0, x: 2, y: 2, region: 'surface', carriedBy: null, tapped: false }
+
+    // 1 step from the Omphalos(2,2) → a preview appears (the OLD avatar-bound code returned null here)
+    expect(areaDamagePreview(g, 'Major Explosion', artId, { at: { x: 3, y: 2 } }), 'within 2 steps of the Omphalos').not.toBeNull()
+    // the AVATAR's own square (0,0) is 4 steps from the Omphalos → out of range, proving it isn't avatar-bound
+    expect(areaDamagePreview(g, 'Major Explosion', artId, { at: { x: 0, y: 0 } }), 'far from the Omphalos even though at the avatar').toBeNull()
   })
 
   it('Craterize: a 5x5 diamond (10/7/4/2/1) on sited squares around ground zero', () => {

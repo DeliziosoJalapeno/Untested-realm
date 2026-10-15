@@ -49,6 +49,24 @@ registerScript('Dragonlord', {
     if (kw.movement) out.push(`movement +${kw.movement}`)
     return out
   },
+  // "Gain its abilities this turn" means the Dragon's PASSIVE hooks too, not just its activated
+  // abilities — otherwise a copied ability that relies on one does nothing. Caelestis's "next Dragon
+  // cast here is free" sets a flag via its activated ability, but the (0)-cost DISCOUNT lives in its
+  // costModifier; since only cards IN PLAY contribute cost modifiers, the Dragonlord must forward it.
+  // onUnitEnters is forwarded too so Caelestis's "only the NEXT one" bookkeeping still fires.
+  costModifier: (state, sourceId, caster, cardName, at) => {
+    const self = state.units[sourceId]
+    const form = state.flow?.dragonForm
+    if (!self || !form || form.player !== self.controller || form.turn !== state.turn) return 0
+    const mod = getScript(form.name)?.costModifier
+    return mod ? mod(state, sourceId, caster, cardName, at) : 0
+  },
+  onUnitEnters: (ctx, entered) => {
+    const self = ctx.state.units[ctx.sourceId]
+    const form = ctx.state.flow?.dragonForm
+    if (!self || !form || form.player !== self.controller || form.turn !== ctx.state.turn) return
+    getScript(form.name)?.onUnitEnters?.(ctx, entered)
+  },
   abilities: [{
     key: 'invoke',
     label: '③ → Take on your Dragon’s aspect this turn',

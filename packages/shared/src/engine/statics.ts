@@ -218,10 +218,18 @@ export function isVoidAt(state: GameState, x: number, y: number): boolean {
   return !!getScript(site.name)?.siteAlsoVoid && !siteSilenced(state, site)
 }
 
+// Cycle guard for the recursion below (a silencer site that is itself silenced silences nothing): two
+// Smokestacks silencing each other can't loop; the mutual case resolves in the queried site's favour.
+const siteSilenceStack = new Set<string>()
+
 export function siteSilenced(state: GameState, site: { x: number; y: number }): boolean {
   // Bedrock "can't be modified" — it can't be silenced or lose its abilities (FAQ).
   const here = Object.values(state.sites).find((s) => s.x === site.x && s.y === site.y && !s.isRubble)
   if (here && getScript(here.name)?.unmodifiableSite) return false
+  const sKey = `${site.x},${site.y}`
+  if (siteSilenceStack.has(sKey)) return false
+  siteSilenceStack.add(sKey)
+  try {
   for (const ss of (state.flow?.siteSilences ?? []) as { siteId: string }[]) {
     const src = state.sites[ss.siteId]
     if (src && nearbySquaresW(state, src.x, src.y).some((q) => q.x === site.x && q.y === site.y)) return true
@@ -229,8 +237,13 @@ export function siteSilenced(state: GameState, site: { x: number; y: number }): 
   for (const src of Object.values(state.sites)) {
     if (src.isRubble || (src.x === site.x && src.y === site.y)) continue // never itself
     const script = getScript(src.name)
-    if (script?.silencesNearbySites && nearbySquaresW(state, src.x, src.y).some((q) => q.x === site.x && q.y === site.y)) return true
-    if (script?.silencesSiteAt && script.silencesSiteAt(state, src, site)) return true
+    // only an in-range silencer matters — check that FIRST so we never recurse into ordinary sites (which
+    // would blow up: siteSilenced is called in hot loops and most boards have several sites).
+    const silencesThis = (!!script?.silencesNearbySites && nearbySquaresW(state, src.x, src.y).some((q) => q.x === site.x && q.y === site.y))
+      || (!!script?.silencesSiteAt && script.silencesSiteAt(state, src, site))
+    if (!silencesThis) continue
+    if (siteSilenced(state, { x: src.x, y: src.y })) continue // a silencer that is itself silenced silences nothing (FAQ layering)
+    return true
   }
   // units that silence specific sites (Sinterfee)
   for (const u of Object.values(state.units)) {
@@ -247,6 +260,17 @@ export function siteSilenced(state: GameState, site: { x: number; y: number }): 
     const full = siteAt(state, site.x, site.y)
     if (typeof f === 'function' && full && f(state, full)) return true
   }
+  return false
+  } finally { siteSilenceStack.delete(sKey) }
+}
+
+/** Is this unit "Protected from Sites" (codex: Protected from X) — so no site ability may target,
+ *  damage, destroy, banish, modify, move or impede it? Key to the City ("Bearer ignores site
+ *  abilities") grants this to its bearer; Yog-Sothoth ("ignores the abilities of sites") to itself.
+ *  Covers passive site grants (keywords/power), site entry filters, and site enter-triggers. */
+export function protectedFromSites(state: GameState, unit: UnitState): boolean {
+  if (unit.carrying.some((id) => getScript(state.artifacts[id]?.name ?? '')?.bearerIgnoresSites)) return true
+  if (!!getScript(unit.name)?.ignoresSites && !unit.silenced) return true
   return false
 }
 
@@ -550,10 +574,7 @@ function collectStaticGrants(state: GameState, unit: UnitState): string[] {
     const g = getScript(aura.name)?.auraGrantsKeywords
     if (g) for (const k of g(state, aura, unit)) out.push(k)
   }
-  const deafToSites =
-    unit.carrying.some((id) => getScript(state.artifacts[id]?.name ?? '')?.bearerIgnoresSites) ||
-    (!!getScript(unit.name)?.ignoresSites && !unit.silenced)
-  if (!deafToSites) for (const site of src.sites) { // Key to the City: the bearer ignores site abilities
+  if (!protectedFromSites(state, unit)) for (const site of src.sites) { // Key to the City: the bearer ignores site abilities
     const g = getScript(site.name)?.siteGrantsKeywords
     if (g && !siteSilenced(state, site)) for (const k of g(state, site, unit)) out.push(k)
   }
@@ -620,10 +641,7 @@ function powerModifiers(state: GameState, unit: UnitState): number {
     const g = getScript(art.name)?.artifactGrantsPower
     if (g && !artifactSilenced(state, art)) n += g(state, art.id, unit)
   }
-  const unitDeafToSites =
-    unit.carrying.some((id) => getScript(state.artifacts[id]?.name ?? '')?.bearerIgnoresSites) ||
-    (!!getScript(unit.name)?.ignoresSites && !unit.silenced)
-  if (!unitDeafToSites) for (const site of src.sites) {
+  if (!protectedFromSites(state, unit)) for (const site of src.sites) {
     const g = getScript(site.name)?.siteGrantsPower
     if (g && !siteSilenced(state, site)) n += g(state, site, unit)
   }
@@ -740,12 +758,23 @@ export function silenceImmune(state: GameState, unit: UnitState): boolean {
   return unit.modifiers.some((m) => m.kind === 'keyword' && m.keyword === 'unsilenceable')
 }
 
+// Guards the disabledByEffect recursion below: deciding whether a disabler (Basilisk/Gorgon/Root Spider) is
+// ITSELF disabled re-enters disabledByEffect for that source. This set breaks cycles (mutual disablers).
+const disableEvalStack = new Set<string>()
+
 export function disabledByEffect(state: GameState, unit: UnitState): boolean {
   if (isUnmodifiable(state, unit)) return false // can't be disabled
   if (getScript(unit.name)?.immuneToDisable && !unit.silenced) return false
   if (unit.modifiers.some((m) => m.kind === 'keyword' && m.keyword === 'undisableable')) return false
   if (directlyDisabled(state, unit)) return true
   if (unit.isAvatar) return false
+  // A disabler that is itself disabled/silenced has no abilities (Codex), so it disables nothing. The loops
+  // below therefore skip a source that is disabledByEffect — including an AREA-disabled one (a Basilisk under
+  // a Root Spider, a mutual Gorgon), which plain directlyDisabled missed. The stack breaks the cycle when two
+  // minions disable each other (each query resolves it in its own favour, as before).
+  if (disableEvalStack.has(unit.id)) return false
+  disableEvalStack.add(unit.id)
+  try {
   const brookHits = (): boolean => {
     for (const ad of (state.flow?.areaDisables ?? []) as { siteId: string }[]) {
       const src = state.sites[ad.siteId]
@@ -778,7 +807,7 @@ export function disabledByEffect(state: GameState, unit: UnitState): boolean {
   if (ix && ix.gen === state.nextId) {
     for (const oid of ix.u) {
       const o = state.units[oid]
-      if (!o || o.id === unit.id || o.silenced || directlyDisabled(state, o)) continue
+      if (!o || o.id === unit.id || o.silenced || disabledByEffect(state, o)) continue
       if (disablesNow(o.name, o.id)) return true
     }
     for (const aid of ix.a) {
@@ -793,7 +822,7 @@ export function disabledByEffect(state: GameState, unit: UnitState): boolean {
     if (ix.area && brookHits()) return true
   } else {
     for (const o of Object.values(state.units)) {
-      if (o.id === unit.id || o.silenced || directlyDisabled(state, o)) continue
+      if (o.id === unit.id || o.silenced || disabledByEffect(state, o)) continue
       if (disablesNow(o.name, o.id)) return true
     }
     for (const a of Object.values(state.artifacts)) {
@@ -807,6 +836,7 @@ export function disabledByEffect(state: GameState, unit: UnitState): boolean {
   const selfDisabled = getScript(unit.name)?.selfDisabled
   if (selfDisabled && !unit.silenced && selfDisabled(state, unit)) return true
   return false
+  } finally { disableEvalStack.delete(unit.id) }
 }
 
 // The "Court" minions. Overflowing Court's "Other Courts are disabled" shuts these off too — not just
@@ -946,9 +976,9 @@ export function isArtifactUnit(state: GameState, u: UnitState): boolean {
   return false
 }
 
-/** Saint of Redemption: while she stands, NO minion anywhere is Evil */
+/** Saint of Redemption: while she stands (and is neither silenced nor disabled), NO minion is Evil */
 export function saintWatches(state: GameState): boolean {
-  return Object.values(state.units).some((x) => x.name === 'Saint of Redemption' && !x.silenced)
+  return Object.values(state.units).some((x) => x.name === 'Saint of Redemption' && !x.silenced && !isDisabled(state, x))
 }
 
 /** INTRINSIC Evil: Demon/Undead/Monster by subtype (honoring real subtype overrides like Corruptor) or

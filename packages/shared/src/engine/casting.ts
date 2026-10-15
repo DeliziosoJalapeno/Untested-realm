@@ -2,7 +2,7 @@ import { getCard, cardSupport, getKeywords } from '../cards/db'
 import { getScript, type CardScript, type TargetRef, type TargetSpec } from '../cards/scripts/registry'
 import type { GameState, PlayerId, Region, Thresholds, UnitState } from './types'
 import { adjacentSquares, adjacentSquaresW, avatarOf, chebyshev, chebyshevW, orthAdjacentWrapped, nearbySquares, nearbySquaresW, siteAt, sitesOf, inBounds, unitsAt, occupies, occupiedSquares, GRID_W, GRID_H, edgesConnected, aura2x2Squares } from './grid'
-import { newId, pushLog, makeCtx, checkStateBased, opponent, emitUnitEnters, emitEvent, isMagicProtected, loseLife, checkWard, pushPrompt, registerCont, runCont, toCemetery, bumpManaSpent, beginAreaReveal, recordAffectedSites, snapshotRealm, recordTouchedSites, sealSpellReveal, setActionCredit, restoreActionCredit, firesGenesisOnEntry, recordManaGain, deferTurnStep, settleEntering, runDamageEvent } from './effects'
+import { newId, pushLog, makeCtx, checkStateBased, opponent, emitUnitEnters, emitEvent, isMagicProtected, loseLife, checkWard, pushPrompt, registerCont, runCont, toCemetery, bumpManaSpent, beginAreaReveal, recordAffectedSites, snapshotRealm, recordTouchedSites, sealSpellReveal, setActionCredit, restoreActionCredit, firesGenesisOnEntry, recordManaGain, deferTurnStep, settleEntering, runDamageEvent, notifySilencerEntered } from './effects'
 import { affinity, effKeywords, isDisabled, disabledByEffect, canExistIn, siteSilenced, siteDisabledByArtifact, artifactSilenced, artScript, zoneAccessToll, applyKeywordString, isArtifactUnit, isEvilUnit, isEvilUnitIntrinsic, isEvilCardName, isEvilCardNameFor, cardSubtypesFor, collectionBanned, payZoneToll, takeFromCollection, carriedInside, isBlanked, isCarriableArtifact, terrainAt } from './statics'
 import { siteEntryAllowed } from './movement'
 import { TRAP_DISGUISE, trapElementOf } from './traps'
@@ -227,6 +227,9 @@ export function enterSite(
   if (!trapElement && script?.genesis && !siteSilenced(state, { x, y })) script.genesis(makeCtx(state, siteId, player, []))
   const placed = state.sites[siteId]
   if (placed) emitEvent(state, 'onSitePlayed', player, { id: placed.id, x: placed.x, y: placed.y, name: placed.name })
+  // Silencing a nearby site is a "modify" — a freshly-played silencer (Smokestacks, Fields of Phyxis)
+  // triggers an opponent's Vindictive Nation whose nearby allied site (or the Vindictive itself) it silences.
+  if (placed) notifySilencerEntered(state, placed)
   checkStateBased(state)
   return siteId
 }
@@ -890,11 +893,15 @@ function resolveMagicCast(state: GameState, cardId: string, castName: string, pl
   }
   const snap = snapshotRealm(state)
   const prevCredit = setActionCredit(state, 2, [caster.id])
+  // a client-chosen oversized placement (anchor + rotation) rides in `extra`; ctx.teleport consumes it
+  // for the relocation — so ANY teleport spell (not just Blink) respects it. Clear any leftover after.
+  if (extra?.teleportPlace) state.flow = { ...(state.flow ?? {}), teleportPlace: extra.teleportPlace }
   if (script?.onCast) {
     // one simultaneous damage event: any minion the spell hurts (an area blast) resolves all its
     // reduction/prevention before a single death is settled (see runDamageEvent).
     runDamageEvent(state, () => script.onCast!(makeCtx(state, caster.id, player, targets, at, extra, { kind: 'magic', name: castName, elements: def.elements })))
   }
+  if (state.flow?.teleportPlace) delete state.flow.teleportPlace
   const forcedBanish = (state.flow?.banishAfterCast ?? []).includes(cardId)
   if (forcedBanish) state.flow.banishAfterCast = state.flow.banishAfterCast.filter((id: string) => id !== cardId)
   if ((fromCemetery && script?.castFromCemetery?.banishAfter) || forcedBanish) {

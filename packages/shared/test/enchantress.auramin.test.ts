@@ -5,7 +5,7 @@
 //   2. If an opponent takes control of the minion, they control the AURA it settles back into.
 import { describe, it, expect } from 'vitest'
 import { newGame, keepBoth, summonCard, placeSite } from './helpers'
-import { checkStateBased, makeCtx, getScript } from '../src'
+import { checkStateBased, makeCtx, getScript, deanimateExpiredAuras } from '../src'
 
 function animatedAura(g: any, controller: 0 | 1 = 0) {
   const cardId = `caura${g.nextId++}`
@@ -42,7 +42,7 @@ describe('Enchantress animated aura minion', () => {
     g.flow.auraAnimations = [{ unitId, player: 0, turn: 0 }] // animated by seat 0 on turn 0
     g.turn = 1 // a later turn → the animation ends at seat 0's start of turn
 
-    getScript('Enchantress')!.startOfTurn!(makeCtx(g, unitId, 0, []))
+    deanimateExpiredAuras(g, 0) // central de-animation (was the Enchantress's startOfTurn hook)
 
     expect(g.units[unitId], 'the minion settled back into an aura').toBeFalsy()
     expect(g.auras[auraId], 'the aura persists').toBeTruthy()

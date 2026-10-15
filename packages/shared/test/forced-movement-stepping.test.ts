@@ -80,7 +80,7 @@ describe('forced multi-step movement steps through squares', () => {
     const g: GameState = newGame(); keepBoth(g); giveMana(g, 0, 20)
     for (const x of [0, 1, 3, 4]) placeSite(g, 0, 'Rustic Village', x, 2)
     placeSite(g, 0, 'Rustic Village', 2, 2)
-    placeSite(g, 1, 'Grim Wastes', 2, 3)
+    placeSite(g, 1, 'Wasteland', 2, 3)
     const basilisk = summonCard(g, 1, 'Hillock Basilisk', 2, 3); basilisk.enteredTurn = -1
 
     // passing THROUGH (2,2) to rest at (4,2): not adjacent at rest → not disabled

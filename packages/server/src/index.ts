@@ -211,8 +211,10 @@ function findRoom(key: unknown): Room | undefined {
   return rooms.get(k.toUpperCase()) ?? [...rooms.values()].find((r) => r.id === k.toLowerCase())
 }
 
+// seat reconnect credential — a bearer secret, so it must be unguessable (NOT Math.random,
+// which is a predictable PRNG an attacker could reproduce to hijack a seat).
 function makeToken(): string {
-  return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
+  return randomUUID() + randomUUID().replace(/-/g, '')
 }
 
 /** Notify everyone connected to a room, then close their sockets — used when the room is being torn down.

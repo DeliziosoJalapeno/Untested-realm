@@ -42,11 +42,15 @@ registerScript('Waveshaper', {
       ctx.floodSite(site.id)
       for (const u of unitsAt(ctx.state, site.x, site.y, 'surface')) {
         const kw = getKeywords(u.name)
-        if (!u.isAvatar && !kw.submerge && !u.tapped) {
+        if (u.isAvatar || kw.submerge) continue
+        // "Tap minions without submerge there. They don't untap the next time they would."
+        // The untap-skip applies to every non-submerge minion here — including one already tapped
+        // (it still must miss its next untap), so the skip marker is set regardless of tap state.
+        if (!u.tapped) {
           u.tapped = true
-          u.counters = { ...u.counters, skipUntap: 1 }
           pushLog(ctx.state, ctx.controller, `${u.name} is dragged under the churn.`)
         }
+        u.counters = { ...u.counters, skipUntap: 1 }
       }
     },
   },

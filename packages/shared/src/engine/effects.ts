@@ -5,8 +5,8 @@ import { getCard, getKeywords, findCard } from '../cards/db'
 import { getScript, type DamageSource, type EffectAPI, type TargetRef, type TargetSpec } from '../cards/scripts/registry'
 import type { GameState, PlayerId, Region, UnitState, SiteState, Prompt, DeckName } from './types'
 import { avatarOf, siteAt, unitsAt, edgesConnected, aura2x2Squares, occupiedSquares, inBounds, GRID_W, GRID_H, squareLabel, nearbySquaresW, orthAdjacentWrapped } from './grid'
-import { affinity, effAttack, effDefence, effKeywords, canExistIn, siteSilenced, artifactSilenced, artScript, isEvilUnit, isEvilUnitIntrinsic, isDisabled, isUnmodifiable, silenceImmune, footprintAllTerrain, terrainAt, buildStaticGrantIndex, isVoidAt } from './statics'
-import { siteEntryAllowed } from './movement' // runtime-only use (teleport closure); import cycle is safe
+import { affinity, effAttack, effDefence, effKeywords, canExistIn, siteSilenced, artifactSilenced, artScript, isEvilUnit, isEvilUnitIntrinsic, isDisabled, isUnmodifiable, silenceImmune, footprintAllTerrain, terrainAt, buildStaticGrantIndex, isVoidAt, protectedFromSites } from './statics'
+import { siteEntryAllowed, multiSquareDestSquares, oversizedTeleportPlacements } from './movement' // runtime-only use (teleport closure); import cycle is safe
 import { awardAchievement } from './achievements.catalog' // types-only module → no cycle
 
 export function newId(state: GameState, prefix: string): string {
@@ -1978,7 +1978,9 @@ export function emitEvent(
 ): void {
   const listeners: { id: string; name: string; controller: PlayerId }[] = []
   for (const u of Object.values(state.units)) {
-    if (!u.silenced) listeners.push({ id: u.id, name: u.name, controller: u.controller })
+    // a silenced OR disabled unit has no triggered abilities (Codex). isDisabled already exempts a unit
+    // that is itself entering/acting/in a battle, so its own on-entry/strike triggers still fire.
+    if (!u.silenced && !isDisabled(state, u)) listeners.push({ id: u.id, name: u.name, controller: u.controller })
   }
   for (const s of Object.values(state.sites)) {
     if (s.controller !== null && !siteSilenced(state, s)) listeners.push({ id: s.id, name: s.name, controller: s.controller })
@@ -2008,9 +2010,17 @@ export function emitEvent(
       if (getScript(name)?.listensFromHand) listeners.push({ id: cardId, name, controller: p.id })
     }
   }
+  // a unit "Protected from Sites" (Key to the City bearer, Yog-Sothoth) ignores site enter-triggers
+  // aimed at it (Bottomless Pit's kill, Dark Alley's stealth, a flipped-Druid site's damage…) — the
+  // entering unit is args[0] of onUnitEntersSquare, and these handlers only ever act on that mover.
+  const enteringProtected =
+    hook === 'onUnitEntersSquare' && args[0] && typeof args[0] === 'object' && 'carrying' in args[0]
+      ? protectedFromSites(state, args[0] as UnitState)
+      : false
   for (const l of listeners) {
     const fn = (getScript(l.name) as any)?.[hook]
     if (fn) {
+      if (enteringProtected && state.sites[l.id]) continue
       // the listener may have left play due to an earlier listener's effect
       const inZone = state.players.some((p) => p.cemetery.includes(l.id) || p.hand.includes(l.id))
       if (!state.units[l.id] && !state.sites[l.id] && !state.artifacts[l.id] && !state.auras[l.id] && !inZone) continue
@@ -2289,9 +2299,51 @@ export function settleEntering(state: GameState, unitId: string): void {
       emitEvent(state, 'onUnitEntersSquare', u, { x: -1, y: -1, region: 'offboard' as Region })
     }
   }
+  // Deathspeaker's echo: a copy that must be banished once its Genesis resolves (Archangel Michael's
+  // "step" prompt etc.). Banishing it inline after effectSummonUnit would cut a prompting Genesis short,
+  // so the banish waits for the entry to settle — here, after the Genesis prompt chain has fully drained.
+  const bos = state.flow?.banishOnSettle as string[] | undefined
+  if (bos?.includes(unitId)) {
+    state.flow!.banishOnSettle = bos.filter((id) => id !== unitId)
+    const victim = state.units[unitId]
+    if (victim) {
+      pushLog(state, victim.controller, `${victim.name}'s echo fades back into death.`)
+      banishUnit(state, unitId)
+    }
+  }
 }
 registerCont('summon:settle', (state, ctx: { unitId: string }) => {
   settleEntering(state, ctx.unitId)
+  checkStateBased(state)
+})
+
+/** Teleport a unit to a destination, but if it's OVERSIZED/rigid and has MORE THAN ONE legal placement
+ *  (anchor corner / rotation) there, first let its controller pick — so an ability whose destination is
+ *  chosen by an ENGINE prompt (Avatar of Air's "fly to a nearby site") gets the same placement/rotation
+ *  choice the client offers for a target-square teleport spell. One legal placement → teleport directly;
+ *  a single-square unit → teleport directly. The chosen index is answered via a `teleportPlace` prompt. */
+export function teleportWithPlacement(ctx: EffectAPI, unitId: string, dest: { x: number; y: number }, region?: Region): void {
+  const u = ctx.state.units[unitId]
+  if (!u) return
+  const multi = u.size === '2x2' || (u.extraSquares?.length ?? 0) > 0
+  const places = multi ? oversizedTeleportPlacements(ctx.state, u, dest) : []
+  if (!multi || places.length <= 1) { ctx.teleport(unitId, dest.x, dest.y, region ?? u.region); return }
+  // push the prompt DIRECTLY with the global cont (ctx.ask would namespace the cont to the source
+  // script, where 'core:teleportPlace' isn't registered).
+  pushPrompt(ctx.state, {
+    player: u.controller,
+    kind: 'teleportPlace',
+    title: `How does ${u.name} land?`,
+    data: { placements: places, unitId, region: region ?? u.region },
+    cont: 'core:teleportPlace',
+    ctx: { unitId, region: region ?? u.region, placements: places },
+  })
+}
+registerCont('core:teleportPlace', (state, ctx: { unitId: string; region?: Region; placements: { x: number; y: number; shape?: { dx: number; dy: number }[] }[] }, choice) => {
+  const idx = typeof choice === 'number' ? choice : Array.isArray(choice) ? choice[0] : 0
+  const p = ctx.placements[idx] ?? ctx.placements[0]
+  const u = state.units[ctx.unitId]
+  if (u && p) makeCtx(state, ctx.unitId, u.controller, []).teleport(ctx.unitId, p.x, p.y, ctx.region ?? u.region, p.shape ? { shape: p.shape } : undefined)
   checkStateBased(state)
 })
 
@@ -2448,12 +2500,38 @@ export function notifySiteInterference(
   kind: 'modify' | 'move' | 'destroy',
   site: { id: string; x: number; y: number; controller: PlayerId | null },
   by: PlayerId | null,
+  bypassOwnSilence = false,
 ): void {
   for (const s of Object.values(state.sites)) {
     const hook = getScript(s.name)?.onSiteInterference
-    if (hook && !s.isRubble && s.controller !== null && !siteSilenced(state, s)) {
-      hook(makeCtx(state, s.id, s.controller, []), kind, site, by)
-    }
+    if (!hook || s.isRubble || s.controller === null) continue
+    // A silenced site has lost its abilities and normally can't trigger. EXCEPTION (Codex — Triggered
+    // Ability): if THIS interference is the very act that removed/silenced s, s still triggers. The verbatim
+    // FAQ: "as Vindictive Nation becomes silenced, its ability triggers" — being silenced counts as the
+    // modification, and fires despite the silence. Only the interfered-with site itself gets this pass.
+    if (siteSilenced(state, s) && !(bypassOwnSilence && s.id === site.id)) continue
+    hook(makeCtx(state, s.id, s.controller, []), kind, site, by)
+  }
+}
+
+/** Silencing a site is a "modify" of it (its printed abilities are removed). When a SITE that silences
+ *  other sites (Smokestacks of Gnaak, Fields of Phyxis) ENTERS the realm, every site it silences is treated
+ *  as modified by that site's controller — so an opponent's Vindictive Nation whose nearby allied site
+ *  (INCLUDING the Vindictive itself) is silenced loses the silencer's controller 1 life, even though the act
+ *  silences it (Codex — Triggered Ability; verbatim FAQ: "the act of silencing literally triggers Vindictive
+ *  Nation's ability. So as Vindictive Nation becomes silenced, its ability triggers"). */
+export function notifySilencerEntered(state: GameState, silencer: SiteState): void {
+  const sc = getScript(silencer.name)
+  if ((!sc?.silencesNearbySites && !sc?.silencesSiteAt) || silencer.controller === null) return
+  const silences = (S: SiteState) => {
+    if (S.id === silencer.id || S.isRubble) return false
+    if (sc.silencesNearbySites && nearbySquaresW(state, silencer.x, silencer.y).some((q) => q.x === S.x && q.y === S.y)) return true
+    if (sc.silencesSiteAt && sc.silencesSiteAt(state, silencer, { x: S.x, y: S.y })) return true
+    return false
+  }
+  for (const S of Object.values(state.sites)) {
+    if (!silences(S)) continue
+    notifySiteInterference(state, 'modify', { id: S.id, x: S.x, y: S.y, controller: S.controller }, silencer.controller, true)
   }
 }
 
@@ -2586,6 +2664,41 @@ export function destroySite(state: GameState, siteId: string, sourcePlayer?: Pla
   const hook = getScript(site.name)?.onSelfDestroyed
   if (hook) hook(makeCtx(state, siteId, site.controller ?? sourcePlayer ?? 0, []), { x, y })
   checkStateBased(state)
+}
+
+/** A site has been REMOVED from (x,y) leaving the square EMPTY — i.e. a void (NOT destroyed-to-rubble,
+ *  NOT replaced by another site). Everything that stood on it falls INTO the void: every non-avatar unit
+ *  (any region) and its cargo, plus every loose ground artifact, is set to region 'void'; checkStateBased
+ *  then banishes any minion without Voidwalk (rulebook) while a voidwalker safely remains. Setting the
+ *  region is essential — canExistIn() treats 'surface' as always legal, so a unit left on the phantom
+ *  "surface" of a void would otherwise linger uncorrected. Oversized 2x2 bodies are left to their own
+ *  footprint-legality handling in checkStateBased (they fall to solid ground or are banished there). */
+export function sinkSquareIntoVoid(state: GameState, x: number, y: number): void {
+  for (const u of unitsAt(state, x, y)) {
+    if (u.isAvatar || u.size === '2x2') continue
+    u.region = 'void'
+    for (const artId of u.carrying) { const a = state.artifacts[artId]; if (a) a.region = 'void' }
+    for (const uid of u.carryingUnits ?? []) { const cu = state.units[uid]; if (cu) cu.region = 'void' }
+  }
+  for (const a of Object.values(state.artifacts)) {
+    if (!a.carriedBy && a.x === x && a.y === y) a.region = 'void'
+  }
+  checkStateBased(state)
+}
+
+/** Banish a site outright: its card goes to its owner's banished zone, the square is left EMPTY (a void),
+ *  and everything standing on it falls into the void (sinkSquareIntoVoid). This is the SHARED path for any
+ *  effect that removes a site WITHOUT leaving rubble or a replacement — Lord of the Void's "may banish"
+ *  and the editor's "remove completely". It is deliberately NOT used by destroy-to-rubble (destroySite)
+ *  or by site replacement (playSite / the editor's replaceSite), where the square keeps a site. */
+export function banishSite(state: GameState, siteId: string): void {
+  const site = state.sites[siteId]
+  if (!site) return
+  const { x, y } = site
+  const card = state.cards[site.cardId]
+  delete state.sites[siteId]
+  if (card && !card.isToken) state.players[card.owner].banished.push(card.id)
+  sinkSquareIntoVoid(state, x, y)
 }
 
 // ---- state-based checks ----
@@ -3285,6 +3398,16 @@ export function makeCtx(
       const u = state.units[unitId]
       if (!u) return
       const push = !!opts?.push
+      // honour a client-chosen oversized PLACEMENT (anchor + rotation) for a GENUINE (non-push) teleport
+      // of a multi-square unit — stashed in flow.teleportPlace by castSpell from extra.teleportPlace, so
+      // ANY teleport spell/ability (not just Blink) respects it. Consumed once; a forced push never claims
+      // it, so a shove elsewhere in the same cast can't steal the choice.
+      let shape = opts?.shape
+      if (!push && (u.size === '2x2' || (u.extraSquares?.length ?? 0) > 0) && state.flow?.teleportPlace) {
+        const pl = state.flow.teleportPlace as { x: number; y: number; shape?: { dx: number; dy: number }[] }
+        delete state.flow.teleportPlace
+        x = pl.x; y = pl.y; shape = pl.shape
+      }
       // Cage of Sidrak (golden rule): a locked minion can only leave via TELEPORTATION-based forced
       // movement. A push/pull/drag (River Rapids, Riptide, Scatter…) can't take it out; a genuine
       // Teleport (Blink, Swap) frees it — so we drop the cage link before it moves.
@@ -3396,9 +3519,27 @@ export function makeCtx(
         pushLog(state, u.controller, `${u.name} can't enter there.`)
         return
       }
+      // Oversized (2x2) / rigid-body (wall, Rack-stretched) units must land their WHOLE footprint on a
+      // legal set of locations — all parts in-bounds (Magellan-wrap aware) and sited (rulebook: a
+      // teleported oversized unit goes "to a location or set of locations that conforms to its size
+      // restrictions and is otherwise legal to occupy"). A relocation that would strand a part off-board
+      // or over a void is refused. `opts.shape` carries a player-chosen ROTATION of a wall's footprint;
+      // a 2x2 needs none — its anchor corner is just the chosen (x,y).
+      const multiBody = u.size === '2x2' || (u.extraSquares?.length ?? 0) > 0
+      const footprint = multiBody ? multiSquareDestSquares(state, u, { x, y }, shape) : null
+      if (multiBody && (destRegion !== 'surface' || !footprint)) {
+        pushLog(state, u.controller, `${u.name} can't fit there.`)
+        return
+      }
       u.x = x
       u.y = y
       if (region) u.region = region
+      // apply a chosen rotation to a rigid body — re-lay its extra parts around the new anchor
+      if (shape && footprint && (u.extraSquares?.length ?? 0) > 0) {
+        u.extraSquares = footprint
+          .filter((s) => !(s.x === x && s.y === y))
+          .map((s) => ({ x: s.x, y: s.y, region: 'surface' as Region }))
+      }
       // A square with no site IS the void (rulebook: "A square without a site is part of the void
       // region"). A non-avatar RELOCATED onto one enters the void region; checkStateBased then
       // banishes it unless it has Voidwalk. Only on an actual move (a same-square no-op pull, e.g.

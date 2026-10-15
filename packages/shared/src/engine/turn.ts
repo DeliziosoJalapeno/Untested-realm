@@ -61,6 +61,32 @@ export function reconcileControlledMana(state: GameState): void {
   state.flow!.manaBase![player] = cur
 }
 
+/** Animated auras (Enchantress, or anyone who borrowed her animate — a masked Imposter, Vivien…) revert
+ *  to mere enchantments at the start of the ANIMATOR's next turn. The lifetime belongs to the ANIMATION
+ *  (flow.auraAnimations), so this runs centrally at beginTurn — NOT via the Enchantress's own startOfTurn
+ *  hook, which never fired once she left the realm, nor when an Imposter (whose forwarded hooks don't
+ *  include a de-animator) did the animating. The aura itself persists; only the minion dissolves, and
+ *  whoever controls the minion keeps the reverted aura. */
+export function deanimateExpiredAuras(state: GameState, player: PlayerId): void {
+  const anims = (state.flow?.auraAnimations ?? []) as { unitId: string; player: PlayerId; turn: number }[]
+  if (!anims.length) return
+  const keep: typeof anims = []
+  for (const a of anims) {
+    if (a.player === player && a.turn < state.turn) {
+      const u = state.units[a.unitId]
+      if (u) {
+        const aura = state.auras[String(u.counters?.animatedAura ?? '')]
+        if (aura) aura.controller = u.controller
+        delete state.units[a.unitId]
+        pushLog(state, player, `${u.name} settles back into a mere enchantment.`)
+      }
+    } else {
+      keep.push(a)
+    }
+  }
+  state.flow!.auraAnimations = keep
+}
+
 export function beginTurn(state: GameState, player: PlayerId): void {
   // skipped turns pass straight to the opponent (Vaults of Zul)
   if (state.flow?.skipTurn?.[player]) {
@@ -97,6 +123,9 @@ export function beginTurn(state: GameState, player: PlayerId): void {
       (m) => !(m.duration === 'untilYourNextTurn' && m.sourcePlayer === player && m.turn < state.turn),
     )
   }
+  // Animated auras revert to mere enchantments at the start of the animator's next turn (handled
+  // centrally — see deanimateExpiredAuras).
+  deanimateExpiredAuras(state, player)
   // named-spell seals expire at the start of the sealer's next turn (Hyter Sprites)
   if (state.flow?.castBans) {
     state.flow.castBans = state.flow.castBans.filter(

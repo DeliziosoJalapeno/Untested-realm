@@ -4,7 +4,7 @@ import { GRID_H, GRID_W, inBounds, isOrthAdjacent, isDiagAdjacent, siteAt, isWat
 import { emitUnitMoved, makeCtx, avatarTrapBlocksMove, recordMoveAnim } from './effects'
 import { detachFromCarrier } from './carrying'
 import { getScript } from '../cards/scripts/registry'
-import { effKeywords, isDisabled, isUnmodifiable, immobilizeImmune, terrainAt, siteSilenced, artifactSilenced } from './statics'
+import { effKeywords, isDisabled, isUnmodifiable, immobilizeImmune, terrainAt, siteSilenced, artifactSilenced, protectedFromSites } from './statics'
 
 
 /** Do the SITE / artifact entry restrictions (Gnome Hollows' power cap, Great Wall, walls…) permit
@@ -18,10 +18,7 @@ export function siteEntryAllowed(state: GameState, unit: UnitState, from: Step, 
   //  · entryFilterBlocksPush → applies only to a PUSH/pull/drag, NOT a Teleport (Perilous Bridge).
   const forcedActivates = (script: { entryFilterBlocksForcedEntry?: boolean; entryFilterBlocksPush?: boolean }) =>
     !!script.entryFilterBlocksForcedEntry || (viaPush && !!script.entryFilterBlocksPush)
-  const deafToSites =
-    unit.carrying.some((id) => getScript(state.artifacts[id]?.name ?? '')?.bearerIgnoresSites) ||
-    (!!getScript(unit.name)?.ignoresSites && !unit.silenced)
-  if (!deafToSites) {
+  if (!protectedFromSites(state, unit)) {
     for (const s of Object.values(state.sites)) {
       const script = getScript(s.name)
       if (!script?.entryFilter || (forced && !forcedActivates(script))) continue
@@ -34,6 +31,84 @@ export function siteEntryAllowed(state: GameState, unit: UnitState, from: Step, 
     if (!script.entryFilter(state, a.id, unit, from, to)) return false
   }
   return true
+}
+
+/** Is the WHOLE multi-square footprint of an oversized (2x2) / rigid-body (wall, Rack-stretched) unit
+ *  LEGAL if its anchor sits at `to`? Used by TELEPORT / forced relocation (rulebook: an oversized unit
+ *  must be teleported "to a location or set of locations that conforms to its size restrictions and is
+ *  otherwise legal for that unit to occupy"). Unlike a STEP this imposes no adjacency — only that every
+ *  occupied square is in-bounds (Magellan-wrap aware) and holds a site. Single-square units are trivially
+ *  legal. `shape` overrides the unit's current footprint (used when the player ROTATES it on teleport).
+ *  The returned squares are the ABSOLUTE footprint at `to` so the caller can place the parts. */
+export function multiSquareDestSquares(
+  state: GameState, unit: UnitState, to: { x: number; y: number }, shape?: { dx: number; dy: number }[],
+): { x: number; y: number }[] | null {
+  const wrap = edgesConnected(state)
+  const wrapX = (x: number) => (wrap ? ((x % GRID_W) + GRID_W) % GRID_W : x)
+  const wrapY = (y: number) => (wrap ? ((y % GRID_H) + GRID_H) % GRID_H : y)
+  // offsets of each occupied part from the anchor (its own x/y). An explicit `shape` wins (rotation).
+  const offsets: { dx: number; dy: number }[] =
+    shape ??
+    (unit.size === '2x2'
+      ? [{ dx: 0, dy: 0 }, { dx: 1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 1, dy: 1 }]
+      : (unit.extraSquares?.length ?? 0) > 0
+        ? occupiedSquares(unit).map((s) => ({ dx: s.x - unit.x, dy: s.y - unit.y }))
+        : [{ dx: 0, dy: 0 }])
+  const out: { x: number; y: number }[] = []
+  for (const { dx, dy } of offsets) {
+    const x = wrapX(to.x + dx), y = wrapY(to.y + dy)
+    if (!inBounds(x, y) || !siteAt(state, x, y)) return null
+    out.push({ x, y })
+  }
+  return out
+}
+
+export type TeleportPlacement = { x: number; y: number; shape?: { dx: number; dy: number }[]; squares: { x: number; y: number }[] }
+
+/** The DISTINCT, LEGAL placements a multi-square unit can be teleported to with the clicked square `to`
+ *  as its ANCHOR (the spell validates `to` is in reach — e.g. Blink's "nearby") — the choices a player
+ *  picks among. ONE unified model for every body type: the body's offset-0 cell lands on the clicked
+ *  square and the whole rigid footprint ROTATES about it (0 / 90 / 180 / 270°):
+ *    · a 2x2 → the up-to-4 anchor corners (each rotation lands the clicked square as TL / TR / BL / BR);
+ *    · a wall / Rack-stretched avatar / Megamoeba-Aethermoeba blob → up to 4 rigid rotations.
+ *  Each placement carries the engine args: the anchor (x,y) and, for a rigid body, the rotated `shape`
+ *  (offsets from the anchor; a 2x2 is size-based and converts to its top-left anchor instead — no shape).
+ *  Symmetric/coincident rotations collapse to one entry; illegal ones (a part off-board or over void) are
+ *  dropped. A single-square unit yields its one square. */
+export function oversizedTeleportPlacements(state: GameState, unit: UnitState, to: { x: number; y: number }): TeleportPlacement[] {
+  const out: TeleportPlacement[] = []
+  const seen = new Set<string>()
+  const add = (x: number, y: number, shape: { dx: number; dy: number }[] | undefined) => {
+    const squares = multiSquareDestSquares(state, unit, { x, y }, shape)
+    if (!squares) return
+    const key = squares.map((s) => `${s.x},${s.y}`).sort().join('|')
+    if (seen.has(key)) return
+    seen.add(key)
+    out.push({ x, y, shape, squares })
+  }
+  const is2x2 = unit.size === '2x2'
+  if (!is2x2 && (unit.extraSquares?.length ?? 0) === 0) { add(to.x, to.y, undefined); return out } // single-square
+
+  const base = is2x2
+    ? [{ dx: 0, dy: 0 }, { dx: 1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 1, dy: 1 }]
+    : occupiedSquares(unit).map((s) => ({ dx: s.x - unit.x, dy: s.y - unit.y }))
+  const rots: ((o: { dx: number; dy: number }) => { dx: number; dy: number })[] = [
+    (o) => ({ dx: o.dx, dy: o.dy }),       // 0°
+    (o) => ({ dx: -o.dy, dy: o.dx }),      // 90° CW
+    (o) => ({ dx: -o.dx, dy: -o.dy }),     // 180°
+    (o) => ({ dx: o.dy, dy: -o.dx }),      // 270° CW
+  ]
+  for (const rot of rots) {
+    const rotated = base.map(rot)
+    if (is2x2) {
+      // 2x2 is size-based (always top-left anchored): convert the rotated block to its TOP-LEFT anchor
+      const minDx = Math.min(...rotated.map((o) => o.dx)), minDy = Math.min(...rotated.map((o) => o.dy))
+      add(to.x + minDx, to.y + minDy, undefined)
+    } else {
+      add(to.x, to.y, rotated) // anchor the clicked square (offset-0) and rotate the rest
+    }
+  }
+  return out
 }
 
 /** Is a single step legal for this unit right now? */
@@ -68,7 +143,7 @@ export function isLegalStep(state: GameState, unit: UnitState, from: Step, to: S
   if (!siteEntryAllowed(state, unit, from, to)) return false
   // units that filter other units' movement (Undesirables)
   for (const u of Object.values(state.units)) {
-    if (u.id === unit.id || u.silenced) continue
+    if (u.id === unit.id || u.silenced || isDisabled(state, u)) continue // a disabled filterer has no ability
     const f = getScript(u.name)?.unitEntryFilter
     if (f && !f(state, u.id, unit, from, to)) return false
   }
@@ -78,7 +153,7 @@ export function isLegalStep(state: GameState, unit: UnitState, from: Step, to: S
   // card-granted extra steps (leaps, wraps, tunnels) are legal by definition
   for (const grantor of [unit, ...Object.values(state.units).filter((u) => u.id !== unit.id)]) {
     const script = getScript(grantor.name)
-    if (grantor.silenced) continue
+    if (grantor.silenced || isDisabled(state, grantor)) continue // a disabled granter grants nothing
     const steps = grantor.id === unit.id ? script?.extraSteps?.(state, unit, from, grantor.id) ?? [] : []
     if (steps.some((s) => s.x === to.x && s.y === to.y && s.region === to.region)) return true
     const granted = grantor.id !== unit.id ? script?.grantsExtraSteps?.(state, grantor.id, unit, from) ?? [] : []
@@ -227,7 +302,7 @@ function extraStepsFor(state: GameState, unit: UnitState, from: Step): Step[] {
   if (own && !unit.silenced) out.push(...own(state, unit, from, unit.id))
   // other units granting steps (Ruler of Thul's edge wrap)
   for (const o of Object.values(state.units)) {
-    if (o.id === unit.id || o.silenced) continue
+    if (o.id === unit.id || o.silenced || isDisabled(state, o)) continue // a disabled granter grants nothing
     const g = getScript(o.name)?.grantsExtraSteps
     if (g) out.push(...g(state, o.id, unit, from))
   }

@@ -768,6 +768,22 @@ h1, h2, h3 { font-weight: 600; }
 .game.scaled .promptcard { max-width: 450px; }
 .game.scaled .modal .mullhand > .handcard { width: 210px; }
 .game.scaled .modal:has(.mullhand):not(.mulligan) { max-width: min(94vw, 940px); }
+/* Cemetery / collection / banished viewer: never taller than ~2 rows of cards — the rest scrolls, so
+   the popup stays at most two cards plus a sliver for the header + Close button (user request). The
+   mulligan panel is excluded: it already lays its hand out in exactly two fixed rows. */
+/* Only the inner card grid scrolls: let the modal size to its content so it doesn't ALSO add its own
+   scrollbar (the base .modal has overflow-y:auto + max-height:80vh → two scrollbars otherwise). */
+.modal:has(.mullhand):not(.mulligan) { max-height: none; overflow: visible; }
+.modal:has(.mullhand):not(.mulligan) .mullhand { overflow-y: auto; align-content: flex-start; }
+.game.scaled .modal:has(.mullhand):not(.mulligan) .mullhand { max-height: 600px; } /* 2 × ~294px-tall cards + gap */
+/* A site-free collection shows exactly 5 per row that FILL the panel width (a CSS grid, so no dead
+   space on the right and no fragile pixel math), still capped at 2 rows. */
+.game.scaled .modal[data-zone="collection"][data-nosite] .mullhand {
+  display: grid; grid-template-columns: repeat(5, 1fr); align-content: start; max-height: 500px;
+}
+.game.scaled .modal[data-zone="collection"][data-nosite] .mullhand > .handcard { width: auto; }
+.game.mobile .modal:has(.mullhand):not(.mulligan) .mullhand > .handcard { width: 96px; }
+.game.mobile .modal:has(.mullhand):not(.mulligan) .mullhand { max-height: 280px; } /* 2 × ~134px-tall cards + gap */
 
 .playerbar {
   display: flex; gap: 14px; align-items: center; font-size: 13px;
@@ -2231,7 +2247,10 @@ button.autobattle:hover:not(:disabled) { background: #4a5cc0; }
 .judgepanel {
   position: fixed; bottom: 10px; left: 10px; z-index: 45;
   background: #1d2130; border: 1px solid #b9a15a; border-radius: 10px;
-  padding: 12px 16px; max-width: 88vw; width: 900px; font-size: 13.5px;
+  /* canvas-relative cap: the panel is position:fixed inside the uiScale-transformed .game canvas, so
+     `%` resolves to the canvas (1600×900), not the viewport — keep it on-grid regardless of window size
+     (the old 88vw mixed a viewport unit into canvas space). 20px = the 10px left + 10px bottom pins. */
+  padding: 12px 16px; max-width: calc(100% - 20px); width: 900px; font-size: 13.5px;
   box-shadow: 0 6px 24px rgba(0,0,0,.6);
 }
 .jp-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 15px; }
@@ -2277,7 +2296,7 @@ button.autobattle:hover:not(:disabled) { background: #4a5cc0; }
 .jp-replace-thumb { width: 100%; border-radius: 4px; display: block; }
 .jp-avatar-art { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
 .jp-art-who { font-size: 12.5px; opacity: 0.85; min-width: 7em; }
-.judgepanel { max-height: 82vh; overflow-y: auto; }
+.judgepanel { max-height: calc(100% - 20px); overflow-y: auto; } /* canvas-relative (see .judgepanel above), not 82vh */
 
 /* rip-to-pieces animation: the card tears in two */
 .ripoverlay {

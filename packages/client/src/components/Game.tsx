@@ -41,6 +41,9 @@ import {
   legalTargetOptions,
   printingsFor,
   abilityAnchor,
+  resolveCaster,
+  oversizedTeleportPlacements,
+  type TeleportPlacement,
   canActivate,
   isEvilUnit,
   isCarriableArtifact,
@@ -109,6 +112,11 @@ type Mode =
   | { m: 'aura'; cardId: string; casterId: string }
   | { m: 'editAura'; auraId: string } // Editor: a placed aura selected for hand-editing
   | { m: 'magic'; cardId: string; casterId: string; picked: string[] }
+  // after a relocation spell's targets are chosen, an oversized/rigid unit picks its placement
+  // (2x2 corner / wall / Megamoeba rotation) among the legal options. Two sources: a spell cast (cardId
+  // + casterId + picked → sends castSpell) OR an ENGINE prompt from a teleport ability (promptId → answers
+  // the prompt with the chosen index; Avatar of Air etc.).
+  | { m: 'teleportPlace'; placements: TeleportPlacement[]; idx: number; cardId?: string; casterId?: string; picked?: string[]; promptId?: string }
   | { m: 'siteOrSpell'; cardId: string; morph: string; casterId: string }
   | { m: 'genesisTargets'; cardId: string; casterId: string; at: { x: number; y: number; region?: Region }; picked: string[] }
   | { m: 'shoot'; unitId: string; casterId?: string }
@@ -305,7 +313,7 @@ export default function Game({
             <b className="roomcode">{`${location.origin}${location.pathname}`}</b>
             <button
               style={{ marginLeft: 8 }}
-              onClick={() => { try { void navigator.clipboard?.writeText(`${location.origin}${location.pathname}`) } catch { /* clipboard blocked */ } }}
+              onClick={() => { navigator.clipboard?.writeText(`${location.origin}${location.pathname}`)?.catch(() => { /* clipboard blocked */ }) }}
             >
               📋 Copy link
             </button>
@@ -706,34 +714,74 @@ function GameInner({
     setUnitAnchor((prev) => (prev && Math.abs(prev.left - next.left) < 0.5 && Math.abs(prev.top - next.top) < 0.5 && Math.abs(prev.right - next.right) < 0.5 ? prev : next))
   }, [mode, view])
 
+  // ── Canvas-space positioning for square-anchored prompts ─────────────────────────────────────────
+  // EVERY in-game prompt (promptbanner / modal) is position:fixed INSIDE the uiScale-transformed .game
+  // canvas, so a transformed ancestor is its containing block → its inline left/top live in the canvas's
+  // own LOCAL design space (1600×900 desktop / 866×400 mobile), NOT screen pixels. So a square's SCREEN
+  // rect must be converted into canvas space before use; feeding raw client coords (as the old code did)
+  // drifts with uiScale → the "inconsistent across screen sizes / off-board" bug. Using the canvas's own
+  // layout size (offsetWidth/Height) as the basis makes this exact for any uiScale AND any dynamic designW.
+  const toCanvas = (clientX: number, clientY: number): { x: number; y: number } => {
+    const root = gameRef.current
+    if (!root) return { x: clientX, y: clientY }
+    const cr = root.getBoundingClientRect()
+    const sx = cr.width / (root.offsetWidth || 1) || 1
+    const sy = cr.height / (root.offsetHeight || 1) || 1
+    return { x: (clientX - cr.left) / sx, y: (clientY - cr.top) / sy }
+  }
+  // the board grid's rectangle in canvas space (what prompts must stay inside)
+  const boardCanvasRect = (): { left: number; right: number; top: number; bottom: number } | null => {
+    const grid = gameRef.current?.querySelector('.boardviewport') as HTMLElement | null
+    if (!grid) return null
+    const g = grid.getBoundingClientRect()
+    if (!g.width) return null
+    const a = toCanvas(g.left, g.top), b = toCanvas(g.right, g.bottom)
+    return { left: a.x, right: b.x, top: a.y, bottom: b.y }
+  }
+  // Canvas-space position for a banner anchored to a board square: centred UNDER the square (its CENTRE,
+  // since the banner is translateX(-50%)), flipped ABOVE if below would leave the board, then clamped so
+  // the whole banner stays inside the grid with a small margin. `selector` finds the already-rendered
+  // banner so its canvas-space size can be measured (offsetWidth/Height are unaffected by the transform).
+  const bannerPosForSquare = (x: number, y: number, selector: string): { left: number; top: number } | null => {
+    const sqEl = gameRef.current?.querySelector(`[data-sq="${x},${y}"]`) as HTMLElement | null
+    const board = boardCanvasRect()
+    if (!sqEl || !board) return null
+    const r = sqEl.getBoundingClientRect()
+    const tl = toCanvas(r.left, r.top), br = toCanvas(r.right, r.bottom)
+    const sq = { left: tl.x, right: br.x, top: tl.y, bottom: br.y, cx: (tl.x + br.x) / 2 }
+    const banner = gameRef.current?.querySelector(selector) as HTMLElement | null
+    const w = banner?.offsetWidth || 180, h = banner?.offsetHeight || 52
+    const m = 6
+    const below = sq.bottom + 8
+    let top = below + h <= board.bottom - m ? below : Math.max(board.top + m, sq.top - h - 8) // below, else above
+    let left = sq.cx
+    const half = w / 2
+    left = w + 2 * m <= board.right - board.left ? Math.min(board.right - m - half, Math.max(board.left + m + half, left)) : (board.left + board.right) / 2
+    top = h + 2 * m <= board.bottom - board.top ? Math.min(board.bottom - m - h, Math.max(board.top + m, top)) : board.top + m
+    return { left, top }
+  }
+
   // Place the move/attack ("moveChoice") banner UNDER the move/attack DESTINATION square, so it
-  // reads as coming from where the unit is heading. The banner is position:fixed → screen coords.
+  // reads as coming from where the unit is heading — in canvas space, clamped to the board.
   const [moveChoicePos, setMoveChoicePos] = useState<{ left: number; top: number } | null>(null)
   useLayoutEffect(() => {
     if (mode.m !== 'moveChoice') { setMoveChoicePos(null); return }
     const attacker = view.units[mode.unitId]
     const last = mode.path.length ? mode.path[mode.path.length - 1] : (attacker ? { x: attacker.x, y: attacker.y } : null)
-    const sq = last ? (gameRef.current?.querySelector(`[data-sq="${last.x},${last.y}"]`) as HTMLElement | null) : null
-    if (!sq) { setMoveChoicePos(null); return }
-    const r = sq.getBoundingClientRect()
-    // below the square, unless that would run off the bottom of the screen → put it above instead
-    const nearBottom = r.bottom > window.innerHeight - 90
-    const next = { left: r.left + r.width / 2, top: nearBottom ? Math.max(8, r.top - 52) : r.bottom + 8 }
+    const next = last ? bannerPosForSquare(last.x, last.y, '[data-modebanner="moveChoice"]') : null
+    if (!next) { setMoveChoicePos(null); return }
     setMoveChoicePos((prev) => (prev && Math.abs(prev.left - next.left) < 0.5 && Math.abs(prev.top - next.top) < 0.5 ? prev : next))
   }, [mode, view])
 
-  // Place the route picker ("pathChoice") banner UNDER the movement ARRIVAL square (mode.dest),
-  // so it reads as coming from where the unit is heading — same treatment as moveChoice. It's a
-  // .promptbanner, so the delegated drag handler already lets the player shove it aside.
+  // Place the route picker ("pathChoice"/"howMove"/"manualMove") banner UNDER the movement ARRIVAL
+  // square — same canvas-space treatment as moveChoice. It's a .promptbanner, so the delegated drag
+  // handler still lets the player shove it aside.
   const [pathChoicePos, setPathChoicePos] = useState<{ left: number; top: number } | null>(null)
   useLayoutEffect(() => {
     const routeDest = mode.m === 'pathChoice' || mode.m === 'howMove' || mode.m === 'manualMove' ? mode.dest : null
     if (!routeDest) { setPathChoicePos(null); return }
-    const sq = gameRef.current?.querySelector(`[data-sq="${routeDest.x},${routeDest.y}"]`) as HTMLElement | null
-    if (!sq) { setPathChoicePos(null); return }
-    const r = sq.getBoundingClientRect()
-    const nearBottom = r.bottom > window.innerHeight - 90
-    const next = { left: r.left + r.width / 2, top: nearBottom ? Math.max(8, r.top - 52) : r.bottom + 8 }
+    const next = bannerPosForSquare(routeDest.x, routeDest.y, `[data-modebanner="${mode.m}"]`)
+    if (!next) { setPathChoicePos(null); return }
     setPathChoicePos((prev) => (prev && Math.abs(prev.left - next.left) < 0.5 && Math.abs(prev.top - next.top) < 0.5 ? prev : next))
   }, [mode, view])
 
@@ -1289,13 +1337,11 @@ function GameInner({
     const root = gameRef.current
     const sq = from && root ? (root.querySelector(`[data-sq="${from.x},${from.y}"]`) as HTMLElement | null) : null
     if (!from || !sq || !root) { setDirPanelPos(null); return }
-    // the modal is position:fixed INSIDE the transform-scaled game canvas, so its left/top live in
-    // the canvas's local design space. Convert the origin square's screen centre into that space.
-    const cRect = root.getBoundingClientRect()
-    const scale = cRect.width / (mobile ? 866 : 1600) || 1
+    // the modal is position:fixed INSIDE the transform-scaled game canvas, so its left/top live in the
+    // canvas's local design space — convert the origin square's screen centre into that space (toCanvas
+    // uses the canvas's own layout size, so it's exact for any uiScale AND the dynamic desktop designW).
     const r = sq.getBoundingClientRect()
-    const originX = (r.left + r.width / 2 - cRect.left) / scale
-    const originY = (r.top + r.height / 2 - cRect.top) / scale
+    const { x: originX, y: originY } = toCanvas(r.left + r.width / 2, r.top + r.height / 2)
     // top-right by default; but if the origin sits in the SCREEN top row or rightmost column, the
     // up-and-right panel would run off the board — so flip to bottom-left (same magnitudes negated).
     const isFlip = me === 1
@@ -1343,6 +1389,16 @@ function GameInner({
       setBlazePending(null)
     }
   }, [blazePending, prompt, promptIsMine])
+  // a teleport ABILITY (Avatar of Air…) asks how its oversized unit lands via a `teleportPlace` prompt.
+  // Enter the same picker mode the cast path uses (banner ‹ ›/✓ + live footprint glow), seeded from the
+  // prompt's placements; ✓ answers the prompt with the chosen index. Only when there's a real choice.
+  useEffect(() => {
+    if (prompt?.kind === 'teleportPlace' && promptIsMine && mode.m !== 'teleportPlace') {
+      const places = (prompt.data?.placements ?? []) as TeleportPlacement[]
+      if (places.length > 1) setMode({ m: 'teleportPlace', placements: places, idx: 0, promptId: prompt.id })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prompt?.id, promptIsMine])
   // your OPPONENT revealed card(s) publicly — pop a close-only notice listing them (each links
   // to the detail panel). Only reveals BY the other player, each shown once (de-duped by n).
   useEffect(() => {
@@ -1392,12 +1448,16 @@ function GameInner({
     onEditor: () => void; onUndo: () => void; onHelp: () => void; onFaq: () => void
     onSubtype: () => void; onCycle: (dir: 1 | -1) => void; stOn: boolean
     onZoom: (dir: 1 | -1) => void; onZoomReset: () => void; onPan: (dx: number, dy: number) => void; zoom: number
-  }>({ me, revealLen: 0, bigLen: 0, onEditor: editorHotkey, onUndo: undoHotkey, onHelp: () => {}, onFaq: () => {}, onSubtype: () => {}, onCycle: () => {}, stOn: false, onZoom: () => {}, onZoomReset: () => {}, onPan: () => {}, zoom: 1 })
+    onSkipPrompt: () => void
+  }>({ me, revealLen: 0, bigLen: 0, onEditor: editorHotkey, onUndo: undoHotkey, onHelp: () => {}, onFaq: () => {}, onSubtype: () => {}, onCycle: () => {}, stOn: false, onZoom: () => {}, onZoomReset: () => {}, onPan: () => {}, zoom: 1, onSkipPrompt: () => {} })
   hotkeys.current = {
     botControl, me, revealLen: revealPops.length, bigLen: bigPops.length,
     onEditor: editorHotkey, onUndo: undoHotkey, onHelp: () => setShowSymbols((v) => !v),
     onFaq: toggleFaq, onSubtype: toggleSubtype, onCycle: cycleSubtype, stOn: stView,
     onZoom: (dir) => applyZoom(zoomRef.current + dir * ZOOM_STEP), onZoomReset: () => applyZoom(1), onPan: panBoard, zoom,
+    // Esc declines an optional prompt (e.g. Lord of the Void's "may banish"); the engine cont treats a
+    // null answer as "skip". Only fires when the pending prompt is mine AND flagged optional.
+    onSkipPrompt: () => { if (prompt && promptIsMine && prompt.data?.optional) session.send({ t: 'prompt', promptId: prompt.id, choice: null }) },
   }
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1450,6 +1510,7 @@ function GameInner({
         case 'q': h.onHelp(); break // toggle the GUI symbol legend
         case 'f': h.onFaq(); break // toggle the FAQ view
         case 'z': h.onSubtype(); break // toggle the Subtype view
+        case 'escape': h.onSkipPrompt(); break // decline an optional prompt (Lord of the Void "may banish")
         case 'backspace': h.onUndo(); break // undo (or request an undo online)
         case 'enter': { // confirm: click the current on-screen confirm button, if enabled
           const root = gameRef.current
@@ -1590,7 +1651,7 @@ function GameInner({
     if (mode.m === 'magic') {
       const script = getScript(view.cards[mode.cardId]?.name ?? '')
       if (!script?.targetOptions) return null
-      const caster = (view.units[mode.casterId] ?? avatar) as UnitState
+      const caster = (resolveCaster(st, mode.casterId, me) ?? avatar) as UnitState // unit / Omphalos artifact / spellcaster site
       return legalTargetOptions(st, script, caster, pickedRefs(mode), mode.picked.length)
     }
     if (mode.m === 'abilityTargets') {
@@ -1643,7 +1704,7 @@ function GameInner({
         // the caster's own square, exactly as castSpell validates it.
         const caster = (mode.m === 'abilityTargets'
           ? abilityAnchor(st, mode.sourceId, me)
-          : (view.units[mode.casterId] ?? avatar)) as UnitState
+          : (resolveCaster(st, mode.casterId, me) ?? avatar)) as UnitState
         // engine-authoritative legal set when the magic declares one (Meteor Shower narrows the
         // clickable sites as you pick, excluding any that border an already-chosen impact): consume
         // it directly instead of re-deriving legality per candidate.
@@ -1883,7 +1944,7 @@ function GameInner({
       // (Castle's/Hamlet's Ablaze!) is the exception: it lands on ONE site, so light the sites up.
       if (mode.m === 'aura' && getScript(view.cards[mode.cardId]?.name ?? '')?.singleSiteAura) {
         const placement = getScript(view.cards[mode.cardId]?.name ?? '')?.auraPlacement
-        const auraCaster = view.units[mode.casterId] // "nearby" is from the caster, not the avatar
+        const auraCaster = resolveCaster(st, mode.casterId, me) ?? undefined // "nearby" is from the caster (incl. an Omphalos artifact / spellcaster site), not the avatar
         for (const s of Object.values(view.sites) as any[]) {
           if (s.isRubble) continue
           if (placement) { try { if (placement(st, me, { x: s.x, y: s.y }, auraCaster) !== null) continue } catch { continue } }
@@ -1968,7 +2029,7 @@ function GameInner({
         const magicScript = magicName ? getScript(magicName) : null
         const magicSpec = (magicScript?.targets ?? [])[mode.picked.length]
         if (magicSpec?.what === 'square') {
-          const magicCaster = (view.units[mode.casterId] ?? avatar) as UnitState
+          const magicCaster = (resolveCaster(st, mode.casterId, me) ?? avatar) as UnitState // unit / Omphalos artifact / spellcaster site
           // the already-picked targets, so a `whereOf` square (Blink: nearby the chosen ally) is measured
           // from the right anchor instead of the caster.
           const pickedRefs = mode.picked.map(refOfId).filter(Boolean) as any[]
@@ -1988,6 +2049,10 @@ function GameInner({
             }
           }
         }
+      }
+      // oversized-teleport placement picker: glow the currently-selected orientation's whole footprint
+      if (mode.m === 'teleportPlace') {
+        for (const s of (mode.placements[mode.idx]?.squares ?? [])) set.set(`${s.x},${s.y}`, 'hl-place')
       }
       if (mode.m === 'blowOrigin') {
         for (let x = 0; x < GRID_W; x++) for (let y = 0; y < GRID_H; y++) set.set(`${x},${y}`, 'hl-place')
@@ -2844,6 +2909,14 @@ function GameInner({
     const specs = script?.targets ?? []
     const picked = [...mode.picked, ref]
     if (picked.length >= specs.reduce((a, s2) => a + s2.count, 0)) {
+      // relocation spells (Blink…): if the relocated unit occupies MULTIPLE squares, let the player pick
+      // its placement/rotation (2x2 corner / wall / Megamoeba) among the legal options before sending.
+      const reloc = script?.teleportPlacement?.(st, picked.map(refOfId).filter(Boolean) as TargetRef[])
+      const ru = reloc ? view.units[reloc.unitId] : undefined
+      if (reloc && ru && (ru.size === '2x2' || (ru.extraSquares?.length ?? 0) > 0)) {
+        const places = oversizedTeleportPlacements(st, ru, reloc.dest)
+        if (places.length > 1) { setMode({ m: 'teleportPlace', cardId: mode.cardId, casterId: mode.casterId, picked, placements: places, idx: 0 }); return }
+      }
       // "printed area" damage spells whose area is now fully determined by the chosen
       // targets get a final-confirmation panel before the cast is actually sent.
       const params = name ? areaParamsFromTargets(name, picked) : null
@@ -4535,8 +4608,12 @@ function GameInner({
       {/* prompts — hidden while the area-damage confirmation banner is up: the
           direction pick that opened it is still the live engine prompt, so its
           PromptBox would otherwise sit (clickable) behind the Cast/Cancel panel.
-          Cancelling areaConfirm returns to idle and re-shows this prompt. */}
-      {prompt && promptIsMine && !isSpectator && mode.m !== 'areaConfirm' && (
+          Cancelling areaConfirm returns to idle and re-shows this prompt.
+          Also hidden while the Editor is open: the centered prompt modal (e.g. the
+          start-of-turn "draw a spell / draw a site" choice) covers the central sites
+          and sits above the editor panel — suppressing it lets you edit the whole
+          board; it reappears the moment you close the editor to answer. */}
+      {prompt && promptIsMine && !isSpectator && mode.m !== 'areaConfirm' && !showJudge && (
         <PromptBox view={view} prompt={prompt} send={send} me={me} flip={flip} onHover={showHover} onGoBack={onGoBack} interceptAnswer={tryAreaConfirmFromPrompt} onDirHover={setDirHover} dirPos={dirPanelPos} onDefenderHover={setHoveredDefender} />
       )}
       {prompt && (!promptIsMine || isSpectator) && (
@@ -4814,6 +4891,28 @@ function GameInner({
           <button data-cancel="1" onClick={() => setMode({ m: 'idle' })}>cancel</button>
         </div>
       )}
+      {mode.m === 'teleportPlace' && (
+        <div className="promptbanner" data-modebanner="teleportPlace">
+          <span>How does it land? <b>{mode.idx + 1}/{mode.placements.length}</b> — the glow shows the footprint.</span>
+          <button title="Previous orientation" onClick={() => setMode({ ...mode, idx: (mode.idx - 1 + mode.placements.length) % mode.placements.length })}>‹</button>
+          <button title="Next orientation" onClick={() => setMode({ ...mode, idx: (mode.idx + 1) % mode.placements.length })}>›</button>
+          <button data-confirm="1" onClick={() => {
+            const p = mode.placements[mode.idx]
+            if (mode.promptId) {
+              // engine-prompt path (Avatar of Air…): answer with the chosen placement index
+              send({ t: 'prompt', promptId: mode.promptId, choice: mode.idx })
+            } else {
+              send({ t: 'castSpell', cardId: mode.cardId!, casterId: mode.casterId!, targets: mode.picked!, extra: { teleportPlace: { x: p.x, y: p.y, shape: p.shape } } })
+            }
+            setMode({ m: 'idle' })
+          }}>✓ Place</button>
+          {/* a cast can be cancelled; an engine-prompt placement is mandatory → cancel just takes the shown one */}
+          <button data-cancel="1" onClick={() => {
+            if (mode.promptId) send({ t: 'prompt', promptId: mode.promptId, choice: mode.idx })
+            setMode({ m: 'idle' })
+          }}>{mode.promptId ? 'use this' : 'cancel'}</button>
+        </div>
+      )}
       {mode.m === 'pathChoice' && (
         <div className="promptbanner" data-modebanner="pathChoice"
           style={pathChoicePos ? { left: pathChoicePos.left, top: pathChoicePos.top, bottom: 'auto' } : undefined}>
@@ -4919,8 +5018,10 @@ function GameInner({
       {zoneView && zoneView.zone === 'collection' && (() => {
         const col: Record<string, number> = (view.players[me] as any).collection ?? {}
         const owned = Object.keys(col).filter((n) => col[n] > 0).sort()
+        // Sites are placed on the board, not held like spells; a site-free collection packs 5 per row.
+        const hasSites = owned.some((n) => getCard(n)?.type === 'Site')
         return (
-          <div className="modal" style={zoneDrag.style}>
+          <div className="modal" data-zone="collection" data-nosite={hasSites ? undefined : '1'} style={zoneDrag.style}>
             <h3 {...zoneDrag.handleProps}>{myPlayer.name}'s collection ({owned.length} distinct)</h3>
             <div className="mullhand">
               {owned.map((n) => (
@@ -6155,8 +6256,13 @@ function PromptBox({ view, prompt, send, me, flip, onHover, onGoBack, interceptA
       return (
         <div className="promptbanner" data-promptbox="chooseSquare">
           {relabelCoords(prompt.title ?? '')} (click a highlighted square on the board)
+          {prompt.data?.optional && <> — <button data-skip="1" onClick={() => answer(null)}>skip (Esc)</button></>}
         </div>
       )
+    case 'teleportPlace':
+      // rendered by the square-anchored `teleportPlace` MODE banner (‹ ›/✓ + live footprint glow),
+      // which the client enters when this prompt arrives — PromptBox shows nothing for it.
+      return <></>
     default:
       return (
         <div className="modal" style={drag.style} data-promptbox={prompt.kind}>

@@ -5,7 +5,7 @@
 //   FAQ4: aura minion size = aura size, not changed (verified: uses aura.squares / aura.edge / 2x2)
 import { describe, it, expect } from 'vitest'
 import { newGame, keepBoth } from './helpers'
-import { makeCtx, getScript } from '../src'
+import { makeCtx, getScript, deanimateExpiredAuras } from '../src'
 
 function setupOpponentAura(g: any) {
   // An aura belonging to player 1 (the opponent)
@@ -97,7 +97,7 @@ describe('Enchantress FAQ3 — opponent aura minion controller', () => {
     g.flow.auraAnimations = [{ unitId, player: 0, turn: 0 }]
     g.turn = 1
 
-    getScript('Enchantress')!.startOfTurn!(makeCtx(g, unitId, 0, []))
+    deanimateExpiredAuras(g, 0) // central de-animation (was the Enchantress's startOfTurn hook)
 
     expect(g.units[unitId], 'minion settled back').toBeFalsy()
     expect(g.auras[auraId], 'aura persists').toBeTruthy()
