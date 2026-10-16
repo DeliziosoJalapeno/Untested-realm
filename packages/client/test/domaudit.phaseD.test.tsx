@@ -507,6 +507,42 @@ describe('D.10 Corpse Catapult fling', () => {
 })
 
 // =====================================================================================
+// D.11 — The Manor at Daperyll Hill feast: board-dependent since it's only offered while an
+//         enemy stands on the Manor (the `available` gate). With air:4 + an enemy here, feast
+//         deals 3 to that enemy and heals you 3.
+// =====================================================================================
+describe('D.11 The Manor at Daperyll Hill feast', () => {
+  it('with air:4 and an enemy on the Manor, feast deals 3 to the enemy and heals you 3', () => {
+    const g = cleanBoard()
+    clearSites(g)
+    for (let i = 0; i < 4; i++) siteAt(g, 0, 'Spire', i % 5, Math.floor(i / 5)) // Spire is an Ordinary Air site → air:4
+    const manor = siteAt(g, 0, 'The Manor at Daperyll Hill', 2, 3)
+    const enemy = usummon(g, 1, 'Escyllion Cyclops', 2, 3) // id of a 6/6 enemy standing ON the Manor (survives 3 damage)
+    const avatar = g.units[g.players[0].avatarUnitId]
+    const maxLife = getCard(avatar.name).life ?? 20
+    avatar.life = maxLife - 3 // room to heal exactly 3, safely above death's door
+    expect(canActivate(g, 0, manor, 'feast'), 'feast activatable with air:4 + an enemy here').toBeNull()
+
+    const h = new GameHarness(g).mount()
+    active = h
+    h.click(must(h.container, `[data-site="${manor}"]`, 'Manor site'))
+    h.rerender()
+    const btn = must(h.container, '[data-ability="feast"]', 'feast button') as HTMLButtonElement
+    expect(btn.disabled, 'feast enabled with prey present').toBe(false)
+    const drift0 = h.drifts.length
+    h.click(btn)
+    h.rerender()
+    // chooseTargets: the enemy on the Manor is the only legal prey — click it
+    h.click(must(h.container, `[data-unit="${enemy}"]`, 'enemy prey'))
+    h.rerender()
+    expect(h.drifts.length, 'feast accepted the enemy target').toBe(drift0)
+    // POST-STATE: the enemy took 3 damage, and you healed 3
+    expect(g.units[enemy]?.damage, 'the enemy took 3 damage').toBe(3)
+    expect(avatar.life, 'you healed 3 (back to full)').toBe(maxLife)
+  })
+})
+
+// =====================================================================================
 // D — negative control for the Part-1 anchor via the DOM oracle (Love Potion).
 // Under the OLD avatar anchor the enemy on the bearer's FAR square is NOT "here", so the
 // client would highlight nothing and the engine would reject the charm. We prove that RED

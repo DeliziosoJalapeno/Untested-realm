@@ -265,13 +265,22 @@ function runAbilityCard(name: string, type: string): C1Result[] {
     }
     const btn = buttons.find((b) => b.getAttribute('data-ability') === ab.key)
 
+    // An ability gated OFF by its own `available` hook is intentionally HIDDEN by the GUI — it isn't shown
+    // as a disabled button at all (Game.tsx filters `script.abilities` by `available`). A "Break Stealth →"
+    // ability (Asmodeus, Frozen Horror) only surfaces while the unit has Stealth; without it the button is
+    // correctly absent and canActivate agrees it's unusable, so that's NOT a NO_BUTTON finding.
+    if (!btn && ab.available) {
+      let avail = true
+      try { avail = !!ab.available(g, sourceId) } catch { avail = true }
+      if (!avail) { h.unmount(); active = null; continue }
+    }
+
     // NO_BUTTON: script declares this ability + canActivate says activatable, but no button.
     if (!btn) {
       if (gateReason === null) {
         results.push({ card: name, type, ability: ab.key, kind: 'NO_BUTTON', detail: `canActivate===null but no [data-ability="${ab.key}"] rendered` })
       } else {
-        // gated abilities may legitimately still render (disabled); a missing button when
-        // gated is not part of this detector — but our client always renders the button.
+        // a button gated by COST (mana/tap/threshold) still renders, disabled; a missing one is flagged
         results.push({ card: name, type, ability: ab.key, kind: 'NO_BUTTON', detail: `no [data-ability="${ab.key}"] rendered (gate: ${gateReason})` })
       }
       h.unmount(); active = null
@@ -412,9 +421,10 @@ describe('C.1 in-play activated-abilities sweep — every non-Avatar card with a
   // purpose-built board in Phase D (domaudit.phaseD.test.tsx): Horns of Behemoth
   // behemoth:wake, Island Leviathan leviathan:wake, Mester Stoor Worm tide, Draco Corvus
   // snatch, Love Potion potion, Floodplain overflow, Sinkhole collapse, Willing Tribute
-  // tribute, Mover of Mountains heave, Corpse Catapult fling. So the C.1 INCONCLUSIVE
-  // bucket is entirely board-dependent (0 bugs), and the playability of those 10 is closed
-  // in Phase D — no card is left unproven.
+  // tribute, Mover of Mountains heave, Corpse Catapult fling, and The Manor at Daperyll Hill
+  // feast (only offered with an enemy on the site). So the C.1 INCONCLUSIVE bucket is entirely
+  // board-dependent (0 bugs), and the playability of those 11 is closed in Phase D — no card
+  // is left unproven.
   it('C.1 totals — 0 bugs; the 10 board-dependent INCONCLUSIVE abilities are proven in Phase D', () => {
     const totals = all.reduce((m: Record<string, number>, r) => { m[r.kind] = (m[r.kind] ?? 0) + 1; return m }, {})
     // eslint-disable-next-line no-console
@@ -444,7 +454,7 @@ describe('C.1 in-play activated-abilities sweep — every non-Avatar card with a
     }
     expect((totals.NO_BUTTON ?? 0) + (totals.GATING_PARITY ?? 0) + (totals.ENGINE_REJECT ?? 0), 'no NO_BUTTON / GATING_PARITY / ENGINE_REJECT findings').toBe(0)
 
-    // Reconciliation: the INCONCLUSIVE bucket is EXACTLY the 9 board-dependent abilities,
+    // Reconciliation: the INCONCLUSIVE bucket is EXACTLY the 11 board-dependent abilities,
     // each of which is proven to post-state in Phase D. If a new inconclusive appears (or
     // one of these becomes provable on the generic board), this pins it so the reconciliation
     // can't silently drift.
@@ -460,8 +470,10 @@ describe('C.1 in-play activated-abilities sweep — every non-Avatar card with a
       'Willing Tribute:tribute',
       'Mover of Mountains:heave',
       'Corpse Catapult:fling',
+      // only offered while an enemy stands on the Manor (its `available` gate) → board-dependent, proven in D.11
+      'The Manor at Daperyll Hill:feast',
     ])
-    expect(inconclusive, 'INCONCLUSIVE == exactly the 10 abilities proven in Phase D').toEqual(provenInPhaseD)
+    expect(inconclusive, 'INCONCLUSIVE == exactly the 11 abilities proven in Phase D').toEqual(provenInPhaseD)
   })
 })
 

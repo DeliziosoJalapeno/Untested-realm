@@ -84,12 +84,20 @@ import {
   handMatchesView,
 } from '../subtypeView'
 
+// Routing chosen DEFENDERS one at a time to the fight square (select-all, then route-each): the picker
+// captures each far defender's path, then the next defender is routed; when the queue empties the 'defend'
+// prompt is answered with the per-defender picks. `remaining` = far (non-carried) defenders still to route;
+// `collected` = {unitId, path} already routed; `bareIds` = in-place / carried defenders sent as plain ids
+// (the engine auto-paths/pass-2-commits those).
+type DefendRouteSession = { promptId: string; loc: Step; remaining: string[]; collected: { unitId: string; path?: Step[] }[]; bareIds: string[] }
+
 // What a route picker does once the ROUTE is chosen. `undefined` = a plain relocation
 // (just send the move). The attack/move chooser runs BEFORE the route pick, so an attack
 // choice defers its strike here: the route is chosen, THEN the attack fires along it.
 type MovePending =
   | { kind: 'attack'; attack: { unit: string } | { site: string } }
   | { kind: 'pick'; candidates: string[]; name: string } // several same-name enemies → click one after
+  | { kind: 'defend'; session: DefendRouteSession } // route this defender to the fight, then the next
 
 type Mode =
   | { m: 'idle' }
@@ -383,6 +391,7 @@ function GameInner({
   const sfxTapped = useRef(0)
   const [hover, setHover] = useState<string | null>(null)
   const [hoveredDefender, setHoveredDefender] = useState<string | null>(null) // combat: which defender option is hovered
+  const [routingDefenders, setRoutingDefenders] = useState(false) // defend: walking chosen defenders to the fight one route at a time (hides the defend modal meanwhile)
   const [hoveredChoice, setHoveredChoice] = useState<number | null>(null) // move/attack menu: which option is hovered
   // a double-faced unit (flipped Druid, Vivien…) shows its BACK face in the detail panel
   // while hovered — track the hovered thing's flip so the panel matches the board.
@@ -1321,6 +1330,10 @@ function GameInner({
     return { cells, color: '#8ad6c8', from: null as { x: number; y: number } | null }
   }, [prompt, promptIsMine, mode, view, st, myPlayer.avatarUnitId])
   useEffect(() => { setDirHover(null); setHoveredDefender(null); setHoveredChoice(null) }, [prompt?.id, mode.m]) // reset hovered direction/defender/choice when the prompt/mode changes
+  // defender-routing flag: clear it when the prompt changes (answered / new prompt) and when a route picker
+  // is cancelled back to idle mid-sequence (so the defend selection modal reappears instead of staying hidden).
+  useEffect(() => { setRoutingDefenders(false) }, [prompt?.id])
+  useEffect(() => { if (mode.m === 'idle') setRoutingDefenders(false) }, [mode.m])
   // Spawn the direction-picker panel one step DIAGONALLY off the belt's origin square — in the
   // gap between the N/S/E/W arrows, so it sits close to the source without covering any lane. NE by
   // default; SW instead when the origin is too near the top/right edge for the panel to fit. Only
@@ -2255,6 +2268,12 @@ function GameInner({
    *  move/attack chooser (chooser first, route second): fire the strike along this route —
    *  or, for several same-name enemies, open the pick-one follow-up carrying the route. */
   function resolveRoute(u: UnitState, dest: Step, path: Step[], after?: MovePending) {
+    if (after?.kind === 'defend') {
+      // this defender's route is chosen → record it and move on to the next far defender
+      const s = after.session
+      advanceDefendRouting({ ...s, remaining: s.remaining.slice(1), collected: [...s.collected, { unitId: u.id, path: path.length ? path : undefined }] })
+      return
+    }
     if (after?.kind === 'attack') {
       send({ t: 'moveAttack', unitId: u.id, path, attack: after.attack })
       setMode({ m: 'idle' })
@@ -2293,6 +2312,42 @@ function GameInner({
         : { m: 'pathChoice', unitId: u.id, dest, paths: routes, after },
     )
   }
+  // ---- defender routing (select all defenders, then walk each far one to the fight) --------------
+  /** Begin resolving the chosen defenders. In-place and carried defenders are sent as plain ids (the engine
+   *  commits / carries them); each OTHER chosen defender is routed to the fight one at a time — auto when
+   *  there's a single/forced route, the route picker (arrows/manual) only when there's MORE THAN ONE. */
+  function startDefendRouting(ids: string[]) {
+    if (!(prompt && prompt.kind === 'defend')) return
+    const loc: Step = prompt.data.attackLocation
+    const atLoc = (u: UnitState) => u.x === loc.x && u.y === loc.y && u.region === loc.region
+    const bareIds: string[] = []
+    const far: string[] = []
+    for (const id of ids) {
+      const u = st.units[id]
+      if (!u) continue
+      if (u.carriedBy || atLoc(u)) bareIds.push(id) // carried (rides its carrier) or already here → no route to pick
+      else far.push(id)
+    }
+    advanceDefendRouting({ promptId: prompt.id, loc, remaining: far, collected: [], bareIds })
+  }
+  /** Route the next queued far defender, or finish by answering the defend prompt. */
+  function advanceDefendRouting(session: DefendRouteSession) {
+    while (session.remaining.length) {
+      const id = session.remaining[0]
+      const u = st.units[id]
+      if (u && findPath(st, u, session.loc)) {
+        setRoutingDefenders(true) // hide the defend modal while the route picker is up
+        beginRouteSelection(u, session.loc, { kind: 'defend', session }) // 1 route → auto; >1 → picker
+        return
+      }
+      session = { ...session, remaining: session.remaining.slice(1) } // can't reach (shouldn't happen) → drop it
+    }
+    // every far defender routed → answer the prompt: plain ids (in-place/carried) + routed {unitId, path}
+    send({ t: 'prompt', promptId: session.promptId, choice: [...session.bareIds, ...session.collected] })
+    setRoutingDefenders(false)
+    setMode({ m: 'idle' })
+  }
+
   // ---- manual stepping -----------------------------------------------------------
   /** the manual-move cursor: where the unit sits after the steps taken so far, and how
    *  much of its step budget (cost, free steps = 0) is spent. */
@@ -4613,8 +4668,8 @@ function GameInner({
           start-of-turn "draw a spell / draw a site" choice) covers the central sites
           and sits above the editor panel — suppressing it lets you edit the whole
           board; it reappears the moment you close the editor to answer. */}
-      {prompt && promptIsMine && !isSpectator && mode.m !== 'areaConfirm' && !showJudge && (
-        <PromptBox view={view} prompt={prompt} send={send} me={me} flip={flip} onHover={showHover} onGoBack={onGoBack} interceptAnswer={tryAreaConfirmFromPrompt} onDirHover={setDirHover} dirPos={dirPanelPos} onDefenderHover={setHoveredDefender} />
+      {prompt && promptIsMine && !isSpectator && mode.m !== 'areaConfirm' && !showJudge && !(prompt.kind === 'defend' && routingDefenders) && (
+        <PromptBox view={view} prompt={prompt} send={send} me={me} flip={flip} onHover={showHover} onGoBack={onGoBack} interceptAnswer={tryAreaConfirmFromPrompt} onDirHover={setDirHover} dirPos={dirPanelPos} onDefenderHover={setHoveredDefender} onDefendConfirm={startDefendRouting} />
       )}
       {prompt && (!promptIsMine || isSpectator) && (
         <div className="promptbanner">Waiting for {view.players[prompt.player].name}…</div>
@@ -5905,7 +5960,7 @@ function disambiguateUnits(view: any, ids: string[]): Map<string, string> {
   return out
 }
 
-function PromptBox({ view, prompt, send, me, flip, onHover, onGoBack, interceptAnswer, onDirHover, dirPos, onDefenderHover }: { view: PlayerView; prompt: any; send: (a: Action) => void; me: PlayerId; flip: boolean; onHover?: (name: string) => void; onGoBack?: () => void; interceptAnswer?: (prompt: any, choice: any) => boolean; onDirHover?: (d: string | null) => void; dirPos?: { left: number; top: number } | null; onDefenderHover?: (id: string | null) => void }) {
+function PromptBox({ view, prompt, send, me, flip, onHover, onGoBack, interceptAnswer, onDirHover, dirPos, onDefenderHover, onDefendConfirm }: { view: PlayerView; prompt: any; send: (a: Action) => void; me: PlayerId; flip: boolean; onHover?: (name: string) => void; onGoBack?: () => void; interceptAnswer?: (prompt: any, choice: any) => boolean; onDirHover?: (d: string | null) => void; dirPos?: { left: number; top: number } | null; onDefenderHover?: (id: string | null) => void; onDefendConfirm?: (ids: string[]) => void }) {
   const drag = useDraggable()
   const [sel, setSel] = useState<string[]>([])
   const [selErr, setSelErr] = useState<string | null>(null) // inline validation (e.g. defend selection)
@@ -5967,7 +6022,11 @@ function PromptBox({ view, prompt, send, me, flip, onHover, onGoBack, interceptA
               setSelErr(`${badRider.name} can only defend if its carrier${carrier ? ` (${carrier.name})` : ''} defends too — select the carrier as well.`)
               return
             }
-            answer(sel)
+            // hand off to the route picker: far defenders declare their path to the fight (arrows/manual,
+            // only prompted when there's more than one route); then the prompt is answered. Falls back to
+            // the old direct answer if the handler isn't wired (e.g. a context without the board).
+            if (onDefendConfirm) onDefendConfirm(sel)
+            else answer(sel)
           }}>Defend with {sel.length} unit{sel.length === 1 ? '' : 's'}</button>
           <button data-skip="1" onClick={() => answer([])}>Don't defend</button>
         </div>
