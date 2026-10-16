@@ -157,7 +157,7 @@ type Mode =
   // Multi-select card menu for picking up / dropping artifacts, opened only when a unit
   // can pick up (or can drop) MORE THAN ONE artifact. Each candidate is listed
   // separately (no de-duping of same-named artifacts); `picked` holds the chosen ids.
-  | { m: 'chooseArts'; kind: 'pickup' | 'drop'; unitId: string; artIds: string[]; picked: string[] }
+  | { m: 'chooseArts'; kind: 'pickup' | 'drop'; unitId: string; artIds: string[]; picked: string[]; unitIds?: string[] }
 
 /** shown while a room creator waits alone: change your deck and/or the clock; the
  *  chosen setup is applied the moment an opponent joins (server-side maybeStart). */
@@ -4638,7 +4638,7 @@ function GameInner({
           setMode({ ...cur, picked: cur.picked.includes(id) ? cur.picked.filter((x) => x !== id) : [...cur.picked, id] })
         return (
           <div className="modal" data-promptbox="chooseArts">
-            <h3>{cur.kind === 'pickup' ? 'Pick up which artifacts?' : 'Drop which artifacts?'}</h3>
+            <h3>{cur.kind === 'drop' ? 'Drop which artifacts?' : cur.unitIds?.length ? 'Pick up what?' : 'Pick up which artifacts?'}</h3>
             <div className="mullhand">
               {cur.artIds.map((id) => {
                 const a: any = (view.artifacts as any)[id]
@@ -4652,16 +4652,30 @@ function GameInner({
                   </div>
                 )
               })}
+              {(cur.unitIds ?? []).map((id) => {
+                const o = view.units[id]
+                if (!o) return null
+                return (
+                  <div key={id} data-artchoice={id}
+                    className={`handcard ${cur.picked.includes(id) ? 'selected' : ''}`}
+                    onMouseEnter={() => showHover(o.name, false, view.cards[o.cardId]?.art)}
+                    onClick={() => toggle(id)}>
+                    <CardImg name={o.name} className="handimg" />
+                  </div>
+                )
+              })}
             </div>
             <button data-confirm="1" disabled={cur.picked.length === 0}
               onClick={() => {
                 if (cur.picked.length === 0) return
+                const units = cur.picked.filter((id) => cur.unitIds?.includes(id))
+                const arts = cur.picked.filter((id) => !cur.unitIds?.includes(id))
                 send(cur.kind === 'pickup'
-                  ? { t: 'pickUp', unitId: cur.unitId, artifactIds: cur.picked }
+                  ? { t: 'pickUp', unitId: cur.unitId, artifactIds: arts, ...(units.length ? { unitIds: units } : {}) }
                   : { t: 'drop', unitId: cur.unitId, artifactIds: cur.picked })
                 setMode(unit ? { m: 'unit', unitId: cur.unitId } : { m: 'idle' })
               }}>
-              {cur.kind === 'pickup' ? 'Pick up' : 'Drop'} ({cur.picked.length}/{cur.artIds.length})
+              {cur.kind === 'pickup' ? 'Pick up' : 'Drop'} ({cur.picked.length}/{cur.artIds.length + (cur.unitIds?.length ?? 0)})
             </button>
             <button data-cancel="1" onClick={() => setMode(unit ? { m: 'unit', unitId: cur.unitId } : { m: 'idle' })}>Cancel</button>
           </div>
@@ -7061,12 +7075,15 @@ function unitActions(st: any, view: PlayerView, me: PlayerId, mode: Mode, setMod
         const label = vdest.region === 'underground' ? '⛏ Burrow' : vdest.region === 'underwater' ? '🌊 Submerge' : '🏔 Surface'
         return <button data-vmove={vdest.region} data-source={u.id} onClick={() => verticalMove(u, vdest)}>{label}</button>
       })()}
-      {artsHere.length === 1 && (
+      {artsHere.length === 1 && unitsHere.length === 0 && (
         <button data-pickup-arts={u.id} onClick={() => send({ t: 'pickUp', unitId: u.id, artifactIds: [artsHere[0].id] })}>Pick up {artsHere[0].name}</button>
       )}
-      {/* 2+ pickable artifacts here → let the player choose which ones (multi-select) */}
-      {artsHere.length > 1 && (
-        <button data-pickup-arts={u.id} onClick={() => setMode({ m: 'chooseArts', kind: 'pickup', unitId: u.id, artIds: artsHere.map((a: any) => a.id), picked: [] })}>Pick up artifacts…</button>
+      {/* 2+ things it could take here → let the player choose which ones (multi-select). Pick Up is
+          once per turn, but that one Pick Up may take any mix of artifacts AND units it can carry. */}
+      {artsHere.length + unitsHere.length > 1 && (
+        <button data-pickup-arts={u.id} onClick={() => setMode({ m: 'chooseArts', kind: 'pickup', unitId: u.id, artIds: artsHere.map((a: any) => a.id), unitIds: unitsHere.map((o) => o.id), picked: [] })}>
+          {unitsHere.length ? 'Pick up…' : 'Pick up artifacts…'}
+        </button>
       )}
       {unitsHere.map((o) => (
         <button key={o.id} data-carry={o.id} data-source={u.id} onClick={() => send({ t: 'pickUp', unitId: u.id, artifactIds: [], unitIds: [o.id] })}>
