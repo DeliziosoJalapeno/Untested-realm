@@ -14,7 +14,7 @@
 import type { GameState, PlayerId, UnitState } from '../engine/types'
 import { avatarOf, siteAt, orthAdjacentWrapped } from '../engine/grid'
 import { opponent } from '../engine/effects'
-import { effAttack, effDefence, effKeywords, siteSilenced, siteDisabledByArtifact, cemeteryActivations, isBlanked } from '../engine/statics'
+import { effAttack, effDefence, effKeywords, siteSilenced, siteDisabledByArtifact, cemeteryActivations, isBlanked, isDisabled } from '../engine/statics'
 import { affinity } from '../engine/casting'
 import { stepDistance } from '../engine/movement'
 import { getCard } from '../cards/db'
@@ -40,6 +40,7 @@ function hasSupportAbility(name: string): boolean {
  *  (only strikes adjacent, or shoots if Ranged). Manhattan distance, Magellan-agnostic — good
  *  enough for a static threat estimate; the search confirms real reachability. */
 function attackReach(state: GameState, u: UnitState): number {
+  if (isDisabled(state, u)) return -1 // can neither move nor strike: threatens nothing
   const kw = effKeywords(state, u)
   if (kw.immobile) return kw.ranged ?? 1
   return 1 + (kw.movement ?? 0) + (kw.ranged ?? 0)
@@ -159,7 +160,9 @@ export function unitValue(state: GameState, u: UnitState, w: EvalWeights): numbe
   if (kw.spellcaster) v += w.kwSpellcaster
   if (kw.immobile) v += w.kwImmobile // negative
   if (u.tapped) v -= w.tappedPenalty
-  if (u.disabled || u.silenced) v -= w.disabledPenalty
+  // derived disables count too (Bound Spirit away from an allied Spellcaster, [X]bound off its
+  // terrain, Basilisk-style neighbours) — not just the raw flag a few effects set
+  if (u.silenced || isDisabled(state, u)) v -= w.disabledPenalty
   // summoning-sick: entered this turn and can't attack yet
   if (u.enteredTurn === state.turn) v -= w.summonSickPenalty
   return v
