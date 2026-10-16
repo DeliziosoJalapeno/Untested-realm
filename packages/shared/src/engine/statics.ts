@@ -822,7 +822,9 @@ export function disabledByEffect(state: GameState, unit: UnitState): boolean {
     if (ix.area && brookHits()) return true
   } else {
     for (const o of Object.values(state.units)) {
-      if (o.id === unit.id || o.silenced || disabledByEffect(state, o)) continue
+      // only a unit that could disable this one is worth asking whether it is itself disabled — asking
+      // every unit recursed through the whole board (factorial in the number of minions).
+      if (o.id === unit.id || o.silenced || !getScript(o.name)?.disablesOther || disabledByEffect(state, o)) continue
       if (disablesNow(o.name, o.id)) return true
     }
     for (const a of Object.values(state.artifacts)) {
