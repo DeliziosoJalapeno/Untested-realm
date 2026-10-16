@@ -82,6 +82,10 @@ describe('Mirror Realm copies Rift Valley', () => {
     const id = injectToHand(g, 0, 'Mirror Realm')
     // the seam (1,2) is offered even though it's occupied — it's a Rift-Valley-style entry
     act(g, 0, { t: 'avatarSite', mode: 'play', cardId: id, x: 1, y: 2 })
+    // The Village can be pulled east along the row, or north/south out of its own column (it is
+    // the whole of that column), so the direction is asked rather than assumed.
+    expect(g.prompts[0]?.title).toContain('Pull the land apart')
+    answer(g, 'push the row east')
     // the Village was pushed east to (2,2); Mirror Realm now occupies the opened (1,2)
     expect(siteAtXY(g, 2, 2)?.name, 'the Village slid east').toBe('Rustic Village')
     const mirror = siteAtXY(g, 1, 2)

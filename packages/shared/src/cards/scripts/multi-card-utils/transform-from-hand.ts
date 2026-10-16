@@ -1,7 +1,7 @@
 import { type CardScript, type AbilityDef } from '../registry'
 import { pushLog } from '../../../engine/effects'
 import { isUnmodifiable } from '../../../engine/statics'
-import type { GameState, UnitState } from '../../../engine/types'
+import type { GameState, PlayerId, UnitState } from '../../../engine/types'
 
 // Reveal-from-hand transforms: an eligible allied minion becomes this card, in place (Slimy Mutants ← a
 // submerging ally; Sir Gareth ← a Mortal ally). The chosen minion keeps its square/damage-cleared body but
@@ -18,20 +18,23 @@ export function transformFromHand(opts: {
   log: string
 }): CardScript {
   const { name, keyPrefix, label, cost, threshold, eligible, emptyMsg, askTitle, log } = opts
+  const allies = (state: GameState, owner: PlayerId): string[] =>
+    Object.values(state.units)
+      .filter((u) => u.controller === owner && !u.isAvatar && eligible(state, u))
+      .map((u) => u.id)
   return {
-    handAbilities: (_state, cardId) => [{
+    // no eligible ally → not offered (it would spend the cost and only log `emptyMsg`)
+    handAbilities: (state, cardId, owner) => (allies(state, owner).length ? [{
       key: `${keyPrefix}:${cardId}`,
       label,
       cost,
       ...(threshold ? { threshold } : {}),
       effect: (ctx) => {
-        const candidates = Object.values(ctx.state.units)
-          .filter((u) => u.controller === ctx.controller && !u.isAvatar && eligible(ctx.state, u))
-          .map((u) => u.id)
+        const candidates = allies(ctx.state, ctx.controller)
         if (!candidates.length) return ctx.log(emptyMsg)
         ctx.ask({ kind: 'chooseTargets', title: askTitle, data: { candidates, count: 1, upTo: false, kind: 'unit' } }, 'transform', { cardId })
       },
-    }],
+    }] : []),
     conts: {
       transform: (ctx, c, choice) => {
         const id = Array.isArray(choice) ? choice[0] : choice

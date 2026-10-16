@@ -25,6 +25,27 @@ describe('avatar stranded in the void — mandatory site play', () => {
     expect(siteAt(g, 1, 1), 'a site now sits under the avatar — no longer in the void').toBeTruthy()
   })
 
+  it('establishes under the avatar even when its domain lies far away', () => {
+    // The case above leaves the player with no other sites, so the ordinary placement rule
+    // happens to offer the avatar's own square anyway and the mandatory action completes by
+    // luck. Give that player a domain in the far corner and the rule — "adjacent to a site you
+    // control" — refuses the very square the avatar is stranded on, and the action it is
+    // REQUIRED to take becomes impossible: the prompt is answered, nothing is placed, and the
+    // avatar stays in the void for the rest of the game.
+    const g: any = newGame(); keepBoth(g)
+    const p0 = g.players[0]
+    const av = g.units[p0.avatarUnitId]
+    p0.established = true
+    av.x = 0; av.y = 0                        // stranded here...
+    placeSite(g, 0, 'Rustic Village', 4, 3)   // ...with its only site nowhere near it
+    const siteId = injectToHand(g, 0, 'Rustic Village')
+
+    beginTurn(g, 0); drainDraw(g)
+    expect(firstSitePrompt(g), 'still forced to play a site').toBeTruthy()
+    answer(g, siteId)
+    expect(siteAt(g, 0, 0), 'the forced placement lands under the avatar regardless').toBeTruthy()
+  })
+
   it('an established avatar standing on a site is NOT nagged', () => {
     const g: any = newGame(); keepBoth(g)
     const p0 = g.players[0]

@@ -39,10 +39,19 @@ registerScript('Waveshaper', {
       if (!site) return
       const prev = ctx.state.flow?.waveshaperFlood?.[ctx.controller]
       ctx.state.flow = ctx.state.flow ?? {}
+      // a site already flooded by a PERMANENT effect (Atlantean Fate sets `flooded` once; siteStillFlooded
+      // can't re-derive it) must stay flooded when the wave later moves on — remember it
+      const ownFloods: string[] = ctx.state.flow.floodedBeforeWave ?? []
+      if (site.flooded && !siteStillFlooded(ctx.state, site.id) && !ownFloods.includes(site.id)) ownFloods.push(site.id)
+      ctx.state.flow.floodedBeforeWave = ownFloods
       // move this Waveshaper's standing wave to the new site FIRST, then re-derive the old site's flood so
       // it stays wet if some OTHER source (a Naiads, another Waveshaper, a Floodplain flood) still floods it
       ctx.state.flow.waveshaperFlood = { ...(ctx.state.flow.waveshaperFlood ?? {}), [ctx.controller]: site.id }
-      if (prev && ctx.state.sites[prev]) ctx.state.sites[prev].flooded = siteStillFlooded(ctx.state, prev)
+      if (prev && ctx.state.sites[prev]) {
+        const keep = prev !== site.id && ownFloods.includes(prev)
+        ctx.state.sites[prev].flooded = keep || siteStillFlooded(ctx.state, prev)
+        if (keep) ctx.state.flow.floodedBeforeWave = ownFloods.filter((id) => id !== prev)
+      }
       ctx.floodSite(site.id)
       for (const u of unitsAt(ctx.state, site.x, site.y, 'surface')) {
         const kw = getKeywords(u.name)
