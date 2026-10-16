@@ -98,4 +98,16 @@ describe('Giant Shark moves through water to its prey', () => {
     expect([shark.x, shark.y], 'unreachable → the Shark does not move').toEqual([0, 0])
     expect(prey.damage, 'and does not fight').toBe(0)
   })
+
+  it('surfaces to fight a unit that came up onto its own square', () => {
+    const g = newGame() as GameState; keepBoth(g)
+    for (const [x, y] of [[2, 0], [3, 0]] as const) placeSite(g, 0, 'Great Wall', x, y).flooded = true
+    const shark = summonCard(g, 0, 'Giant Shark', 2, 0, 'underwater'); shark.enteredTurn = 0
+    const prey = summonCard(g, 1, 'Bone Jumble', 2, 0, 'surface'); prey.enteredTurn = 0
+
+    emitUnitMoved(g, prey, { x: 3, y: 0, region: 'surface' }) // the prey moved onto the Shark's site, on the surface
+    expect(shark.region, 'the Shark surfaces to reach it').toBe('surface')
+    expect(prey.damage, 'and fights it').toBeGreaterThan(0)
+  })
 })
+
