@@ -359,6 +359,17 @@ export function applyJudge(state: GameState, player: PlayerId, op: JudgeOp): str
         // printed Ward enters with the site (Blessed Well, Pilgrim's Shrine...) — rubble has none
         ward: isRubble ? undefined : getKeywords(def.name).ward || undefined,
       }
+      // mana follows control: a site placed from the editor provides its mana right away (like a played
+      // site), base + any aura boosts (Abundance), to the player who now controls it.
+      const scr = getScript(op.name)
+      if (!isRubble && !scr?.noMana) {
+        let gain = 1 + (scr?.siteExtraMana ?? 0)
+        for (const r of Object.values(state.auras)) {
+          const extra = getScript(r.name)?.auraSiteExtraMana
+          if (extra && r.squares.some((q) => q.x === op.x && q.y === op.y)) gain += extra
+        }
+        state.players[op.player].mana += gain
+      }
       j(`placed ${op.name} at ${squareLabel(op.x, op.y)}`)
       checkStateBased(state)
       return null

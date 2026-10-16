@@ -48,9 +48,10 @@ export function sourceMana(state: GameState, player: PlayerId): number {
 
 /** Rules (Oct 2026): mana sources provide mana WHILE you control them. If the ACTIVE player loses a
  *  mana source mid-turn (a site destroyed / sacrificed / silenced / taken), the mana it provided leaves
- *  their pool now — down to 0, never below what they've already spent. Gains are credited on site entry
- *  (enterSite), so we only reclaim on a DROP vs the turn's baseline, then re-sync the baseline. Called at
- *  the applyAction settle point, so it reflects every board change. */
+ *  their pool now — down to 0, never below what they've already spent. GAINS are credited at their entry
+ *  point (enterSite for a played site, the editor's placeSite, an auraSiteExtraMana aura entering, a
+ *  unit/artifact's own on-summon credit), so here we only reclaim on a DROP vs the turn's baseline, then
+ *  re-sync the baseline. Called at the applyAction settle point, so it reflects every board change. */
 export function reconcileControlledMana(state: GameState): void {
   if (state.phase === 'over') return
   const player = state.activePlayer

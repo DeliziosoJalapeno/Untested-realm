@@ -797,6 +797,28 @@ export function noAtlasDrawChoice(state: GameState, player: PlayerId): boolean {
   return !!(s?.noAtlasDraw || s?.noStandardSiteAction)
 }
 
+/**
+ * Garden of Eden gate for a single SPELL draw. Call BEFORE pulling a spell into a hand/zone:
+ * returns false (and logs) when the draw is blocked, otherwise records the spell-draw and
+ * returns true. Shared by the normal draw path (drawCards) and caster-locked draws
+ * (Morgana / the Omphaloi / Archangel Gabriel via drawLocked) — FAQ: "they count as being
+ * drawn by the player, and will count against the one spell that can be drawn per turn."
+ */
+export function registerSpellDraw(state: GameState, player: PlayerId): boolean {
+  if (state.turn <= 0) return true // setup draws are uncapped
+  const eden = Object.values(state.sites).some(
+    (s) => !s.isRubble && s.controller !== null && getScript(s.name)?.limitSpellDraws && !siteSilenced(state, s),
+  )
+  if (eden && (state.flow?.spellDraws?.[player] ?? 0) >= 1) {
+    pushLog(state, player, 'The Garden of Eden permits no more spell draws this turn.')
+    return false
+  }
+  state.flow = state.flow ?? {}
+  state.flow.spellDraws = state.flow.spellDraws ?? { 0: 0, 1: 0 }
+  state.flow.spellDraws[player] = (state.flow.spellDraws[player] ?? 0) + 1
+  return true
+}
+
 export function drawCards(state: GameState, player: PlayerId, deck: DeckName, n = 1): void {
   const p = state.players[player]
   // Magician (and any noAtlasDraw avatar) has no atlas: site draws are skipped
@@ -804,18 +826,7 @@ export function drawCards(state: GameState, player: PlayerId, deck: DeckName, n 
   if (deck === 'atlas' && noAtlasDraw(state, player)) return
   for (let i = 0; i < n; i++) {
     // Garden of Eden: at most one spell draw per player per turn
-    if (deck === 'spellbook' && state.turn > 0) {
-      const eden = Object.values(state.sites).some(
-        (s) => !s.isRubble && s.controller !== null && getScript(s.name)?.limitSpellDraws && !siteSilenced(state, s),
-      )
-      if (eden && (state.flow?.spellDraws?.[player] ?? 0) >= 1) {
-        pushLog(state, player, 'The Garden of Eden permits no more spell draws this turn.')
-        return
-      }
-      state.flow = state.flow ?? {}
-      state.flow.spellDraws = state.flow.spellDraws ?? { 0: 0, 1: 0 }
-      state.flow.spellDraws[player] = (state.flow.spellDraws[player] ?? 0) + 1
-    }
+    if (deck === 'spellbook' && !registerSpellDraw(state, player)) return
     const id = p[deck].shift()
     if (id === undefined) {
       // drawing from an empty deck loses the game immediately
@@ -2658,6 +2669,9 @@ export function destroySite(state: GameState, siteId: string, sourcePlayer?: Pla
     y,
     tapped: false,
     isRubble: true,
+    // The Flood drowns the whole realm permanently, rubble included — so a site destroyed while
+    // the realm is flooded leaves FLOODED ruins (matches The Flood's onSitePlayed / cast behavior).
+    flooded: state.flow?.realmFlooded ? true : undefined,
   }
   pushLog(state, null, `${site.name} is destroyed and reduced to rubble.`)
   // "when this site is destroyed" (Roots of Yggdrasil)

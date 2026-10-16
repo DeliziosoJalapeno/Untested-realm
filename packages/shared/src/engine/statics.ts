@@ -761,8 +761,36 @@ export function silenceImmune(state: GameState, unit: UnitState): boolean {
 // Guards the disabledByEffect recursion below: deciding whether a disabler (Basilisk/Gorgon/Root Spider) is
 // ITSELF disabled re-enters disabledByEffect for that source. This set breaks cycles (mutual disablers).
 const disableEvalStack = new Set<string>()
+// Memoize disabledByEffect WITHIN a single top-level traversal. The function recurses into other
+// disabler SOURCES (to skip ones that are themselves disabled), so without memoization a web of mutual
+// disablers re-computes the same units exponentially (observed: 54M+ calls / 20s+ for one action on a
+// 9-unit board). A unit's disabled-status is stable for the duration of one query, so we cache it and
+// clear the cache when the OUTERMOST call completes (the next query may run against a mutated state).
+// Clearing per top-level call also preserves the old "mutual disablers resolve in the QUERIED unit's
+// favour" behaviour — each top-level query recomputes fresh.
+const disableMemo = new Map<string, boolean>()
 
 export function disabledByEffect(state: GameState, unit: UnitState): boolean {
+  const topLevel = disableEvalStack.size === 0
+  if (topLevel) disableMemo.clear()
+  const cached = disableMemo.get(unit.id)
+  if (cached !== undefined) return cached
+  // mid-cycle (two minions disabling each other): resolve in the queried unit's favour; do NOT cache
+  // this transient — only the fully-computed result below is memoized.
+  if (disableEvalStack.has(unit.id)) return false
+  disableEvalStack.add(unit.id)
+  let result = false
+  try {
+    result = computeDisabledByEffect(state, unit)
+  } finally {
+    disableEvalStack.delete(unit.id)
+    disableMemo.set(unit.id, result)
+    if (topLevel) disableMemo.clear()
+  }
+  return result
+}
+
+function computeDisabledByEffect(state: GameState, unit: UnitState): boolean {
   if (isUnmodifiable(state, unit)) return false // can't be disabled
   if (getScript(unit.name)?.immuneToDisable && !unit.silenced) return false
   if (unit.modifiers.some((m) => m.kind === 'keyword' && m.keyword === 'undisableable')) return false
@@ -770,11 +798,8 @@ export function disabledByEffect(state: GameState, unit: UnitState): boolean {
   if (unit.isAvatar) return false
   // A disabler that is itself disabled/silenced has no abilities (Codex), so it disables nothing. The loops
   // below therefore skip a source that is disabledByEffect — including an AREA-disabled one (a Basilisk under
-  // a Root Spider, a mutual Gorgon), which plain directlyDisabled missed. The stack breaks the cycle when two
-  // minions disable each other (each query resolves it in its own favour, as before).
-  if (disableEvalStack.has(unit.id)) return false
-  disableEvalStack.add(unit.id)
-  try {
+  // a Root Spider, a mutual Gorgon), which plain directlyDisabled missed. (Memoized + stack-guarded above.)
+  {
   const brookHits = (): boolean => {
     for (const ad of (state.flow?.areaDisables ?? []) as { siteId: string }[]) {
       const src = state.sites[ad.siteId]
@@ -838,7 +863,7 @@ export function disabledByEffect(state: GameState, unit: UnitState): boolean {
   const selfDisabled = getScript(unit.name)?.selfDisabled
   if (selfDisabled && !unit.silenced && selfDisabled(state, unit)) return true
   return false
-  } finally { disableEvalStack.delete(unit.id) }
+  }
 }
 
 // The "Court" minions. Overflowing Court's "Other Courts are disabled" shuts these off too — not just

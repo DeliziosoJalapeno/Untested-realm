@@ -957,6 +957,18 @@ function resolveAuraCast(state: GameState, cardId: string, castName: string, pla
   if (script?.genesis) script.genesis(makeCtx(state, auraId, player, targets, at, extra))
   const placed = state.auras[auraId]
   if (placed && placed.squares !== squares) delete placed.anchor // genesis-managed footprint (Wildfire)
+  // mana follows control (FAQ): an aura that boosts a site's mana (Abundance) provides that extra mana
+  // IMMEDIATELY to each affected site's controller, the moment the site is affected — not next turn.
+  const auraMana = script?.auraSiteExtraMana
+  if (placed && auraMana) {
+    for (const sq of placed.squares) {
+      const s = siteAt(state, sq.x, sq.y)
+      if (s && !s.isRubble && s.controller !== null) {
+        state.players[s.controller].mana += auraMana
+        recordManaGain(state, sq.x, sq.y, 'surface', auraMana)
+      }
+    }
+  }
   checkStateBased(state)
 }
 
