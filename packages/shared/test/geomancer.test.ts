@@ -107,3 +107,29 @@ describe('Geomancer — Reclaim plays the site properly (fires onSitePlayed)', (
     expect(skele, 'Boulevard of Bones reacted to the reclaimed site being played').toBeTruthy()
   })
 })
+
+describe('Geomancer — a Bloom that provides (E) the turn it comes down is an earth site', () => {
+  it('Desert Bloom (Genesis → Provides (A)(E)(W) this turn) fills the lone void with Rubble', () => {
+    const { g } = setup()
+    placeSite(g, 0, 'Bedrock', 3, 1)
+    placeSite(g, 0, 'Bedrock', 1, 1)
+    placeSite(g, 0, 'Bedrock', 2, 2)
+    const bloom = placeSite(g, 0, 'Desert Bloom', 4, 3).id
+
+    getScript('Geomancer')!.afterAvatarSitePlay!(makeCtx(g, avatarOf(g, 0).id, 0, []), bloom)
+
+    expect(siteAt(g, 2, 0)?.isRubble, 'the lone void was filled with Rubble').toBe(true)
+  })
+
+  it('a site that provides no earth at all still does nothing', () => {
+    const { g } = setup()
+    placeSite(g, 0, 'Bedrock', 3, 1)
+    placeSite(g, 0, 'Bedrock', 1, 1)
+    placeSite(g, 0, 'Bedrock', 2, 2)
+    const volcano = placeSite(g, 0, 'Active Volcano', 4, 3).id
+
+    getScript('Geomancer')!.afterAvatarSitePlay!(makeCtx(g, avatarOf(g, 0).id, 0, []), volcano)
+
+    expect(siteAt(g, 2, 0)?.isRubble).toBeFalsy()
+  })
+})
