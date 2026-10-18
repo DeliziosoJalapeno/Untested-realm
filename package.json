@@ -1,7 +1,7 @@
 {
   "name": "sorcery-simulator",
   "private": true,
-  "version": "0.5.2",
+  "version": "0.5.3",
   "workspaces": [
     "packages/*"
   ],
@@ -28,7 +28,9 @@
     "audit:outcomes": "tsx scripts/audit_outcomes.ts",
     "audit:gui": "tsx scripts/audit_gui.ts",
     "audit:playable": "tsx scripts/audit_playable.ts",
-    "audit:dom": "vitest run --root packages/client"
+    "audit:dom": "vitest run --root packages/client",
+    "profile": "tsx scripts/bot_profile.ts",
+    "profile:cpu": "node --cpu-prof --cpu-prof-dir=profile-out --import tsx scripts/bot_profile.ts"
   },
   "devDependencies": {
     "npm-run-all": "^4.1.5",

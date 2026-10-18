@@ -19,17 +19,17 @@ describe('Dragonlord sets aside a Unique Dragon before setup', () => {
     expect(p!.data.names.length).toBeGreaterThanOrEqual(9)
   })
 
-  it('answering stores the set-aside dragon, and it is HIDDEN from the opponent', () => {
+  it('answering stores the set-aside dragon, and it is PUBLIC (a rules reference for both players)', () => {
     const g = dragonlordGame()
     const p = g.prompts[0]!
     const res = applyAction(g, 0, { t: 'prompt', promptId: p.id, choice: 'Ignis Rex' })
     expect(res.ok).toBe(true)
     expect((g.flow as any)?.dragonlordPick?.[0]).toBe('Ignis Rex')
 
-    // the owner sees their own pick; the opponent (and spectators) never do
+    // FAQ: "The set aside Dragon is intended as a rules reference for both players" — everyone sees it
     expect(((viewFor(g, 0).flow as any)?.dragonlordPick ?? {})[0]).toBe('Ignis Rex')
-    expect(((viewFor(g, 1).flow as any)?.dragonlordPick ?? {})[0]).toBeUndefined()
-    expect(((viewFor(g, null).flow as any)?.dragonlordPick ?? {})[0]).toBeUndefined()
+    expect(((viewFor(g, 1).flow as any)?.dragonlordPick ?? {})[0]).toBe('Ignis Rex')
+    expect(((viewFor(g, null).flow as any)?.dragonlordPick ?? {})[0]).toBe('Ignis Rex')
   })
 
   it('only the Dragonlord player gets the prompt (not the vanilla opponent)', () => {

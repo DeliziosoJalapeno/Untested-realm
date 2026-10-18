@@ -7,6 +7,9 @@ import {
   allCards,
   affordable,
   canCast,
+  canHandArtifactTo,
+  genesisSelfTargetOk,
+  SELF_TARGET,
   cardSupport,
   effAttack,
   effDefence,
@@ -1694,9 +1697,9 @@ function GameInner({
       )
     }
     if (mode.m === 'conjure') {
-      const enemyOk = !!getScript(view.cards[mode.cardId]?.name ?? '')?.conjureToEnemy
+      const name = view.cards[mode.cardId]?.name ?? ''
       return new Set<string>(
-        (Object.values(view.units) as UnitState[]).filter((u) => enemyOk || u.controller === me).map((u) => u.id),
+        (Object.values(view.units) as UnitState[]).filter((u) => me !== null && canHandArtifactTo(st, me, name, u)).map((u) => u.id),
       )
     }
     // magic / abilityTargets: highlight legal unit/minion/avatar/artifact/site targets
@@ -2623,8 +2626,7 @@ function GameInner({
     // conjuring an artifact: click a unit to HAND it over (carried) instead of
     // placing it on a site — your own unit, or any unit if it conjures to enemies
     if (mode.m === 'conjure') {
-      const enemyOk = !!getScript(view.cards[mode.cardId]?.name ?? '')?.conjureToEnemy
-      if (u.controller === me || enemyOk) {
+      if (me !== null && canHandArtifactTo(st, me, view.cards[mode.cardId]?.name ?? '', u)) {
         send({ t: 'castSpell', cardId: mode.cardId, casterId: mode.casterId, extra: { giveTo: u.id } })
         setMode({ m: 'idle' })
       }
@@ -4854,6 +4856,13 @@ function GameInner({
       {mode.m === 'genesisTargets' && (
         <div className="promptbanner" data-modebanner="genesisTargets">
           Choose a target for {view.cards[mode.cardId]?.name}'s Genesis (click a unit) —{' '}
+          {/* the minion doesn't exist yet, so it can't be clicked: offer "itself" when its Genesis may
+              target it (Town Priest under a Corruptor — Evil, and adjacent to its own square) */}
+          {me !== null && genesisSelfTargetOk(st, me, view.cards[mode.cardId]?.name ?? '', mode.at, mode.picked.length, mode.picked.map((id) => ({ unit: id }))) && (
+            <button data-self="1" onClick={() => { send({ t: 'castSpell', cardId: mode.cardId, casterId: mode.casterId, at: mode.at, targets: [...mode.picked, SELF_TARGET] }); setMode({ m: 'idle' }) }}>
+              itself
+            </button>
+          )}{' '}
           <button data-skip="1" onClick={() => { send({ t: 'castSpell', cardId: mode.cardId, casterId: mode.casterId, at: mode.at, targets: [] }); setMode({ m: 'idle' }) }}>
             skip
           </button>
@@ -5711,10 +5720,10 @@ function UnitChip({ u, st, me, small, big, ghost, bodyActive, selected, picked, 
       )}
       {/* Dragonlord's set-aside Unique Dragon — shown small (like a carried artifact) inside
           the avatar card. Only on YOUR own Dragonlord (the pick is hidden from the opponent). */}
-      {u.isAvatar && u.name === 'Dragonlord' && u.controller === me && st.flow?.dragonlordPick?.[me] && (
+      {u.isAvatar && u.name === 'Dragonlord' && st.flow?.dragonlordPick?.[u.controller] && (
         <span className="carriedarts dragonaside">
-          <span className="carriedart" data-dragon-aside={st.flow.dragonlordPick[me]} title={`Set aside: ${st.flow.dragonlordPick[me]}`} onMouseEnter={() => onHover(st.flow.dragonlordPick[me])}>
-            <CardImg name={st.flow.dragonlordPick[me]} className="artthumb" />
+          <span className="carriedart" data-dragon-aside={st.flow.dragonlordPick[u.controller]} title={`Set aside: ${st.flow.dragonlordPick[u.controller]}`} onMouseEnter={() => onHover(st.flow.dragonlordPick[u.controller])}>
+            <CardImg name={st.flow.dragonlordPick[u.controller]} className="artthumb" />
           </span>
         </span>
       )}
@@ -6290,7 +6299,7 @@ function PromptBox({ view, prompt, send, me, flip, onHover, onGoBack, interceptA
             ? 'Click them in the order they should resolve — the first you pick resolves first.'
             : place === 'top'
             ? 'Click them in order — the first you pick is the top of your deck (drawn next).'
-            : 'Click them in order — the last you pick sits at the very bottom of your deck.'}</p>
+            : 'Click them in order, starting from the bottom — the first you pick goes to the very bottom of your deck.'}</p>
           <div className="mullhand">
             {cards.map((name, i) => {
               const pos = sel.indexOf(String(i))

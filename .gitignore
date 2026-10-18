@@ -58,3 +58,6 @@ build/
 
 # Root scratch: judge-form HTML dump
 /_form.html
+
+# Bot profiler output (npm run profile)
+profile-out/

@@ -4,7 +4,7 @@
 // targets. The flicker now collects the genesis target (anchored at the landing square) and
 // passes it through, so the drag+cocoon actually happens.
 import { describe, it, expect } from 'vitest'
-import { newGame, keepBoth, summonCard, placeSite, answer } from './helpers'
+import { newGame, keepBoth, summonCard, placeSite, answer, waiveThreshold } from './helpers'
 import { getScript, makeCtx, avatarOf, type GameState } from '../src'
 import '../src/cards/scripts/index'
 
@@ -12,6 +12,7 @@ describe('Deathspeaker echoes Gargantula and its drag-Genesis fires', () => {
   it("drags and cocoons an adjacent enemy minion when the echo lands", () => {
     const g: GameState = newGame(); keepBoth(g); g.turn = 3
     const av = avatarOf(g, 0); av.name = 'Deathspeaker'; av.x = 0; av.y = 0
+    waiveThreshold(g, 0) // the echo is a cast: it must meet the copied minion's threshold
     g.players[0].mana = 20
     // a controlled site gives a legal landing square at (2,2)
     placeSite(g, 0, 'Spire', 2, 2)
@@ -48,6 +49,7 @@ describe('Deathspeaker echoes Gargantula and its drag-Genesis fires', () => {
   it('a dead minion with NO drag target still flickers (no genesis prompt)', () => {
     const g: GameState = newGame(); keepBoth(g); g.turn = 3
     const av = avatarOf(g, 0); av.name = 'Deathspeaker'; av.x = 0; av.y = 0
+    waiveThreshold(g, 0) // the echo is a cast: it must meet the copied minion's threshold
     g.players[0].mana = 20
     placeSite(g, 0, 'Spire', 2, 2)
     const cid = `c${g.nextId++}`; g.cards[cid] = { id: cid, name: 'Gargantula', owner: 0 } as any

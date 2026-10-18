@@ -1,7 +1,8 @@
 // Dream-Quest FAQ tests.
 //
-// FAQ 1: casting Dream-Quest on your own Avatar has no effect — avatars cannot be disabled.
-//   The 'what: minion' spec already excludes avatars; validateTarget must reject them.
+// FAQ 1: "Can I cast this on my Avatar? … If you cast this on your Avatar, it will have no effect." — the
+//   Avatar is a LEGAL target (an allied Spellcaster unit), the spell just does nothing: avatars can't be
+//   disabled, so it never falls asleep.
 //
 // FAQ 2: an allied Spellcaster minion (not a non-spellcaster) can be put to sleep.
 //   A filter on the spec gates to spellcasters only.
@@ -20,13 +21,12 @@ import { getScript, makeCtx } from '../src'
 import type { GameState } from '../src'
 import '../src/cards/scripts/index'
 
-describe('Dream-Quest FAQ 1 — avatar cannot be targeted', () => {
-  it('the target spec rejects the allied avatar (avatars are not minions)', () => {
+describe('Dream-Quest FAQ 1 — casting it on your Avatar is legal but has no effect', () => {
+  it('the allied avatar is a legal target', () => {
     const g: GameState = newGame(); keepBoth(g)
     const myAv = g.units[g.players[0].avatarUnitId]
     const spec = getScript('Dream-Quest')!.targets![0]
-    const reason = validateTarget(g, spec, { unit: myAv.id }, myAv, 0)
-    expect(reason, 'avatar must be rejected by the minion spec').not.toBeNull()
+    expect(validateTarget(g, spec, { unit: myAv.id }, myAv, 0), 'the Avatar is an allied Spellcaster unit').toBeNull()
   })
 })
 

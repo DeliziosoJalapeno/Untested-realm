@@ -2,13 +2,14 @@
 // Michael's Genesis ("take a step, then strike all enemies here") raises a prompt — the echo must be
 // allowed to FULLY resolve that Genesis before Deathspeaker banishes it, not cut short.
 import { describe, it, expect } from 'vitest'
-import { newGame, keepBoth, summonCard, placeSite, act, answer, giveMana } from './helpers'
+import { newGame, keepBoth, summonCard, placeSite, act, answer, giveMana, waiveThreshold } from './helpers'
 import { avatarOf, type GameState } from '../src'
 
 describe('Deathspeaker echo of Archangel Michael resolves its full Genesis', () => {
   it('the echo steps, smites the enemy, and only THEN fades (no early banish)', () => {
     const g: GameState = newGame(); keepBoth(g); g.turn = 3
     avatarOf(g, 0).name = 'Deathspeaker'
+    waiveThreshold(g, 0) // the echo is a cast: it must meet the copied minion's threshold
     placeSite(g, 0, 'Rustic Village', 2, 2)
     placeSite(g, 0, 'Rustic Village', 3, 2)
     const foe = summonCard(g, 1, 'Foot Soldier', 3, 2); foe.enteredTurn = -1 // the smite target

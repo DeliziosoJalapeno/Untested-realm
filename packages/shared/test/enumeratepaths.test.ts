@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { newGame, keepBoth, summonCard, placeSite } from './helpers'
-import { enumeratePaths } from '../src'
+import { enumeratePaths, applyAction } from '../src'
 
 // #4: the client prompts for the route ONLY when more than one shortest legal path
 // reaches the clicked destination. enumeratePaths is that detector.
@@ -30,6 +30,20 @@ describe('enumeratePaths finds the distinct shortest routes', () => {
   it('an adjacent 1-step move has ONE path (no prompt)', () => {
     const { g, u } = board()
     expect(enumeratePaths(g, u, dest(2, 1)).length).toBe(1)
+  })
+
+  it('with movement to spare, routes that overshoot the destination and come back are offered (and legal)', () => {
+    const g = newGame(42, 0); keepBoth(g)
+    for (let x = 0; x <= 4; x++) for (let y = 0; y <= 3; y++) placeSite(g, 0, 'Active Volcano', x, y)
+    const u = summonCard(g, 0, 'Phantom Steed', 2, 2); u.enteredTurn = 0 // Movement +2 → 3 steps
+    const routes = enumeratePaths(g, u, dest(2, 1), 40, { allLengths: true })
+    const through = routes.filter((p) => p.slice(0, -1).some((s) => s.x === 2 && s.y === 1))
+    expect(through.length, 'a route passing through (2,1) and returning to it').toBeGreaterThan(0)
+    const res = applyAction(g, 0, { t: 'moveAttack', unitId: u.id, path: through[0] } as any)
+    expect(res.ok, String(res.error)).toBe(true)
+    expect([g.units[u.id].x, g.units[u.id].y]).toEqual([2, 1])
+    // the default (shortest-only) answer is unchanged: just the direct step
+    expect(enumeratePaths(g as any, { ...u, x: 2, y: 2 } as any, dest(2, 1)).length).toBe(1)
   })
 
   it('a blocked route collapses to the single open path', () => {

@@ -1,5 +1,5 @@
-// The Dragonlord's set-aside Unique Dragon is shown small (like a carried artifact) inside
-// YOUR avatar card; the opponent never sees it.
+// The Dragonlord's set-aside Unique Dragon is shown small (like a carried artifact) inside the avatar
+// card — for BOTH players: it's public ("a rules reference for both players", FAQ).
 import { describe, it, expect, afterEach } from 'vitest'
 import { GameHarness } from './harness'
 import { sweepBoardBase } from './domaudit'
@@ -10,7 +10,7 @@ let active: GameHarness | null = null
 afterEach(() => { active?.unmount(); active = null })
 
 describe('Dragonlord set-aside dragon in the avatar card', () => {
-  it("shows the chosen dragon thumbnail on your own Dragonlord, but not the opponent's", () => {
+  it("shows each Dragonlord's set-aside dragon — yours and the opponent's", () => {
     const g = sweepBoardBase() as any
     const me = hotseatViewpoint(g)
     const opp = (1 - me) as 0 | 1
@@ -28,8 +28,9 @@ describe('Dragonlord set-aside dragon in the avatar card', () => {
     expect(mine, 'my avatar shows the set-aside dragon').toBeTruthy()
     expect(mine.getAttribute('data-dragon-aside')).toBe('Ignis Rex')
 
-    // the opponent's Dragonlord shows NOTHING (their pick is hidden, and redacted from my view)
-    const theirs = h.container.querySelector('.unit.theirs.avatar [data-dragon-aside]')
-    expect(theirs, "the opponent's set-aside dragon is not shown").toBeFalsy()
+    // …and the opponent's Dragonlord shows THEIR set-aside dragon
+    const theirs = h.container.querySelector('.unit.theirs.avatar [data-dragon-aside]') as HTMLElement
+    expect(theirs, "the opponent's set-aside dragon is shown").toBeTruthy()
+    expect(theirs.getAttribute('data-dragon-aside')).toBe('Caelestis')
   })
 })

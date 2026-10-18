@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { newGame, keepBoth, summonCard, answer } from './helpers'
+import { newGame, keepBoth, summonCard, answer, waiveThreshold } from './helpers'
 import { getScript, makeCtx, avatarOf, type GameState } from '../src'
 import { drawCards } from '../src/engine/effects'
 import '../src/cards/scripts/index'
@@ -14,6 +14,7 @@ describe('Deathspeaker sees dead minions in EITHER cemetery', () => {
   it("offers a minion sitting in the opponent's cemetery", () => {
     const g: GameState = newGame(); keepBoth(g)
     const av = avatarOf(g, 0); av.name = 'Deathspeaker'
+    waiveThreshold(g, 0) // the echo is a cast: it must meet the copied minion's threshold
     const cid = `c${g.nextId++}`; g.cards[cid] = { id: cid, name: 'Bone Jumble', owner: 1 } as any
     g.players[1].cemetery.push(cid) // a dead minion in the OPPONENT's cemetery
     getScript('Deathspeaker')!.abilities![0].effect(makeCtx(g, av.id, 0, []))
@@ -49,5 +50,20 @@ describe('Chains of Prometheus re-triggers on every draw this turn', () => {
     expect(weak.tapped, 'the weaker one is still up').toBe(false)
     drawCards(g, 0, 'spellbook', 1)
     expect(weak.tapped, 'a SECOND draw this turn taps again').toBe(true)
+  })
+})
+
+describe('Skeleton Mage: the exhumed magic is banished, never back in a cemetery', () => {
+  it('the cast leaves no copy in the cemetery', () => {
+    const g: GameState = newGame(); keepBoth(g)
+    const cid = `c${g.nextId++}`; g.cards[cid] = { id: cid, name: 'Bless', owner: 0 } as any
+    g.players[0].cemetery.push(cid)
+    g.players[0].mana = 20
+    const mage = summonCard(g, 0, 'Skeleton Mage', 2, 2)
+    getScript('Skeleton Mage')!.genesis!(makeCtx(g, mage.id, 0, []))
+    answer(g, [0])
+    while (g.prompts.length) answer(g, g.prompts[0].kind === 'chooseTargets' ? [] : false)
+    expect(g.players[0].cemetery.map((id) => g.cards[id].name)).not.toContain('Bless')
+    expect(g.players[0].banished).toContain(cid)
   })
 })

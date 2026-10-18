@@ -250,9 +250,12 @@ makeBatch('V-Z/Ä', 'VWXYZÄä')  // ~79 cards
 //   • caster-EXPANSION spells (Burning Hands, Firebreathing) — "May be cast by X" lets the avatar cast.
 //   • "an ally does X" spells (Spin Attack, Leap Attack, Whirling Blades, Blaze, Blaze of Glory, Duel,
 //     Joust!, Raze, Shatter Strike) — since "ally" INCLUDES the Avatar, the avatar is a legal target,
-//     so the generic-board avatar can cast them directly (no board minion needed).
+//     so the generic-board avatar can cast them directly (no board minion needed). Consecrate ("an ally
+//     Wards its site") and Dream-Quest ("an allied Spellcaster" — the Avatar is a legal target per the FAQ,
+//     it just can't be disabled) belong here too. (Harpyon Urge / Trial by Water also accept the Avatar as
+//     the ally but still need a target MINION, so they stay board-dependent.)
 const AVATAR_CASTABLE_EXPANSION = [
-  'Blaze', 'Blaze of Glory', 'Burning Hands', 'Duel', 'Firebreathing',
+  'Blaze', 'Blaze of Glory', 'Burning Hands', 'Consecrate', 'Dream-Quest', 'Duel', 'Firebreathing',
   'Joust!', 'Leap Attack', 'Raze', 'Shatter Strike', 'Spin Attack', 'Whirling Blades',
 ]
 

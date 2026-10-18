@@ -534,7 +534,7 @@ describe('Deck reordering (full order, not approximated)', () => {
     expect(g.players[0].spellbook.slice(0, 3)).toEqual([c, a, b])
   })
 
-  it('Browse: bottoms the rest in the chosen order (last = very bottom, for Kelp Cavern)', () => {
+  it('Browse: bottoms the rest in the chosen order (first pick = very bottom, for Kelp Cavern)', () => {
     const g = board()
     const top7 = g.players[0].spellbook.slice(0, 7)
     const br = injectToHand(g, 0, 'Browse')
@@ -546,10 +546,10 @@ describe('Deck reordering (full order, not approximated)', () => {
     expect(g.players[0].hand.includes(top7[0])).toBe(true)
     expect(g.prompts[0]?.kind).toBe('orderCards')
     const rem = top7.slice(1) // the six now being ordered (prompt indices 0..5)
-    answer(g, [5, 4, 3, 2, 1, 0]) // reverse — so rem[0] ends up at the very bottom
+    answer(g, [5, 4, 3, 2, 1, 0]) // picked starting from the bottom — so rem[5] ends up at the very bottom
     const sb = g.players[0].spellbook
-    expect(sb[sb.length - 1]).toBe(rem[0]) // last picked sits at the absolute bottom
-    expect(sb[sb.length - 6]).toBe(rem[5]) // first picked is the top of the bottomed batch
+    expect(sb[sb.length - 1]).toBe(rem[5]) // first picked sits at the absolute bottom
+    expect(sb[sb.length - 6]).toBe(rem[0]) // last picked is the top of the bottomed batch
   })
 })
 
@@ -761,6 +761,18 @@ describe('FAQ: Awakened Mummies', () => {
     act(g, 1, { t: 'moveAttack', unitId: intruder.id, path: [{ x: 3, y: 0, region: 'surface' }] })
     expect(g.units[mummies.id]?.region).toBe('surface')
     expect(g.units[mummies.id]?.tapped).toBe(false)
+  })
+
+  it('"burrowed safely" is not Burrowing: they survive underground but cannot surface (or move) on their own', () => {
+    const g = board()
+    const mummies = summonCard(g, 0, 'Awakened Mummies', 3, 0, 'underground')
+    checkStateBased(g)
+    expect(g.units[mummies.id]?.region, 'alive underground').toBe('underground')
+    expect(effKeywords(g, mummies).burrowing).toBeFalsy()
+    expect(reachableLocations(g, mummies), 'no step of their own').toEqual([])
+    expect(isLegalStep(g, mummies, { x: 3, y: 0, region: 'underground' }, { x: 3, y: 0, region: 'surface' }), 'no unburrowing').toBe(false)
+    act(g, 0, { t: 'moveAttack', unitId: mummies.id, path: [{ x: 3, y: 0, region: 'surface' }] })
+    expect(g.units[mummies.id].region, 'a forced path does not surface them either').toBe('underground')
   })
 })
 

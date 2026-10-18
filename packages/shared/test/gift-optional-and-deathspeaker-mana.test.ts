@@ -49,6 +49,7 @@ describe('Deathspeaker flicker counts its mana as spent', () => {
     const g = newGame() as GameState; keepBoth(g)
     placeSite(g, 0, 'Rustic Village', 2, 2) // a legal summon square for the echo
     const speaker = summonCard(g, 0, 'Deathspeaker', 4, 3); speaker.enteredTurn = -1
+    waiveThreshold(g, 0) // the echo is a cast: it must meet the copied minion's threshold
 
     // a dead minion in player 0's cemetery for the ability to speak for
     const deadName = 'Bone Jumble'
