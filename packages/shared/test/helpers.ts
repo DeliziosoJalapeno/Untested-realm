@@ -152,3 +152,29 @@ export function placeSite(state: GameState, player: PlayerId, name: string, x: n
   state.sites[siteId] = site
   return site
 }
+
+/** a legal "go along with it" answer for any prompt — the engine rejects answers it didn't offer, so
+ *  tests that just want to run a fight/effect to completion use this instead of a placeholder value. */
+export function defaultAnswer(prompt: { kind: string; data?: any }): any {
+  const d = prompt.data ?? {}
+  switch (prompt.kind) {
+    case 'yesNo': case 'stayInFight': return true
+    case 'defend': return []
+    case 'intercept': return null
+    case 'drawDeck': return 'spellbook'
+    case 'chooseOption': return d.options?.[0]
+    case 'firstSite': return d.ids?.[0]
+    case 'teleportPlace': return 0
+    case 'chooseSquare': return d.edges?.[0]?.key ?? d.squares?.[0]
+    case 'orderCards': return (d.cards ?? []).map((_: unknown, i: number) => i)
+    case 'chooseCards': return d.upTo === false ? Array.from({ length: Math.min(d.pick ?? 1, d.cards?.length ?? 0) }, (_, i) => i) : []
+    case 'chooseTargets': return d.upTo === false ? (d.candidates ?? []).slice(0, d.count ?? 1) : []
+    case 'allocateDamage': return { strikerId: d.strikerId, allocation: d.candidates?.length ? { [d.candidates[0]]: d.power ?? 0 } : {} }
+    default: return null
+  }
+}
+
+/** answer every open prompt with defaultAnswer until none is left */
+export function settlePrompts(state: GameState, max = 50): void {
+  for (let i = 0; i < max && state.prompts.length; i++) answer(state, defaultAnswer(state.prompts[0]))
+}

@@ -17,6 +17,7 @@ import {
   viewSeatFor,
   actingSeatFor,
   validateDeck,
+  matchPrecon,
   validateSealedDeck,
   autofillSealedDeck,
   generateSealedPacks,
@@ -103,8 +104,9 @@ interface Room {
   isPublic: boolean
   /** 'room' = hand-made; 'battle' = created by "find a battle" matchmaking */
   origin: 'room' | 'battle'
-  /** 'standard' = bring-your-own-deck; 'sealed' = open packs + timed deckbuild */
-  mode: 'standard' | 'sealed'
+  /** 'standard' = bring-your-own-deck; 'sealed' = open packs + timed deckbuild; 'precon' = each seat
+   *  picks one of the 12 official precons, unedited */
+  mode: 'standard' | 'sealed' | 'precon'
   /** sealed deckbuild bookkeeping (null for standard rooms) */
   sealed: SealedState | null
   seats: [Seat | null, Seat | null]
@@ -231,6 +233,7 @@ function closeRoom(room: Room, reason: string): void {
   }
   for (const seat of room.seats) drop(seat?.socket)
   for (const spec of room.spectators) drop(spec)
+  scenarioStore.unlockRoom(room.id) // the room is gone → no game left to spoil
 }
 
 /** Tear a room down and remove it from the registry (user-initiated close or the age reaper). */
@@ -288,6 +291,8 @@ setInterval(() => {
 interface ClientMeta {
   room: Room | null
   seat: PlayerId | null
+  /** a spectator's display name (labels their chat) — seated players use their seat's name */
+  name?: string
 }
 
 const meta = new WeakMap<WebSocket, ClientMeta>()
@@ -379,6 +384,7 @@ function maybeStart(room: Room): void {
  *  exactly like the undo/editor asks. */
 function offerRematch(room: Room): void {
   if (!room.game || room.game.phase !== 'over') return
+  scenarioStore.unlockRoom(room.id) // scenarios saved during this game may now be listed
   room.rematchVote = [false, false]
   room.rematchDeadline = Date.now() + REMATCH_WINDOW_MS
   // the game just ended → freeze the finished replay exactly once (every game-over edge — a lethal
@@ -540,6 +546,14 @@ function accountFromToken(authToken: unknown): string | null {
   return null
 }
 
+/** the deck rules a room enforces: a precon room takes only an exact official precon (they are 53-card
+ *  decks, below the constructed minimums); every other room the normal constructed validation. */
+function deckProblem(mode: Room['mode'], deck: unknown): string | null {
+  if (mode === 'precon') return matchPrecon(deck as any) ? null : 'This is a precon room — pick one of the official precon decks.'
+  const problems = validateDeck(deck as any).filter((p) => p.level === 'error')
+  return problems.length ? problems.map((p) => p.msg).join(' | ') : null
+}
+
 function resolvePlayerName(authToken: unknown, rawName: unknown, fallback: string): { name: string } | { error: string } {
   if (typeof authToken === 'string' && authToken) {
     const sess = sessions.get(sha256(authToken))
@@ -585,8 +599,9 @@ wss.on('connection', (ws) => {
     try {
       switch (msg.t) {
         case 'create': {
-          const problems = validateDeck(msg.deck).filter((p) => p.level === 'error')
-          if (problems.length) return send(ws, { t: 'error', msg: problems.map((p) => p.msg).join(' | ') })
+          const createMode: Room['mode'] = msg.precon === true ? 'precon' : 'standard'
+          const createErr = deckProblem(createMode, msg.deck)
+          if (createErr) return send(ws, { t: 'error', msg: createErr })
           const who = resolvePlayerName(msg.authToken, msg.name, 'Player 1')
           if ('error' in who) return send(ws, { t: 'error', msg: who.error })
           const room: Room = {
@@ -594,7 +609,7 @@ wss.on('connection', (ws) => {
             id: makeId(),
             isPublic: msg.isPublic === true,
             origin: 'room',
-            mode: 'standard',
+            mode: createMode,
             sealed: null,
             seats: [
               { token: makeToken(), name: who.name, account: accountFromToken(msg.authToken), deck: msg.deck, socket: ws },
@@ -674,8 +689,8 @@ wss.on('connection', (ws) => {
             startDeckbuild(room)
             break
           }
-          const problems = validateDeck(msg.deck).filter((p) => p.level === 'error')
-          if (problems.length) return send(ws, { t: 'error', msg: problems.map((p) => p.msg).join(' | ') })
+          const joinErr = deckProblem(room.mode, msg.deck)
+          if (joinErr) return send(ws, { t: 'error', msg: joinErr })
           room.seats[1] = { token: makeToken(), name: who.name, account: accountFromToken(msg.authToken), deck: msg.deck, socket: ws }
           m.room = room
           m.seat = 1
@@ -737,6 +752,9 @@ wss.on('connection', (ws) => {
           room.spectators.add(ws)
           m.room = room
           m.seat = null
+          // a spectator can't take a registered name without signing in — they just show as "Spectator"
+          const who = resolvePlayerName(msg.authToken, msg.name, 'Spectator')
+          m.name = 'name' in who ? who.name : 'Spectator'
           send(ws, { t: 'joined', code: room.code, id: room.id, seat: null, token: null, mode: room.mode })
           if (room.game) send(ws, stateMsg(room, null))
           else if (room.mode === 'sealed' && room.sealed) send(ws, sealedStateMsg(room, null))
@@ -817,8 +835,8 @@ wss.on('connection', (ws) => {
           if (!m.room || m.seat !== 0) return send(ws, { t: 'error', msg: 'Only the room creator can change settings.' })
           if (m.room.seats[1] || m.room.game) return send(ws, { t: 'error', msg: 'The game has already started.' })
           if (msg.deck != null) {
-            const problems = validateDeck(msg.deck).filter((p) => p.level === 'error')
-            if (problems.length) return send(ws, { t: 'error', msg: problems.map((p) => p.msg).join(' | ') })
+            const cfgErr = deckProblem(m.room.mode, msg.deck)
+            if (cfgErr) return send(ws, { t: 'error', msg: cfgErr })
             m.room.seats[0]!.deck = msg.deck
           }
           m.room.clock = sanitizeClock(msg.clock)
@@ -852,7 +870,16 @@ wss.on('connection', (ws) => {
           const replayLenBefore = m.room.replayActions?.length ?? 0
           const snapshot = JSON.stringify(m.room.game)
           const inner = msg.action as Action
-          const result = applyAction(m.room.game, m.seat, inner)
+          let result: ReturnType<typeof applyAction>
+          try {
+            result = applyAction(m.room.game, m.seat, inner)
+          } catch (e) {
+            // an engine throw mid-action would leave a half-applied game (a prompt already consumed, …):
+            // roll back to the pre-action state so both seats keep a consistent, playable game
+            m.room.game = JSON.parse(snapshot)
+            console.error(`[room ${m.room.id}] action threw, rolled back:`, inner?.t, e)
+            return send(ws, { t: 'error', msg: 'That action failed and was undone.' })
+          }
           if (!result.ok) return send(ws, { t: 'error', msg: result.error })
           // record this action for the replay BEFORE the game-over check, so a lethal/concede action is
           // itself part of the log. A tentative flow that later rolls back is pruned below (replayTentBase),
@@ -1025,16 +1052,32 @@ wss.on('connection', (ws) => {
           if (!m.room || m.seat === null) return
           if (m.room.game) return send(ws, { t: 'error', msg: 'The game has already started.' })
           if (!m.room.rematchLobby) return send(ws, { t: 'error', msg: 'Not in a rematch lobby.' })
-          const problems = validateDeck(msg.deck).filter((p) => p.level === 'error')
-          if (problems.length) return send(ws, { t: 'error', msg: problems.map((p) => p.msg).join(' | ') })
+          const rematchErr = deckProblem(m.room.mode, msg.deck)
+          if (rematchErr) return send(ws, { t: 'error', msg: rematchErr })
           m.room.seats[m.seat]!.deck = msg.deck
           send(ws, { t: 'chat', from: 'system', msg: '✔ Deck locked in — waiting for your opponent.' })
           maybeStart(m.room) // starts the rematch once BOTH seats have a deck
           break
         }
+        case 'saveScenario': {
+          // the FULL server state (both hands, deck orders, traps): saved mid-game it stays unlisted and
+          // unloadable — even by its owner — until this game ends, so it can't be used to peek.
+          const reply = (ok: boolean, error?: string) => send(ws, { t: 'scenarioSaved', ok, error, hidden: ok ? hidden : undefined })
+          const game = m.room?.game
+          const hidden = !!game && game.phase !== 'over'
+          if (!m.room || !game) return reply(false, 'No game to save.')
+          const sess = typeof msg.authToken === 'string' && msg.authToken ? sessions.get(sha256(msg.authToken)) : undefined
+          const userId = sess && sess.expires_at >= Date.now() ? sess.user_id : null
+          if (userId === null) return reply(false, 'Sign in to save scenarios.')
+          const name = String(msg.name ?? '').trim()
+          if (!name) return reply(false, 'A scenario needs a name.')
+          if (name.length > 120) return reply(false, 'Scenario name too long.')
+          scenarioStore.insertFromRoom(userId, makeId(), name, msg.isPublic !== false, JSON.parse(JSON.stringify(game)), hidden ? m.room.id : null)
+          return reply(true)
+        }
         case 'chat': {
           if (!m.room) return
-          const from = m.seat !== null ? m.room.seats[m.seat]?.name : 'spectator'
+          const from = m.seat !== null ? m.room.seats[m.seat]?.name : `👁 ${m.name ?? 'Spectator'}`
           const payload = { t: 'chat', from, msg: String(msg.msg ?? '').slice(0, 500) }
           for (const seat of m.room.seats) if (seat?.socket) send(seat.socket, payload)
           for (const spec of m.room.spectators) send(spec, payload)
@@ -1243,6 +1286,7 @@ function validReplayData(r: any): boolean {
 // stable ids mean a reseed updates in place rather than duplicating.
 try {
   for (const s of builtinScenarios()) scenarioStore.seedBuiltin(s.id, s.name, s.state)
+  scenarioStore.unlockAll() // rooms don't survive a restart: no game is still in progress
 } catch (e) { console.error('scenario seed failed:', e) }
 
 // ensure an admin account exists, seeded from env with a default so no container shell is needed:
@@ -1330,6 +1374,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, path: string
       const id = decodeURIComponent(path.slice('/api/scenarios/'.length))
       const row = id ? scenarioStore.get(id) : undefined
       if (!row) return sendJson(res, 404, { error: 'No such scenario.' })
+      if (row.hidden_room) return sendJson(res, 403, { error: 'That scenario unlocks when its game ends.' })
       if (!row.is_public && row.owner_id !== (user?.id ?? -1)) return sendJson(res, 403, { error: 'That scenario is private.' })
       return sendJson(res, 200, {
         scenario: {

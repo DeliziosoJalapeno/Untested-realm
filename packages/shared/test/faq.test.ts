@@ -6,6 +6,7 @@ import { describe, it, expect } from 'vitest'
 import {
   newGame, act, actFail, keepBoth, answer, fetchToHand, giveMana,
   injectToHand, summonCard, giveArtifact, castMagic, castMagicFail, placeSite, waiveThreshold,
+  settlePrompts,
 } from './helpers'
 import {
   avatarOf, siteAt, summonToken, effAttack, effKeywords, effDefence,
@@ -243,7 +244,7 @@ describe('FAQ: Angel Ascendant', () => {
     const foe = summonToken(g, 'Foot Soldier', 1, 2, 0)!
     foe.modifiers.push({ kind: 'power', amount: 2, duration: 'permanent', turn: 0, sourcePlayer: 1 })
     act(g, 0, { t: 'moveAttack', unitId: angel.id, path: [], attack: { unit: foe.id } })
-    while (g.prompts.length) answer(g, g.prompts[0].kind === 'defend' ? [] : true)
+    settlePrompts(g)
     // warded angel struck for 3 → 3-toughness soldier dies; angel's ward broke
     // on the incoming strike, so it took no damage
     expect(g.units[foe.id]).toBeUndefined()
@@ -580,8 +581,9 @@ describe('Overflow: played sites obey normal placement rules', () => {
     const g = board()
     castOverflow(g)
     const legal = (g.prompts[0].data.squares as { x: number; y: number }[])[0]
-    answer(g, { x: 0, y: 3 }) // illegal: far from any controlled site
+    expect(actFail(g, 0, { t: 'prompt', promptId: g.prompts[0].id, choice: { x: 0, y: 3 } })).toMatch(/offered/) // far from any controlled site
     expect(Object.values(g.sites).some((s) => s.name === 'Winter River')).toBe(false)
+    answer(g, legal) // the prompt stays open for a legal answer
     // a fresh cast placed at a legal square succeeds
     const g2 = board()
     castOverflow(g2)
@@ -726,7 +728,7 @@ describe('Rules: a 0-power strike still strikes', () => {
     expect(effAttack(g, attacker)).toBe(0)
     const shade = summonCard(g, 1, 'Phantasmal Shade', 2, 0)
     act(g, 0, { t: 'moveAttack', unitId: attacker.id, path: [], attack: { unit: shade.id } })
-    while (g.prompts.length) answer(g, g.prompts[0].kind === 'defend' ? [] : true)
+    settlePrompts(g)
     // struck for 0 damage, but "when struck, destroy it" still fired
     expect(g.units[shade.id]).toBeUndefined()
   })
@@ -952,7 +954,7 @@ describe('FAQ: Immobile (Pudge Butcher)', () => {
     const candidates = (prompt!.data as any).candidates as string[]
     expect(candidates).toContain(mover.id) // reachable → offered (setup is valid)
     expect(candidates).not.toContain(pudge.id) // immobile → not offered
-    while (g.prompts.length) answer(g, g.prompts[0].kind === 'defend' ? [] : true)
+    settlePrompts(g)
   })
 })
 
@@ -971,7 +973,7 @@ describe('Stealth: a Stealth minion’s attack cannot be defended (rulebook: Ste
     // the fight resolved straight through — the defender's controller was never asked
     expect(g.prompts.some((p) => p.kind === 'defend')).toBe(false)
     expect(attacker.stealth).toBe(false) // the attack was the interaction that spent Stealth
-    while (g.prompts.length) answer(g, g.prompts[0].kind === 'defend' ? [] : true)
+    settlePrompts(g)
   })
 
   it('the undefended fight still strikes the attacker — Stealth is spent, so it can be struck back', () => {
@@ -1001,7 +1003,7 @@ describe('Stealth: a Stealth minion’s attack cannot be defended (rulebook: Ste
     act(g, 0, { t: 'moveAttack', unitId: attacker.id, path: [], attack: { unit: victim.id } })
     expect(g.prompts[0]?.kind).toBe('defend')
     expect((g.prompts[0]!.data as any).candidates).toContain(guard.id)
-    while (g.prompts.length) answer(g, g.prompts[0].kind === 'defend' ? [] : true)
+    settlePrompts(g)
   })
 })
 
@@ -2144,7 +2146,7 @@ describe('FAQ: Critical Strike', () => {
     castMagic(g, 0, 'Critical Strike', {})
     castMagic(g, 0, 'Critical Strike', {})
     act(g, 0, { t: 'moveAttack', unitId: striker.id, path: [], attack: { unit: wall.id } })
-    while (g.prompts.length) answer(g, g.prompts[0].kind === 'defend' ? [] : true)
+    settlePrompts(g)
     expect(g.units[wall.id]).toBeUndefined() // 1 × 2 × 2 = 4 ≥ 4 toughness
   })
 })
@@ -2205,7 +2207,7 @@ describe('FAQ: Crave Golem', () => {
     act(g, 0, { t: 'endTurn' })
     if (g.prompts.length && g.prompts[0].kind === 'drawDeck') answer(g, 'spellbook')
     // p1's turn began: the golem lunged at the ground target, never the bird
-    while (g.prompts.length) answer(g, g.prompts[0].kind === 'defend' ? [] : true)
+    settlePrompts(g)
     expect(g.units[walker.id]).toBeUndefined() // 3-power golem ate the 1/1
     expect(g.units[bird.id]).toBeDefined()
     expect(g.units[golem.id]?.damage).toBe(1) // the walker struck back
@@ -2312,7 +2314,7 @@ describe('FAQ: Flaming Sword', () => {
     const target = summonCard(g, 1, 'Bane of Aventis', 2, 0) // 4/4 survives
     const bystander = summonToken(g, 'Foot Soldier', 1, 2, 0)!
     act(g, 0, { t: 'moveAttack', unitId: knight.id, path: [], attack: { unit: target.id } })
-    while (g.prompts.length) answer(g, g.prompts[0].kind === 'defend' ? [] : true)
+    settlePrompts(g)
     // knight strikes 1+1(sword)=2 into the target; the sword splashes 2 to the bystander
     expect(g.units[target.id]?.damage).toBe(2)
     expect(g.units[bystander.id]).toBeUndefined()
@@ -2327,7 +2329,7 @@ describe('FAQ: Free City', () => {
     const lifeBefore = avatarOf(g, 0).life!
     act(g, 0, { t: 'activate', sourceId: city.id, ability: 'fc:attack' })
     answer(g, [brute.id]) // the city musters against the brute
-    while (g.prompts.length) answer(g, g.prompts[0].kind === 'defend' ? [] : true)
+    settlePrompts(g)
     // the brute took 3; its 4-power counterstrike cost p0 four life; the site stands
     expect(g.units[brute.id]?.damage).toBe(3)
     expect(avatarOf(g, 0).life).toBe(lifeBefore - 4)
@@ -2344,7 +2346,7 @@ describe('FAQ: Grim Reaper', () => {
     const twin = summonCard(g, 1, 'Pookas', 3, 0) // in-play copy elsewhere
     const handBefore = g.players[0].hand.length
     act(g, 0, { t: 'moveAttack', unitId: reaper.id, path: [], attack: { unit: victim.id } })
-    while (g.prompts.length) answer(g, g.prompts[0].kind === 'defend' ? [] : true)
+    settlePrompts(g)
     expect(g.units[victim.id]).toBeUndefined()
     expect(g.units[twin.id]).toBeUndefined() // the copy was reaped too
     expect(g.players[1].banished).toContain(victim.cardId)
@@ -2692,7 +2694,7 @@ describe('Sites with printed Ward (Blessed Well)', () => {
     g.activePlayer = 1
     const life = avatarOf(g, 0).life!
     act(g, 1, { t: 'moveAttack', unitId: raider.id, path: [], attack: { site: site.id } })
-    while (g.prompts.length) answer(g, g.prompts[0].kind === 'defend' ? [] : true)
+    settlePrompts(g)
     expect(avatarOf(g, 0).life).toBe(life) // ward ate it
     expect(siteAt(g, 1, 0)?.ward).toBeFalsy()
   })

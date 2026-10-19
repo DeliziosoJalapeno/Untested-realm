@@ -60,7 +60,7 @@ export interface Session {
   /** online: has the opponent granted this seat editor access? (always true offline) */
   editorAllowed?: boolean
   /** 'standard' bring-your-own-deck vs 'sealed' open-packs-and-build */
-  mode?: 'standard' | 'sealed'
+  mode?: 'standard' | 'sealed' | 'precon'
   /** suppress secret achievements for this session (scenario sandboxes — any board is constructible,
    *  so unlocks there would be trivially cheatable). Earned only in vs-computer / vs-player / hotseat. */
   noAchv?: boolean
@@ -586,6 +586,20 @@ export default function App() {
     beginHotseatState(JSON.parse(JSON.stringify(state)) as GameState, true)
   }
 
+  /** online: the SERVER snapshots its full state (this client only holds a redacted view). Saved
+   *  mid-game, it stays unlisted until the game ends — so it can't be loaded to peek at hidden cards. */
+  const scenSaveRef = useRef<{ resolve: (note: string) => void; reject: (e: Error) => void } | null>(null)
+  function saveScenarioOnline(name: string, isPublic: boolean): Promise<string> {
+    if (!auth.isSignedIn()) return Promise.reject(new Error('Sign in to save scenarios.'))
+    const net = netRef.current
+    if (!net) return Promise.reject(new Error('Not connected.'))
+    scenSaveRef.current?.reject(new Error('Superseded.'))
+    return new Promise<string>((resolve, reject) => {
+      scenSaveRef.current = { resolve, reject }
+      net.send({ t: 'saveScenario', name, isPublic, authToken: auth.getToken() })
+    })
+  }
+
   /** snapshot the CURRENT local game as a new scenario and save it to the account. */
   async function saveScenarioFromCurrent(name: string, isPublic: boolean): Promise<void> {
     const state = localRef.current
@@ -756,6 +770,10 @@ export default function App() {
     }
     if (msg.t === 'undoAsk') setUndoAsk(msg.from)
     if (msg.t === 'editorAsk') setEditorAsk(msg.from)
+    if (msg.t === 'scenarioSaved') {
+      const p = scenSaveRef.current; scenSaveRef.current = null
+      if (p) { if (msg.ok) p.resolve(msg.hidden ? 'Saved ✓ — it appears in Scenarios once this game ends.' : 'Saved ✓'); else p.reject(new Error(msg.error ?? 'Save failed.')) }
+    }
     if (msg.t === 'editorGranted') setSession((cur) => (cur ? { ...cur, editorAllowed: true } : cur))
     // system notices (undo/editor/rematch/room) stay as a dismissable toast; a real player's or
     // spectator's canned phrase shows as a board bubble for a few seconds.
@@ -852,7 +870,7 @@ export default function App() {
     net.onClose = () => { if (!leavingRef.current && net.onReopen) setError('⚠ Connection lost — reconnecting…') }
   }
 
-  function startOnline(mode: 'create' | 'join' | 'spectate' | 'matchmake' | 'rejoin', name: string, deck: DeckList | null, code?: string, clock?: ClockConfig | null, isPublic?: boolean, secondSeer?: boolean) {
+  function startOnline(mode: 'create' | 'join' | 'spectate' | 'matchmake' | 'rejoin', name: string, deck: DeckList | null, code?: string, clock?: ClockConfig | null, isPublic?: boolean, secondSeer?: boolean, precon?: boolean) {
     // matchmaking lives on its OWN socket so it can run alongside a room you created (create + queue).
     if (mode === 'matchmake') return startMatchmake(name, deck!)
     myDeckFromCollection.current = !!deck?.fromCollection
@@ -865,8 +883,8 @@ export default function App() {
     wireNet(net)
     net.onOpen = () => {
       const authToken = auth.getToken() // when signed in, the server uses the account username
-      if (mode === 'create') net.create(name, withCollection(deck!), clock ?? null, !!isPublic, authToken, !!secondSeer)
-      else if (mode === 'spectate') net.spectate(code!)
+      if (mode === 'create') net.create(name, withCollection(deck!), clock ?? null, !!isPublic, authToken, !!secondSeer, !!precon)
+      else if (mode === 'spectate') net.spectate(code!, name, authToken)
       // rejoin one of YOUR games (from anywhere): use the stored per-room token if this
       // browser has it, otherwise fall back to account-based rejoin (server matches by
       // account). `code` is the room id.
@@ -1212,7 +1230,7 @@ export default function App() {
             hotseatViewpoint={session.kind === 'bot' && session.local ? botDisplaySeat(session.local) : session.kind === 'hotseat' && session.local ? hotseatViewpoint(session.local) : null}
             clockNow={clockNow}
             clockAnchorAt={viewAtRef.current}
-            onSaveScenario={session.kind !== 'online' ? saveScenarioFromCurrent : undefined}
+            onSaveScenario={session.kind !== 'online' ? saveScenarioFromCurrent : saveScenarioOnline}
             onGoBack={playPending ? freeGoBack : undefined}
             mobile={mm.mobile}
             botControl={session.kind === 'bot' && localRef.current ? {

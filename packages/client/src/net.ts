@@ -30,7 +30,7 @@ export interface SealedStateMsg {
 }
 
 export type ServerMsg =
-  | { t: 'joined'; code: string; id: string; seat: PlayerId | null; token: string | null; mode?: 'standard' | 'sealed' }
+  | { t: 'joined'; code: string; id: string; seat: PlayerId | null; token: string | null; mode?: 'standard' | 'sealed' | 'precon' }
   | {
       t: 'state'; view: PlayerView; undoAsk?: string | null; editorAsk?: string | null; editorAllowed?: boolean
       // post-game rematch offer (rides in every state so it survives a reconnect):
@@ -50,9 +50,10 @@ export type ServerMsg =
   // the room was closed (by a player, or the server) — return to home, stop auto-rejoin.
   | { t: 'roomClosed'; msg: string }
   // both players agreed to a rematch → the room is back at DECK SELECTION; pick a deck again.
-  | { t: 'rematchStart'; mode: 'standard' | 'sealed' }
+  | { t: 'rematchStart'; mode: 'standard' | 'sealed' | 'precon' }
   // the server filed your in-game bug report (captured the replay-so-far + scenario).
   | { t: 'bugReported' }
+  | { t: 'scenarioSaved'; ok: boolean; error?: string; hidden?: boolean }
 
 export class Net {
   private ws: WebSocket | null = null
@@ -107,8 +108,9 @@ export class Net {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(data))
   }
 
-  create(name: string, deck: DeckList, clock: ClockConfig | null = null, isPublic = false, authToken: string | null = null, secondSeer = false): void {
-    this.send({ t: 'create', name, deck, clock, isPublic, authToken, secondSeer })
+  create(name: string, deck: DeckList, clock: ClockConfig | null = null, isPublic = false, authToken: string | null = null, secondSeer = false, precon = false): void {
+    // precon: a precon room — both seats must bring an official precon, unedited
+    this.send({ t: 'create', name, deck, clock, isPublic, authToken, secondSeer, precon })
   }
   join(code: string, name: string, deck: DeckList, authToken: string | null = null): void {
     this.send({ t: 'join', code, name, deck, authToken })
@@ -130,8 +132,12 @@ export class Net {
     // per-room token (account-based rejoin).
     this.send({ t: 'rejoin', code, token, authToken })
   }
-  spectate(code: string): void {
-    this.send({ t: 'spectate', code })
+  private spectateAs: { name: string; authToken: string | null } | null = null
+  spectate(code: string, name?: string, authToken?: string | null): void {
+    // the name labels the spectator's chat messages (an account username wins when signed in);
+    // a reconnect re-spectates with the name it first joined under
+    if (name !== undefined) this.spectateAs = { name, authToken: authToken ?? null }
+    this.send({ t: 'spectate', code, name: this.spectateAs?.name, authToken: this.spectateAs?.authToken ?? null })
   }
   matchmake(name: string, deck: DeckList, authToken: string | null = null): void {
     this.send({ t: 'matchmake', name, deck, authToken })

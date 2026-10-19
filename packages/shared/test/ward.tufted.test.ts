@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { newGame, keepBoth, fetchToHand, act, answer, summonCard } from './helpers'
+import { newGame, keepBoth, fetchToHand, act, answer, summonCard, defaultAnswer } from './helpers'
 import { avatarOf } from '../src'
 
 // A ward breaks only when its bearer WOULD actually take damage. If another effect prevents the
@@ -30,7 +30,7 @@ describe('Ward + Tufted Turtles shell', () => {
     while (g.prompts.length) {
       const p: any = g.prompts[0]
       answer(g, p.kind === 'defend' ? [] : p.kind === 'allocateDamage'
-        ? { strikerId: p.data.strikerId, allocation: { [archer.id]: 2 } } : true)
+        ? { strikerId: p.data.strikerId, allocation: { [archer.id]: 2 } } : defaultAnswer(p))
     }
     // the shell ate the 3 retaliation → 0 damage, AND the ward survived (nothing landed to break it)
     expect(g.units[turtles.id], 'the turtles survive').toBeDefined()
@@ -47,7 +47,7 @@ describe('Ward + Tufted Turtles shell', () => {
     while (g.prompts.length) {
       const p: any = g.prompts[0]
       answer(g, p.kind === 'defend' ? [] : p.kind === 'allocateDamage'
-        ? { strikerId: p.data.strikerId, allocation: { [archer.id]: 2 } } : true)
+        ? { strikerId: p.data.strikerId, allocation: { [archer.id]: 2 } } : defaultAnswer(p))
     }
     // shell gone → the strike WOULD land → ward breaks and absorbs it (0 damage, ward spent)
     expect(g.units[turtles.id]?.damage, 'the ward absorbed the blow').toBe(0)

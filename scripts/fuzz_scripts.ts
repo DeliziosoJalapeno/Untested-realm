@@ -54,6 +54,8 @@ function groundArt(g: GameState, p: PlayerId, name: string, x: number, y: number
 function board(): GameState {
   const g = createGame([starterDecks[0], starterDecks[1]], ['A', 'B'], 7, 0)
   applyAction(g, 0, { t: 'keepHand' }); applyAction(g, 1, { t: 'keepHand' })
+  // answer the forced first-turn site prompt, or every later action is refused ("Waiting for…")
+  while (g.prompts[0]?.kind === 'firstSite') applyAction(g, g.prompts[0].player, { t: 'prompt', promptId: g.prompts[0].id, choice: g.prompts[0].data.ids[0] })
   for (let y = 0; y < 4; y++) for (let x = 1; x <= 3; x++) place(g, x < 2 ? 0 : 1, 'Rustic Village', x, y)
   place(g, 1, 'Rustic Village', 3, 3, true) // a flooded (water) site
   summon(g, 0, 'Foot Soldier', 2, 1)

@@ -2025,6 +2025,7 @@ button.autobattle:hover:not(:disabled) { background: #4a5cc0; }
 .mygames-close:hover { background: #3a2424; color: #ffbcbc; }
 .lobby-mode { font-size: 12px; padding: 1px 7px; border-radius: 10px; white-space: nowrap; }
 .lobby-mode.sealed { background: rgba(140, 84, 220, 0.28); color: #d7b8ff; }
+.lobby-mode.precon { background: rgba(214, 150, 54, 0.28); color: #ffd9a0; }
 .lobby-mode.constructed { background: rgba(96, 140, 200, 0.22); color: #a9c6ff; }
 
 /* ── Sealed create controls (in the online panel) ── */
@@ -2598,3 +2599,12 @@ button.autobattle:hover:not(:disabled) { background: #4a5cc0; }
 }
 .game.mobile .rip-card { width: 150px; height: 210px; }
 .game.mobile .rip-label { font-size: 15px; }
+
+/* ⚙ "Opponent's cards upside-down": the opponent's card ART turns 180° to face them, as across a real
+   table. Only the art — stat badges, keywords and counters stay upright and readable. Tapped units keep
+   their 90° turn on the .unit box, so a tapped opponent card ends up at 270°. */
+.board.opp-flip .unit.theirs .unitimg,
+.board.opp-flip .siteimg.site-theirs,
+.board.opp-flip .groundimg.art-theirs,
+.board.opp-flip .aura-theirs .groundimg,
+.board.opp-flip .aura-theirs .auraimg { transform: rotate(180deg); }

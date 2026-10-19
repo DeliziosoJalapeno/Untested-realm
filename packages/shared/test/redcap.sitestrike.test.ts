@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { newGame, keepBoth, placeSite, summonCard, act, answer } from './helpers'
+import { newGame, keepBoth, placeSite, summonCard, act, answer, settlePrompts } from './helpers'
 
 // Redcap Powries: "If Redcap Powries haven't attacked by the end of your turn, they die."
 // Attacking counts whether the target is a MINION or a SITE. A previous bug: an UNDEFENDED
@@ -14,11 +14,11 @@ describe('Redcap Powries count a SITE attack as having attacked', () => {
     redcap.enteredTurn = 0
 
     act(g, 0, { t: 'moveAttack', unitId: redcap.id, path: [], attack: { site: enemySite.id } })
-    while (g.prompts.length) answer(g, 0) // no defenders → auto-resolves
+    settlePrompts(g) // no defenders → auto-resolves
     expect(redcap.counters?.attackedTurn, 'the site strike recorded "attacked this turn"').toBe(g.turn)
 
     act(g, 0, { t: 'endTurn' })
-    while (g.prompts.length) answer(g, 0)
+    settlePrompts(g)
     expect(g.units[redcap.id], 'Redcap Powries live on after attacking a site').toBeTruthy()
   })
 
@@ -29,7 +29,7 @@ describe('Redcap Powries count a SITE attack as having attacked', () => {
     redcap.enteredTurn = 0
 
     act(g, 0, { t: 'endTurn' })
-    while (g.prompts.length) answer(g, 0)
+    settlePrompts(g)
     expect(g.units[redcap.id], 'idle Redcap Powries turn on themselves').toBeUndefined()
   })
 })

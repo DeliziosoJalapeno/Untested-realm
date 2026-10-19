@@ -26,6 +26,8 @@ export interface Settings {
   replayVisibility: ReplayVisibility
   /** home-screen look (classic 'high' vs hand-drawn 'low') */
   homepageQuality: HomepageQuality
+  /** turn the opponent's cards upside-down on the board, as they face you across a real table */
+  flipOpponentCards: boolean
 }
 
 const DEFAULTS: Settings = {
@@ -33,6 +35,7 @@ const DEFAULTS: Settings = {
   coordSystem: 'standard',
   replayVisibility: 'off',
   homepageQuality: 'high',
+  flipOpponentCards: false,
 }
 
 const KEY = 'sorcery-settings'

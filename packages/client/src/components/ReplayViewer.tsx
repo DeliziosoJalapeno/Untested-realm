@@ -4,6 +4,7 @@ import type { Session } from '../App'
 import Game from './Game'
 import { replayInitialState, replayStateAt, replayStep, type ReplayRecord } from '../replay'
 import { getSetting } from '../settings'
+import * as auth from '../auth'
 
 const SPEEDS = [
   { label: '1×', ms: 2000 },
@@ -78,10 +79,16 @@ export default function ReplayViewer({ replay, onLeave, mobile }: { replay: Repl
   // a read-only spectator session: seat null ⇒ the board disables every interaction; view.you keeps
   // the chosen perspective's orientation. No send / undo / chat — purely for watching.
   const session: Session = useMemo(() => ({ kind: 'online', seat: null, view, send: () => {} }), [view])
+  // 💾 the replay holds the FULL game, so the board at the current step saves exactly (hands, decks, traps)
+  async function saveScenario(name: string, isPublic: boolean): Promise<void> {
+    if (!auth.isSignedIn()) throw new Error('Sign in (on the home screen) to save scenarios.')
+    const data = JSON.parse(JSON.stringify(workRef.current)) as GameState
+    await auth.pushScenario({ id: crypto.randomUUID(), name, isPublic, data })
+  }
 
   return (
     <div className="replay-root">
-      <Game session={session} view={view} hotseatViewpoint={null} onLeave={onLeave} mobile={mobile} />
+      <Game session={session} view={view} hotseatViewpoint={null} onLeave={onLeave} mobile={mobile} onSaveScenario={saveScenario} />
       <div className="replay-bar" style={{ translate: `${drag.x}px ${drag.y}px` }}>
         <span
           className="replay-grip"

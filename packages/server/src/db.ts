@@ -18,6 +18,14 @@ db.exec('PRAGMA foreign_keys = ON')
   if (cols.length && !cols.some((c) => c.name === 'deck_id')) db.exec('DROP TABLE decks')
 }
 
+// scenarios saved mid-game from an online room stay hidden until that game ends (they hold the full
+// state — both hands and deck orders). hidden_room = the room id while locked, NULL once listed.
+{
+  const cols = db.prepare('PRAGMA table_info(scenarios)').all() as { name: string }[]
+  if (cols.length && !cols.some((c) => c.name === 'hidden_room'))
+    db.exec('ALTER TABLE scenarios ADD COLUMN hidden_room TEXT')
+}
+
 // add the is_admin flag to a users table created before the admin feature existed
 {
   const cols = db.prepare('PRAGMA table_info(users)').all() as { name: string }[]
@@ -68,7 +76,8 @@ db.exec(`
     name       TEXT NOT NULL,
     is_public  INTEGER NOT NULL DEFAULT 1,
     data       TEXT NOT NULL,
-    updated_at INTEGER NOT NULL
+    updated_at INTEGER NOT NULL,
+    hidden_room TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_scenarios_owner ON scenarios(owner_id);
   CREATE INDEX IF NOT EXISTS idx_scenarios_public ON scenarios(is_public);
@@ -130,12 +139,16 @@ const q = {
   // scenarios: list all public + the caller's own (pass -1 for a signed-out caller)
   scenListVisible: db.prepare(`
     SELECT id, owner_id, name, is_public, updated_at FROM scenarios
-    WHERE is_public = 1 OR owner_id = ? ORDER BY updated_at DESC`),
+    WHERE (is_public = 1 OR owner_id = ?) AND hidden_room IS NULL ORDER BY updated_at DESC`),
   scenById: db.prepare('SELECT * FROM scenarios WHERE id = ?'),
   scenUpsert: db.prepare(`
     INSERT INTO scenarios (id, owner_id, name, is_public, data, updated_at) VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET name = excluded.name, is_public = excluded.is_public, data = excluded.data, updated_at = excluded.updated_at`),
   scenDelete: db.prepare('DELETE FROM scenarios WHERE id = ? AND owner_id = ?'),
+  scenInsertHidden: db.prepare(`
+    INSERT INTO scenarios (id, owner_id, name, is_public, data, updated_at, hidden_room) VALUES (?, ?, ?, ?, ?, ?, ?)`),
+  scenUnlockRoom: db.prepare('UPDATE scenarios SET hidden_room = NULL WHERE hidden_room = ?'),
+  scenUnlockAll: db.prepare('UPDATE scenarios SET hidden_room = NULL WHERE hidden_room IS NOT NULL'),
   scenSeedBuiltin: db.prepare(`
     INSERT INTO scenarios (id, owner_id, name, is_public, data, updated_at) VALUES (?, NULL, ?, 1, ?, ?)
     ON CONFLICT(id) DO UPDATE SET name = excluded.name, data = excluded.data, updated_at = excluded.updated_at`),
@@ -165,7 +178,7 @@ const q = {
   bugDelete: db.prepare('DELETE FROM bug_reports WHERE id = ?'),
 }
 
-export interface ScenarioRow { id: string; owner_id: number | null; name: string; is_public: number; data: string; updated_at: number }
+export interface ScenarioRow { id: string; owner_id: number | null; name: string; is_public: number; data: string; updated_at: number; hidden_room: string | null }
 /** list-facing metadata (no heavy `data` blob) */
 export interface ScenarioMeta { id: string; name: string; isPublic: boolean; builtin: boolean; mine: boolean; updatedAt: number }
 
@@ -276,6 +289,14 @@ export const scenarios = {
   upsert: (ownerId: number, id: string, name: string, isPublic: boolean, data: unknown) =>
     q.scenUpsert.run(id, ownerId, name, isPublic ? 1 : 0, JSON.stringify(data), Date.now()),
   remove: (ownerId: number, id: string) => q.scenDelete.run(id, ownerId),
+  /** save a scenario from a live online game: `hiddenRoom` keeps it unlisted (and unloadable, even by
+   *  its owner) until that room's game ends — it holds both hands and both deck orders. */
+  insertFromRoom: (ownerId: number, id: string, name: string, isPublic: boolean, data: unknown, hiddenRoom: string | null) =>
+    q.scenInsertHidden.run(id, ownerId, name, isPublic ? 1 : 0, JSON.stringify(data), Date.now(), hiddenRoom),
+  /** that room's game is over (or the room is gone) → its saved scenarios become listed */
+  unlockRoom: (roomId: string) => q.scenUnlockRoom.run(roomId),
+  /** server boot: rooms don't survive a restart, so nothing can still be in progress */
+  unlockAll: () => q.scenUnlockAll.run(),
   /** upsert a public, owner-less built-in (seeded from the audit fixtures). */
   seedBuiltin: (id: string, name: string, data: unknown) =>
     q.scenSeedBuiltin.run(id, name, JSON.stringify(data), Date.now()),

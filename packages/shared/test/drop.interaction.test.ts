@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { newGame, keepBoth, placeSite, summonCard, giveArtifact, giveMana, waiveThreshold, act, answer, castMagic } from './helpers'
+import { newGame, keepBoth, placeSite, summonCard, giveArtifact, giveMana, waiveThreshold, act, answer, castMagic, settlePrompts } from './helpers'
 import { drop } from '../src'
 
 // Drop basic ability (rulebook): "Once on your turn, if this unit hasn't interacted with the
@@ -26,7 +26,7 @@ describe('Drop requires the carrier hasn\'t interacted with the realm this turn'
     summonCard(g, 1, 'Foot Soldiers', 2, 2) // enemy SHARING the square = combat (attacks move onto the target)
     const foe = Object.values(g.units).find((u) => u.controller === 1 && u.name === 'Foot Soldiers')!
     act(g, 0, { t: 'moveAttack', unitId: atk.id, path: [], attack: { unit: foe.id } })
-    while (g.prompts.length) answer(g, 0) // resolve any defend/allocate prompt
+    settlePrompts(g) // resolve any defend/allocate prompt
     expect(atk.interactedTurn, 'striking marks interaction').toBe(g.turn)
     expect(drop(g, 0, atk.id, [art.id]), 'drop refused after attacking').toBeTruthy()
     expect(atk.carrying, 'artifact stays carried').toContain(art.id)
@@ -51,7 +51,7 @@ describe('Drop requires the carrier hasn\'t interacted with the realm this turn'
     const art = giveArtifact(g, avatar, 'Ruby Core')
     giveMana(g, 0, 20); waiveThreshold(g, 0)
     castMagic(g, 0, 'Snowball')
-    while (g.prompts.length) answer(g, 0)
+    settlePrompts(g)
     expect(avatar.interactedTurn, 'casting marks interaction').toBe(g.turn)
     expect(drop(g, 0, avatar.id, [art.id]), 'drop refused after casting').toBeTruthy()
   })

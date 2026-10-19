@@ -32,7 +32,7 @@ describe('search bot never freezes on damage allocation', () => {
       } else if (p.kind === 'defend') {
         action = { t: 'prompt', promptId: p.id, choice: p.data?.candidates ?? [] } // defend with all
       } else {
-        action = { t: 'prompt', promptId: p.id, choice: p.data?.candidates?.[0] ?? [] }
+        action = { t: 'prompt', promptId: p.id, choice: p.kind === 'stayInFight' || p.kind === 'yesNo' ? true : p.data?.candidates?.[0] ?? [] }
       }
       const res = applyAction(g, p.player, action)
       expect(res.ok, `answer rejected on ${p.kind}: ${res.error}`).toBe(true)

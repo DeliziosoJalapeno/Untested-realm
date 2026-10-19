@@ -28,6 +28,7 @@ const REPLAY_OPTIONS: { value: ReplayVisibility; label: string }[] = [
 export default function SettingsModal({ onClose }: { onClose: () => void }) {
   const [sound, setSound] = useState(!sfxMuted())
   const [oppPopup, setOppPopup] = useState(getSetting('opponentPlayPopup'))
+  const [flipOpp, setFlipOpp] = useState(getSetting('flipOpponentCards'))
   const [coords, setCoords] = useState<CoordSystem>(getSetting('coordSystem'))
   const [replayVis, setReplayVis] = useState<ReplayVisibility>(getSetting('replayVisibility'))
   const [quality, setQuality] = useState<HomepageQuality>(getSetting('homepageQuality'))
@@ -63,6 +64,15 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             onChange={(e) => { setOppPopup(e.target.checked); setSetting('opponentPlayPopup', e.target.checked) }}
           />
           <span>🎴 Popup when the opponent plays a card</span>
+        </label>
+        <label className="settings-row" title="Show the opponent's cards upside-down on the board — facing them, the way they sit across a real table.">
+          <input
+            type="checkbox"
+            data-setting-flipopp
+            checked={flipOpp}
+            onChange={(e) => { setFlipOpp(e.target.checked); setSetting('flipOpponentCards', e.target.checked) }}
+          />
+          <span>🙃 Opponent's cards upside-down</span>
         </label>
         <div className="settings-row settings-coords" title="How much a replay reveals. Spectator: both players' hands & collections hidden. Player: watch from one side — their cards shown, the opponent's hidden (use the replay's 👁 flip to switch). Reveal all: see everything.">
           <span>👁 Replay visibility</span>

@@ -137,7 +137,7 @@ export interface RoomInfo {
   joinable: boolean
   clock: { base: number; inc: number } | null
   origin: 'room' | 'battle'
-  mode?: 'standard' | 'sealed'
+  mode?: 'standard' | 'sealed' | 'precon'
   sealed?: { edition: string; numPacks: number; deckbuilding: boolean } | null
   createdAt: number
 }
@@ -156,7 +156,7 @@ export async function fetchAnnounce(): Promise<{ deadline: number | null }> {
 export interface MyRoomInfo {
   id: string
   code: string
-  mode?: 'standard' | 'sealed'
+  mode?: 'standard' | 'sealed' | 'precon'
   inProgress: boolean
   seat: number
   opponent: string | null

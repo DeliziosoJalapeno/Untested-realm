@@ -53,7 +53,7 @@ describe('Ward cancels strike damage', () => {
     while (g.prompts.length) {
       const p: any = g.prompts[0]
       answer(g, p.kind === 'defend' ? [] : p.kind === 'allocateDamage'
-        ? { strikerId: p.data.strikerId, allocation: { [archer1.id]: 3, [archer2.id]: 3 } } : true)
+        ? { strikerId: p.data.strikerId, allocation: { [archer1.id]: 3 } } : true) // the attacker's 3 power
     }
     // the ONE ward absorbs the whole simultaneous pass: no damage, and the Cyclops survives.
     expect(g.units[cyclops.id], 'the warded Cyclops must survive both strikes').toBeDefined()

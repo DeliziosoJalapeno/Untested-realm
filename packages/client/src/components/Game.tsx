@@ -50,6 +50,7 @@ import {
   canActivate,
   isEvilUnit,
   isCarriableArtifact,
+  PRECONS,
   carriedInside,
   occupiedSquares,
   occupies,
@@ -76,7 +77,7 @@ import { QuakeArrange } from './QuakeArrange'
 import { hasFaq, faqFor } from '../faq'
 import { CHAT_PHRASES } from '../chatPhrases'
 import { sfx, preloadSfx, type SfxKey } from '../sfx'
-import { getSetting } from '../settings'
+import { getSetting, subscribeSettings } from '../settings'
 import { fmtCoord as squareLabel, relabelCoords } from '../coords'
 import {
   presentViews,
@@ -172,8 +173,8 @@ type Mode =
 
 /** shown while a room creator waits alone: change your deck and/or the clock; the
  *  chosen setup is applied the moment an opponent joins (server-side maybeStart). */
-function RoomConfigControls({ onUpdate }: { onUpdate: (deck: DeckList, clock: ClockConfig | null) => void }) {
-  const decks = loadDecks()
+function RoomConfigControls({ onUpdate, precon }: { onUpdate: (deck: DeckList, clock: ClockConfig | null) => void; precon?: boolean }) {
+  const decks: DeckList[] = precon ? PRECONS : loadDecks() // a precon room only takes the official precons
   const [deckId, setDeckId] = useState(decks[0]?.id ?? '')
   const [clockOn, setClockOn] = useState(false)
   const [baseMin, setBaseMin] = useState(15)
@@ -214,8 +215,8 @@ function RoomConfigControls({ onUpdate }: { onUpdate: (deck: DeckList, clock: Cl
 
 /** the rematch deck-selection lobby (both agreed to play again): pick a deck and lock it in.
  *  Unlike RoomConfigControls this shows for BOTH seats and submits via net.rematchDeck. */
-function RematchDeckSelect({ onPick }: { onPick: (deck: DeckList) => void }) {
-  const decks = loadDecks()
+function RematchDeckSelect({ onPick, precon }: { onPick: (deck: DeckList) => void; precon?: boolean }) {
+  const decks: DeckList[] = precon ? PRECONS : loadDecks() // a precon room only takes the official precons
   const [deckId, setDeckId] = useState(decks[0]?.id ?? '')
   const [locked, setLocked] = useState(false)
   const deck = decks.find((d) => d.id === deckId) ?? decks[0]
@@ -292,7 +293,7 @@ export default function Game({
   hotseatViewpoint: PlayerId | null
   clockNow?: number
   clockAnchorAt?: number
-  onSaveScenario?: (name: string, isPublic: boolean) => Promise<void>
+  onSaveScenario?: (name: string, isPublic: boolean) => Promise<string | void>
   onGoBack?: () => void
   onLeave: () => void
   /** leave the waiting room ON SCREEN but keep the online session alive in the background,
@@ -309,7 +310,7 @@ export default function Game({
         <div className="waiting">
           <h2>Rematch! 🔁</h2>
           <p>Both players agreed to a rematch. Pick your deck to start a fresh game.</p>
-          <RematchDeckSelect onPick={session.rematchDeck} />
+          <RematchDeckSelect onPick={session.rematchDeck} precon={session.mode === 'precon'} />
           <div className="waitbtns"><button onClick={onLeave}>Leave</button></div>
         </div>
       )
@@ -331,7 +332,7 @@ export default function Game({
           </p>
         )}
         {session.kind === 'online' && session.seat === 0 && session.updateRoom && (
-          <RoomConfigControls onUpdate={session.updateRoom} />
+          <RoomConfigControls onUpdate={session.updateRoom} precon={session.mode === 'precon'} />
         )}
         <div className="waitbtns">
           {onBrowse && <button onClick={onBrowse}>🔎 Browse while you wait</button>}
@@ -370,7 +371,7 @@ function GameInner({
   hotseatViewpoint: PlayerId | null
   clockNow?: number
   clockAnchorAt?: number
-  onSaveScenario?: (name: string, isPublic: boolean) => Promise<void>
+  onSaveScenario?: (name: string, isPublic: boolean) => Promise<string | void>
   onGoBack?: () => void
   onLeave: () => void
   mobile?: boolean
@@ -433,6 +434,7 @@ function GameInner({
   const [showSymbols, setShowSymbols] = useState(false) // GUI symbol legend (Q / ❔ button)
   // report-a-bug modal: a message + a snapshot (replay-so-far + scenario) captured by onReportBug
   const [bugOpen, setBugOpen] = useState(false)
+  const [scenOpen, setScenOpen] = useState(false) // 💾 save this board as a scenario (online games, replays)
   const [bugText, setBugText] = useState('')
   const [bugState, setBugState] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
   const [faqView, setFaqView] = useState(false) // FAQ view (F / 📖 button): greys the board, cards
@@ -1137,6 +1139,9 @@ function GameInner({
   //  • online — the server sends you `viewFor(viewSeatFor(seat))`, so follow `view.you`;
   //  • hotseat/vs-bot — App passes the local display seat via the `hotseatViewpoint` prop
   //    (hotseatViewpoint / botDisplaySeat). Normally this is just your own seat.
+  // ⚙ "Opponent's cards upside-down": their card art is turned 180° (CSS .board.opp-flip), live-updating
+  const [flipOppCards, setFlipOppCards] = useState(() => getSetting('flipOpponentCards'))
+  useEffect(() => subscribeSettings(() => setFlipOppCards(getSetting('flipOpponentCards'))), [])
   const me: PlayerId =
     session.kind === 'online' ? (view.you ?? session.seat ?? 0)
     : (hotseatViewpoint ?? session.seat ?? 0)
@@ -3360,6 +3365,11 @@ function GameInner({
           <button className={`railbtn ${stView ? 'selected' : ''}`} title="Subtype view — pick a subtype (Spellcasters, Evil, Beasts, Deserts…); its cards glow, all else dims. Z to toggle, ←/→ to cycle" onClick={toggleSubtype}>
             <span className="ri">🏷</span><span className="rl">Subtypes</span>
           </button>
+          {onSaveScenario && (
+            <button className={`railbtn ${scenOpen ? 'selected' : ''}`} data-save-scenario="1" title="Save this board as a reusable scenario" onClick={() => setScenOpen((v) => !v)}>
+              <span className="ri">💾</span><span className="rl">Scenario</span>
+            </button>
+          )}
           {!isSpectator && session.onReportBug && (
             <button className={`railbtn ${bugOpen ? 'selected' : ''}`} title="Report a bug — saves your message + this game's replay & board for the admins" onClick={() => { setBugState('idle'); setBugOpen(true) }}>
               <span className="ri">🐛</span><span className="rl">Report bug</span>
@@ -3409,6 +3419,9 @@ function GameInner({
           <button title="What do the symbols mean?" className={showSymbols ? 'selected' : ''} onClick={() => setShowSymbols((v) => !v)}>❔</button>
           <button title="FAQ view — tap a glowing card to read its rulings" className={faqView ? 'selected' : ''} onClick={toggleFaq}>📖</button>
           <button title="Subtype view — a subtype's cards glow, all else dims (tap to open, use the top bar to pick)" className={stView ? 'selected' : ''} onClick={toggleSubtype}>🏷</button>
+          {onSaveScenario && (
+            <button title="Save this board as a scenario" data-save-scenario="1" className={scenOpen ? 'selected' : ''} onClick={() => setScenOpen((v) => !v)}>💾</button>
+          )}
           {session.onReportBug && (
             <button title="Report a bug — saves your message + this game's replay & board" className={bugOpen ? 'selected' : ''} onClick={() => { setBugState('idle'); setBugOpen(true) }}>🐛</button>
           )}
@@ -3569,6 +3582,15 @@ function GameInner({
       )}
 
       {/* Report-a-bug modal: your message + an automatic snapshot (replay-so-far + full board scenario) */}
+      {scenOpen && onSaveScenario && (
+        <SaveScenarioDialog
+          onSave={onSaveScenario}
+          onClose={() => setScenOpen(false)}
+          note={session.kind === 'online' && view.phase !== 'over' && session.seat !== null
+            ? 'Saves the full board — both hands and decks. It stays hidden (not even you can load it) until this game ends.'
+            : undefined}
+        />
+      )}
       {bugOpen && (
         <div className="modal bug-modal">
           <div className="sym-head">
@@ -3799,7 +3821,7 @@ function GameInner({
         >
         <div
           ref={boardRef}
-          className={`board ${flip ? 'flipped' : ''} ${subView ? 'subview' : ''} ${faqView ? 'faq-mode' : ''} ${stView ? 'subtype-mode' : ''} ${dirHover ? 'belt-focus' : ''} ${yogImg ? 'yog-present' : ''}`}
+          className={`board ${flip ? 'flipped' : ''} ${flipOppCards ? 'opp-flip' : ''} ${subView ? 'subview' : ''} ${faqView ? 'faq-mode' : ''} ${stView ? 'subtype-mode' : ''} ${dirHover ? 'belt-focus' : ''} ${yogImg ? 'yog-present' : ''}`}
           style={{ transform: `scale(${boardScale * zoom})`, transformOrigin: 'top left' }}
         >
           {rows.map((ry) => {
@@ -3894,7 +3916,7 @@ function GameInner({
                       ))}
                       {site && (
                         <div className={`sitecard ${hasFaq(site.name) ? 'has-faq' : ''} ${stView && siteMatchesView(site.name, stKey) ? 'st-match' : ''}`} data-site={site.id} data-sitename={site.name} data-target={targetIds?.has(site.id) ? '1' : undefined} data-picked={(mode.m === 'magic' && mode.picked.includes(site.id)) || (mode.m === 'promptTargets' && mode.picked.includes(site.id)) ? '1' : undefined} onClick={(e) => clickSite(site, e)} onMouseEnter={() => showHover(site.name, false, view.cards[site.cardId]?.art)}>
-                          <CardImg name={site.name} art={view.cards[site.cardId]?.art} className={`siteimg owner${site.controller}`} />
+                          <CardImg name={site.name} art={view.cards[site.cardId]?.art} className={`siteimg owner${site.controller}${site.controller != null && site.controller !== me ? ' site-theirs' : ''}`} />
                           {/* ownership strip — a real element ON TOP of the art (an inset box-shadow
                               on the <img> is painted over by the image, so it was invisible) */}
                           {!site.isRubble && (site.controller === 0 || site.controller === 1) && (
@@ -3961,7 +3983,7 @@ function GameInner({
                               onClick={(ev) => clickGroundArtifact(a, ev)}
                               title={`${a.name} — click to pick up with a unit here`}
                             >
-                              <CardImg name={a.name} art={view.cards[a.cardId]?.art} className="groundimg" />
+                              <CardImg name={a.name} art={view.cards[a.cardId]?.art} className={`groundimg${a.conjuredBy !== me ? ' art-theirs' : ''}`} />
                               {a.name === 'The Immortal Throne' && (
                                 <span className="throne-level" title={`The Immortal Throne — level ${a.counters?.level ?? 0}`}>
                                   {a.counters?.level ?? 0}
@@ -6386,11 +6408,48 @@ const JUDGE_KEYWORDS: { label: string; kw: string }[] = [
 
 type JudgeTab = 'table' | 'create' | 'modify' | 'avatars'
 type ModType = 'unit' | 'site' | 'artifact' | 'aura'
+/** 💾 name + public toggle → save the current board as a scenario (online games and replays; local games
+ *  also have it inside the Editor panel). `onSave` may resolve to a note to show instead of "Saved ✓". */
+function SaveScenarioDialog({ onSave, onClose, note }: { onSave: (name: string, isPublic: boolean) => Promise<string | void>; onClose: () => void; note?: string }) {
+  const [name, setName] = useState('')
+  const [isPublic, setIsPublic] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<string | null>(null)
+  const [done, setDone] = useState(false)
+  async function save() {
+    if (!name.trim() || busy) return
+    setBusy(true); setMsg(null)
+    try { setMsg((await onSave(name.trim(), isPublic)) || 'Saved ✓'); setDone(true) }
+    catch (e: any) { setMsg(e?.message ?? 'Save failed.') }
+    finally { setBusy(false) }
+  }
+  return (
+    <div className="modal bug-modal" data-save-scenario-dialog="1">
+      <div className="sym-head">
+        <h3>💾 Save as scenario</h3>
+        <button data-cancel="1" onClick={onClose}>✕ Close</button>
+      </div>
+      {note && <p style={{ opacity: 0.85, fontSize: 13 }}>{note}</p>}
+      {!done && (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <input data-scen-name value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') save() }} placeholder="My scenario" maxLength={120} autoFocus />
+          <label title="Public scenarios are loadable by everyone; private ones only by you.">
+            <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} /> public
+          </label>
+          <button data-scen-save disabled={!name.trim() || busy} onClick={save}>{busy ? 'saving…' : 'Save'}</button>
+        </div>
+      )}
+      {msg && <div data-scen-msg style={{ marginTop: 6, fontSize: 13 }}>{msg}</div>}
+      {done && <div className="confirm-actions"><button data-confirm="1" onClick={onClose}>Done</button></div>}
+    </div>
+  )
+}
+
 function JudgePanel({ view, me, send, selectedUnitId, selectedSiteId, selectedArtifactId, selectedAuraId, setMode, onClose, onSaveScenario }: {
   view: PlayerView; me: PlayerId; send: (a: Action) => void
   selectedUnitId: string | null; selectedSiteId: string | null; selectedArtifactId: string | null; selectedAuraId: string | null
   setMode: (m: Mode) => void; onClose: () => void
-  onSaveScenario?: (name: string, isPublic: boolean) => Promise<void>
+  onSaveScenario?: (name: string, isPublic: boolean) => Promise<string | void>
 }) {
   const drag = useDraggable(false) // draggable by its header; edge-anchored (not centered)
   const [saveOpen, setSaveOpen] = useState(false)
@@ -6402,8 +6461,8 @@ function JudgePanel({ view, me, send, selectedUnitId, selectedSiteId, selectedAr
     if (!onSaveScenario || !scenName.trim() || saving) return
     setSaving(true); setSaveMsg(null)
     try {
-      await onSaveScenario(scenName.trim(), scenPublic)
-      setSaveMsg('Saved ✓'); setSaveOpen(false); setScenName('')
+      const note = await onSaveScenario(scenName.trim(), scenPublic)
+      setSaveMsg(note || 'Saved ✓'); setSaveOpen(false); setScenName('')
     } catch (e: any) {
       setSaveMsg(e?.message ?? 'Save failed.')
     } finally {

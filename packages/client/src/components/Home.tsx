@@ -8,7 +8,7 @@ import DeckPreview from './DeckPreview'
 import CardImg from './CardImg'
 import { useMobileMode } from '../mobile'
 import { CHANGELOG } from '../changelog'
-import { ACHIEVEMENTS } from '@sorcery/shared'
+import { ACHIEVEMENTS, PRECONS } from '@sorcery/shared'
 import { unlockedCount } from '../achievements'
 import { AchievementsModal } from './Achievements'
 import SettingsModal from './SettingsModal'
@@ -83,7 +83,7 @@ export default function Home({
   username: string | null
   onAuth: (username: string | null) => void
   onHotseat: (a: DeckList, b: DeckList, clock: ClockConfig | null, secondSeer?: boolean) => void
-  onOnline: (mode: 'create' | 'join' | 'spectate' | 'matchmake' | 'rejoin', name: string, deck: DeckList | null, code?: string, clock?: ClockConfig | null, isPublic?: boolean, secondSeer?: boolean) => void
+  onOnline: (mode: 'create' | 'join' | 'spectate' | 'matchmake' | 'rejoin', name: string, deck: DeckList | null, code?: string, clock?: ClockConfig | null, isPublic?: boolean, secondSeer?: boolean, precon?: boolean) => void
   onSealed: (mode: 'create' | 'join', name: string, opts: { cfg?: SealedConfig; code?: string; clock?: ClockConfig | null; isPublic?: boolean; secondSeer?: boolean }) => void
   onVsBot: (mine: DeckList, bot: DeckList, clock: ClockConfig | null, stepBot: boolean, difficulty: 'fast' | 'thinking', secondSeer?: boolean) => void
   onDecks: () => void
@@ -174,8 +174,23 @@ export default function Home({
   const [sealBuildMin, setSealBuildMin] = useState(20)
   const sealedCfg = (): SealedConfig => ({ edition: sealEdition, numPacks: sealPacks, deckbuildMin: sealBuildMin })
 
-  const deck = decks.find((d) => d.id === deckId) ?? decks[0]
-  const deck2 = decks.find((d) => d.id === deckBId) ?? decks[0]
+  // 🃏 Precon mode: every deck picker (yours, the computer's, Player 2's) offers only the 12 official
+  // precons, and "Create room" makes a precon room (both seats must bring an unedited precon).
+  const [preconMode, setPreconModeRaw] = useState(() => { try { return localStorage.getItem('sorcery-precon-mode') === '1' } catch { return false } })
+  const setPreconMode = (on: boolean) => { setPreconModeRaw(on); try { localStorage.setItem('sorcery-precon-mode', on ? '1' : '0') } catch { /* storage blocked */ } }
+  const [preconId, setPreconId] = useState(() => { try { return localStorage.getItem('sorcery-precon-a') ?? PRECONS[0].id } catch { return PRECONS[0].id } })
+  const [preconBId, setPreconBId] = useState(PRECONS[1].id)
+  const pickPrecon = (id: string) => { setPreconId(id); try { localStorage.setItem('sorcery-precon-a', id) } catch { /* storage blocked */ } }
+  const myPrecon = PRECONS.find((p) => p.id === preconId) ?? PRECONS[0]
+  const userDeck = decks.find((d) => d.id === deckId) ?? decks[0]
+  const deck = preconMode ? myPrecon : userDeck
+  const deck2 = preconMode ? (PRECONS.find((p) => p.id === preconBId) ?? PRECONS[1]) : (decks.find((d) => d.id === deckBId) ?? decks[0])
+  // a precon <select>'s options, grouped by set
+  const preconOptions = (['Alpha', 'Beta', 'Gothic'] as const).map((set) => (
+    <optgroup key={set} label={set}>
+      {PRECONS.filter((p) => p.set === set).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+    </optgroup>
+  ))
 
   function remember() {
     localStorage.setItem('sorcery-name', name)
@@ -184,18 +199,23 @@ export default function Home({
   // every "Start"/"Play" action first opens a full-screen preview of the player's chosen
   // deck; you may switch decks right there, and `go` runs (with the chosen deck) only after
   // you Confirm. Cancel dismisses without launching.
-  const [pendingStart, setPendingStart] = useState<{ deck: DeckList; go: (chosen: DeckList) => void } | null>(null)
-  const confirmStart = (d: DeckList | undefined, go: (chosen: DeckList) => void) => {
+  const [pendingStart, setPendingStart] = useState<{ deck: DeckList; go: (chosen: DeckList) => void; precon: boolean } | null>(null)
+  // `precon` (default: the current mode) = the preview's deck switcher offers the precons, not your decks
+  const confirmStart = (d: DeckList | undefined, go: (chosen: DeckList) => void, precon = preconMode) => {
     if (!d) return
-    setPendingStart({ deck: d, go })
+    setPendingStart({ deck: d, go, precon })
   }
 
   if (pendingStart) {
     return (
       <DeckPreview
         deck={pendingStart.deck}
-        decks={decks}
-        onConfirm={(chosen) => { const go = pendingStart.go; setDeckId(chosen.id ?? deckId); setPendingStart(null); go(chosen) }}
+        decks={pendingStart.precon ? PRECONS : decks}
+        onConfirm={(chosen) => {
+          const go = pendingStart.go
+          if (pendingStart.precon) pickPrecon(chosen.id ?? preconId); else setDeckId(chosen.id ?? deckId)
+          setPendingStart(null); go(chosen)
+        }}
         onCancel={() => setPendingStart(null)}
       />
     )
@@ -271,10 +291,16 @@ export default function Home({
                 <input type="checkbox" checked={makePublic} onChange={(e) => setMakePublic(e.target.checked)} /> <span className="opt-name">public</span>
                 <span className="opt-desc">listed in the lobby for anyone to join or spectate</span>
               </label>
-              <label title="Sealed: open packs and build a deck on the spot against a timer, instead of bringing a deck.">
-                <input type="checkbox" checked={sealedMode} onChange={(e) => setSealedMode(e.target.checked)} /> <span className="opt-name">🎴 sealed</span>
-                <span className="opt-desc">open packs and build on a timer (no deck needed)</span>
+              <label title="Precon: both players pick one of the 12 official preconstructed decks (Alpha, Beta, Gothic), unedited.">
+                <input type="checkbox" data-precon-room checked={preconMode} onChange={(e) => { setPreconMode(e.target.checked); if (e.target.checked) setSealedMode(false) }} /> <span className="opt-name">🃏 precon</span>
+                <span className="opt-desc">precon vs precon — each player picks an official precon</span>
               </label>
+              {!preconMode && (
+                <label title="Sealed: open packs and build a deck on the spot against a timer, instead of bringing a deck.">
+                  <input type="checkbox" checked={sealedMode} onChange={(e) => setSealedMode(e.target.checked)} /> <span className="opt-name">🎴 sealed</span>
+                  <span className="opt-desc">open packs and build on a timer (no deck needed)</span>
+                </label>
+              )}
               <label title="Optional rule — the player going SECOND is granted the Seer avatar's peek (look at the top of your spellbook or atlas, keep it or bottom it) on their first turn (turn 2).">
                 <input type="checkbox" checked={secondSeer} onChange={(e) => setSecondSeer(e.target.checked)} /> <span className="opt-name">🔮 second seer</span>
                 <span className="opt-desc">the 2nd player gets the Seer peek on turn 2</span>
@@ -307,13 +333,13 @@ export default function Home({
               )}
             </div>
             <div className="roomopts-foot">
-              {sealedMode ? (
+              {sealedMode && !preconMode ? (
                 <button onClick={() => { setShowRoomOpts(false); remember(); onSealed('create', username || name || 'Player 1', { cfg: sealedCfg(), clock: clockConfig(), isPublic: makePublic, secondSeer }) }}>
                   Create {makePublic ? 'public ' : 'private '}sealed room
                 </button>
               ) : (
-                <button disabled={!deck} onClick={() => { setShowRoomOpts(false); confirmStart(deck, (d) => { remember(); onOnline('create', username || name || 'Player 1', d, undefined, clockConfig(), makePublic, secondSeer) }) }}>
-                  Create {makePublic ? 'public ' : 'private '}room
+                <button disabled={!deck} onClick={() => { setShowRoomOpts(false); confirmStart(deck, (d) => { remember(); onOnline('create', username || name || 'Player 1', d, undefined, clockConfig(), makePublic, secondSeer, preconMode) }) }}>
+                  Create {makePublic ? 'public ' : 'private '}{preconMode ? 'precon ' : ''}room
                 </button>
               )}
               <button data-cancel="1" onClick={() => setShowRoomOpts(false)}>Cancel</button>
@@ -427,12 +453,16 @@ export default function Home({
           )}
         </label>
         <label>
-          Deck{' '}
-          <select value={deckId} onChange={(e) => setDeckId(e.target.value)}>
-            {decks.map((d) => (
-              <option key={d.id} value={d.id}>{d.name}</option>
-            ))}
-          </select>
+          {preconMode ? 'Precon' : 'Deck'}{' '}
+          {preconMode ? (
+            <select data-precon-pick value={myPrecon.id} onChange={(e) => pickPrecon(e.target.value)}>{preconOptions}</select>
+          ) : (
+            <select value={deckId} onChange={(e) => setDeckId(e.target.value)}>
+              {decks.map((d) => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          )}
         </label>
         <button onClick={onDecks}>Deck builder</button>
         <button onClick={onCollection}>🎴 Collection & packs</button>
@@ -470,7 +500,7 @@ export default function Home({
             {myRooms.map((r) => (
               <div key={r.id} className="mygames-row" data-mygame={r.id}>
                 <span className="lobby-who">
-                  {r.mode === 'sealed' ? '🎴 ' : ''}{r.opponent ? `vs ${r.opponent}` : 'waiting for opponent'}
+                  {r.mode === 'sealed' ? '🎴 ' : r.mode === 'precon' ? '🃏 ' : ''}{r.opponent ? `vs ${r.opponent}` : 'waiting for opponent'}
                   {' · '}{r.inProgress ? 'in progress' : r.mode === 'sealed' ? 'building decks' : 'waiting'}
                 </span>
                 <button onClick={() => { remember(); onOnline('rejoin', username || name || 'Player', null, r.id) }}>↩ Rejoin</button>
@@ -490,8 +520,8 @@ export default function Home({
         <div className="online-actions">
           <button
             className="autobattle"
-            disabled={!deck}
-            title="Match with the next player looking for a game (Constructed, clock 25 + 30)"
+            disabled={!deck || preconMode}
+            title={preconMode ? 'Matchmaking is Constructed only — turn off 🃏 Precon mode, or create a precon room' : 'Match with the next player looking for a game (Constructed, clock 25 + 30)'}
             onClick={() => confirmStart(deck, (d) => {
               remember()
               onOnline('matchmake', username || name || 'Player', d)
@@ -551,11 +581,15 @@ export default function Home({
             <div className="lobby-list" data-lobby>
               {rooms.map((r) => {
                 const isSealed = r.mode === 'sealed'
+                const isPrecon = r.mode === 'precon'
+                // the deck you'd bring: a precon room always takes a precon (whatever mode you're in), a
+                // constructed room your own deck
+                const joinDeck = isPrecon ? myPrecon : userDeck
                 return (
                 <div key={r.id} className="lobby-row" data-room={r.id}>
                   <span className="lobby-who">{r.origin === 'battle' ? '⚔ ' : ''}{r.host}{r.opponent ? ` vs ${r.opponent}` : ''}</span>
-                  <span className={`lobby-mode ${isSealed ? 'sealed' : 'constructed'}`} title={isSealed ? `Sealed — ${r.sealed?.numPacks ?? '?'}× ${r.sealed?.edition ?? '?'}` : 'Constructed (bring your own deck)'}>
-                    {isSealed ? `🎴 Sealed` : '📖 Constructed'}
+                  <span className={`lobby-mode ${isSealed ? 'sealed' : isPrecon ? 'precon' : 'constructed'}`} title={isSealed ? `Sealed — ${r.sealed?.numPacks ?? '?'}× ${r.sealed?.edition ?? '?'}` : isPrecon ? 'Precon — each player picks an official precon' : 'Constructed (bring your own deck)'}>
+                    {isSealed ? `🎴 Sealed` : isPrecon ? '🃏 Precon' : '📖 Constructed'}
                   </span>
                   <span className="lobby-clock" title="Clock (min + s/turn)">⏱ {fmtClockCfg(r.clock)}</span>
                   <span className="lobby-status">{r.inProgress ? 'in progress' : r.joinable ? 'waiting' : 'full'}</span>
@@ -566,9 +600,9 @@ export default function Home({
                       </button>
                     ) : (
                       <button
-                        disabled={!deck}
-                        title={deck ? undefined : 'Pick a deck first'}
-                        onClick={() => confirmStart(deck, (d) => { remember(); onOnline('join', username || name || 'Player 2', d, r.id) })}
+                        disabled={!joinDeck}
+                        title={joinDeck ? undefined : 'Pick a deck first'}
+                        onClick={() => confirmStart(joinDeck, (d) => { remember(); onOnline('join', username || name || 'Player 2', d, r.id) }, isPrecon)}
                       >
                         Join
                       </button>
@@ -586,13 +620,32 @@ export default function Home({
 
       <div className="panel">
         <h2>Play vs Computer</h2>
+        <button
+          data-precon-mode
+          className={preconMode ? 'selected' : ''}
+          aria-pressed={preconMode}
+          title="Precon mode: play only the 12 official preconstructed decks (Alpha, Beta, Gothic) — vs the Computer, hotseat, and in precon rooms online."
+          onClick={() => { setPreconMode(!preconMode); if (!preconMode) setSealedMode(false) }}
+        >
+          🃏 Precon mode: {preconMode ? 'on' : 'off'}
+        </button>
+        {preconMode && (
+          <label>
+            Your precon{' '}
+            <select data-precon-pick-vs value={myPrecon.id} onChange={(e) => pickPrecon(e.target.value)}>{preconOptions}</select>
+          </label>
+        )}
         <label>
-          Computer's deck{' '}
-          <select value={deckBId} onChange={(e) => setDeckBId(e.target.value)}>
-            {decks.map((d) => (
-              <option key={d.id} value={d.id}>{d.name}</option>
-            ))}
-          </select>
+          Computer's {preconMode ? 'precon' : 'deck'}{' '}
+          {preconMode ? (
+            <select data-precon-pick-b value={deck2?.id} onChange={(e) => setPreconBId(e.target.value)}>{preconOptions}</select>
+          ) : (
+            <select value={deckBId} onChange={(e) => setDeckBId(e.target.value)}>
+              {decks.map((d) => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          )}
         </label>
         <label title="Fast = an instant, casual opponent. Thinking = the strong search AI; it plans for up to 30s on its turn (a 'Computer is thinking…' indicator shows while it does — the game stays responsive).">
           Difficulty{' '}
@@ -615,12 +668,16 @@ export default function Home({
       <div className="panel">
         <h2>Hotseat (two players, one screen)</h2>
         <label>
-          Player 2 deck{' '}
-          <select value={deckBId} onChange={(e) => setDeckBId(e.target.value)}>
-            {decks.map((d) => (
-              <option key={d.id} value={d.id}>{d.name}</option>
-            ))}
-          </select>
+          Player 2 {preconMode ? 'precon' : 'deck'}{' '}
+          {preconMode ? (
+            <select value={deck2?.id} onChange={(e) => setPreconBId(e.target.value)}>{preconOptions}</select>
+          ) : (
+            <select value={deckBId} onChange={(e) => setDeckBId(e.target.value)}>
+              {decks.map((d) => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          )}
         </label>
         <button disabled={!deck || !deck2} onClick={() => confirmStart(deck, (d) => onHotseat(d, deck2!, clockConfig(), secondSeer))}>
           Start hotseat game

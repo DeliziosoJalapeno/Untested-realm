@@ -24,6 +24,9 @@ function board(): GameState {
   const g = createGame([starterDecks[0], starterDecks[1]], ['A', 'B'], 7, 0)
   applyAction(g, 0, { t: 'keepHand' })
   applyAction(g, 1, { t: 'keepHand' })
+  // the forced first-turn site placement opens a prompt; without answering it every cast is refused
+  // ("Waiting for A…") and the fuzzer silently covers nothing
+  while (g.prompts[0]?.kind === 'firstSite') applyAction(g, g.prompts[0].player, { t: 'prompt', promptId: g.prompts[0].id, choice: g.prompts[0].data.ids[0] })
   // give a castable context: friendly + enemy sites and minions
   place(g, 0, 'Rustic Village', 2, 0) // under p0 avatar
   place(g, 0, 'Rustic Village', 2, 1)
