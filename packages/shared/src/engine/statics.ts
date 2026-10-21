@@ -840,6 +840,9 @@ function computeDisabledByEffect(state: GameState, unit: UnitState): boolean {
   if (unit.modifiers.some((m) => m.kind === 'keyword' && m.keyword === 'undisableable')) return false
   if (directlyDisabled(state, unit)) return true
   if (unit.isAvatar) return false
+  // A spellcaster ARTIFACT or SITE casting through a positioned pseudo-unit (an Omphalos, River of Flame)
+  // is no minion: area disablers (a Root Spider below, a Gorgon's gaze) only reach minions in state.units.
+  if (!state.units[unit.id]) return false
   // A disabler that is itself disabled/silenced has no abilities (Codex), so it disables nothing. The loops
   // below therefore skip a source that is disabledByEffect — including an AREA-disabled one (a Basilisk under
   // a Root Spider, a mutual Gorgon), which plain directlyDisabled missed. (Memoized + stack-guarded above.)
