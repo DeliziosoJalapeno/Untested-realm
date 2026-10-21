@@ -146,10 +146,14 @@ export async function fetchRooms(): Promise<RoomInfo[]> {
   return (r.rooms ?? []) as RoomInfo[]
 }
 
-/** the site-wide server-restart notice (deadline in epoch ms), or null if none. */
-export async function fetchAnnounce(): Promise<{ deadline: number | null }> {
+/** the site-wide server-restart notice (deadline in epoch ms) and generic message, each null if none. */
+export async function fetchAnnounce(): Promise<{ deadline: number | null; message: { text: string; until: number } | null }> {
   const r = await api('/api/announce')
-  return { deadline: (r?.deadline ?? null) as number | null }
+  const m = r?.message
+  return {
+    deadline: (r?.deadline ?? null) as number | null,
+    message: m && typeof m.text === 'string' && typeof m.until === 'number' ? { text: m.text, until: m.until } : null,
+  }
 }
 
 /** a live room this signed-in account holds a seat in (public OR private) — for rejoin. */

@@ -32,8 +32,8 @@ function board(): { g: GameState; A: UnitState; B: UnitState } {
   }
   const B = summonCard(g, 0, 'Bone Jumble', 1, 1); B.enteredTurn = -5 // resident Undead
   const A = summonCard(g, 0, 'Bone Jumble', 0, 1); A.enteredTurn = -5
-  A.modifiers.push({ kind: 'keyword', keyword: 'movement +1', duration: 'permanent', turn: 0, sourcePlayer: 0 } as any)
-  A.modifiers.push({ kind: 'keyword', keyword: 'movement +1', duration: 'permanent', turn: 0, sourcePlayer: 0 } as any) // +2 → 3 steps
+  A.modifiers.push({ kind: 'keyword', keyword: { movement: 1 }, duration: 'permanent', turn: 0, sourcePlayer: 0 } as any)
+  A.modifiers.push({ kind: 'keyword', keyword: { movement: 1 }, duration: 'permanent', turn: 0, sourcePlayer: 0 } as any) // +2 → 3 steps
   return { g, A, B }
 }
 

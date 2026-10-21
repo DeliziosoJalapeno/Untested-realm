@@ -10,7 +10,7 @@ function mover(): { g: GameState; u: any } {
   const g = newGame() as GameState; keepBoth(g)
   for (let x = 0; x < 5; x++) placeSite(g, 0, 'Rustic Village', x, 2) // a row of sites at y=2
   const u = summonCard(g, 0, 'Stygian Archers', 2, 2); u.enteredTurn = -5
-  u.modifiers.push({ kind: 'keyword', keyword: 'movement', amount: 4, duration: 'permanent', turn: g.turn, sourcePlayer: 0 } as any)
+  u.modifiers.push({ kind: 'keyword', keyword: { movement: 4 }, duration: 'permanent', turn: g.turn, sourcePlayer: 0 } as any)
   return { g, u }
 }
 const S = (x: number): Step => ({ x, y: 2, region: 'surface' })

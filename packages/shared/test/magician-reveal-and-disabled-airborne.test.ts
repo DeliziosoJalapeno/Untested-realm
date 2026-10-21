@@ -43,7 +43,7 @@ describe('disabled minions lose ALL keyword abilities', () => {
     mkUnit(g, 'a', 'Foot Soldier', 0, 1, 1, [
       { kind: 'keyword', keyword: 'airborne' },
       { kind: 'keyword', keyword: 'burrowing' },
-      { kind: 'keyword', keyword: 'ranged' },
+      { kind: 'keyword', keyword: { ranged: 1 } },
     ])
     const kw0 = effKeywords(g, g.units['a'])
     expect(kw0.airborne && kw0.burrowing && kw0.ranged, 'has its keywords while active').toBeTruthy()

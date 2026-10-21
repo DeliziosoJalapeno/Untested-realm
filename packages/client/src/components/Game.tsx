@@ -70,6 +70,10 @@ import {
   type UnitState,
   actingSeatFor,
   runningSeat,
+  type KeywordGrant,
+  type JudgeOp,
+  artifactController,
+  type ArtifactState,
 } from '@sorcery/shared'
 import { loadDecks, type Session } from '../App'
 import CardImg, { CardHover, CardBack } from './CardImg'
@@ -1622,8 +1626,8 @@ function GameInner({
     }
     // spellcaster ARTIFACTS you control can cast too (the Omphaloi cast their own drawn spells
     // and any spell of their element) — otherwise an Omphalos-locked hand card has no caster.
-    for (const a of Object.values(((view as any).artifacts ?? {}) as Record<string, { id: string; carriedBy?: string | null; conjuredBy?: PlayerId }>)) {
-      const controller = a.carriedBy ? view.units[a.carriedBy]?.controller : a.conjuredBy
+    for (const a of Object.values(((view as any).artifacts ?? {}) as Record<string, ArtifactState>)) {
+      const controller = artifactController(view, a)
       if (controller !== me) continue
       if (canCast(st, me, cardId, a.id).ok) out.push(a.id)
     }
@@ -2926,9 +2930,9 @@ function GameInner({
       return
     }
     if (isSpectator || !myTurn) return
-    // a standalone artifact you control that has activated abilities (Cradle of
-    // Etherrum, Hemogoblet, Pile of Skulls): select it to reveal/activate them
-    if (a.conjuredBy === me && !a.carriedBy && (getScript(a.name)?.abilities?.length ?? 0) > 0) {
+    // a standalone artifact you control that has activated abilities (a Monument like Pile of Skulls —
+    // a carriable one on the ground is uncontrolled): select it to reveal/activate them
+    if (!a.carriedBy && artifactController(view, a) === me && (getScript(a.name)?.abilities?.length ?? 0) > 0) {
       setMode(mode.m === 'artifact' && mode.artifactId === a.id ? { m: 'idle' } : { m: 'artifact', artifactId: a.id })
       return
     }
@@ -3164,7 +3168,7 @@ function GameInner({
     const a = (view.artifacts as any)[lock.casterId]
     let alive = false
     if (u) alive = u.controller === me && !isDisabled(st, u)
-    else if (a) alive = (a.carriedBy ? view.units[a.carriedBy]?.controller : a.conjuredBy) === me
+    else if (a) alive = artifactController(view, a) === me
     return { name: (u?.name ?? a?.name ?? lock.casterName ?? '') as string, alive }
   }
   // a spell sealed in your hand by a Pith-Imp-style thief: shows the thief's
@@ -6392,7 +6396,7 @@ function PromptBox({ view, prompt, send, me, flip, onHover, onGoBack, interceptA
 
 /** manual "tabletop" adjustments for card text the engine doesn't automate */
 // keyword grants the judge can hand out (mapped to the engine's keyword modifier strings)
-const JUDGE_KEYWORDS: { label: string; kw: string }[] = [
+const JUDGE_KEYWORDS: { label: string; kw: KeywordGrant }[] = [
   { label: 'airborne', kw: 'airborne' },
   { label: 'burrowing', kw: 'burrowing' },
   { label: 'submerge', kw: 'submerge' },
@@ -6401,10 +6405,12 @@ const JUDGE_KEYWORDS: { label: string; kw: string }[] = [
   { label: 'ward', kw: 'ward' },
   { label: 'lethal', kw: 'lethal' },
   { label: 'charge', kw: 'charge' },
-  { label: 'ranged 1', kw: 'ranged 1' },
+  { label: 'ranged 1', kw: { ranged: 1 } },
   { label: 'spellcaster', kw: 'spellcaster' },
-  { label: 'movement +1', kw: 'movement +1' },
+  { label: 'movement +1', kw: { movement: 1 } },
 ]
+/** the editor's keyword picker holds the option's label; this is the grant it stands for */
+const judgeKeyword = (label: string): KeywordGrant => JUDGE_KEYWORDS.find((k) => k.label === label)?.kw ?? 'airborne'
 
 type JudgeTab = 'table' | 'create' | 'modify' | 'avatars'
 type ModType = 'unit' | 'site' | 'artifact' | 'aura'
@@ -6497,7 +6503,7 @@ function JudgePanel({ view, me, send, selectedUnitId, selectedSiteId, selectedAr
   useEffect(() => { if (selectedSiteId) { setSiteId(selectedSiteId); setModType('site'); setTab('modify') } }, [selectedSiteId])
   useEffect(() => { if (selectedArtifactId) { setArtSel(selectedArtifactId); setModType('artifact'); setTab('modify') } }, [selectedArtifactId])
   useEffect(() => { if (selectedAuraId) { setAuraSel(selectedAuraId); setModType('aura'); setTab('modify') } }, [selectedAuraId])
-  const judge = (op: any) => send({ t: 'judge', op })
+  const judge = (op: JudgeOp) => send({ t: 'judge', op })
   // an inline alternative-art picker row — shown only when the selected card actually HAS other printings.
   // Changing art here goes through a judge op so it syncs (revealed-only) to the opponent.
   const artPickerRow = (name: string, cardId?: string) => {
@@ -6612,7 +6618,7 @@ function JudgePanel({ view, me, send, selectedUnitId, selectedSiteId, selectedAr
       )}
       {tab === 'table' && (<>
       <div className="jp-row">
-        {[0, 1].map((p) => (
+        {([0, 1] as const).map((p) => (
           <span key={p} className="jp-group">
             {view.players[p].name}:
             <button onClick={() => judge({ k: 'life', player: p, delta: 1 })}>❤+1</button>
@@ -6627,7 +6633,7 @@ function JudgePanel({ view, me, send, selectedUnitId, selectedSiteId, selectedAr
       {/* discard a card from hand — only offered for hands this client can SEE (your own; the
           opponent's hidden hand isn't shown, so you can't discard from it) */}
       <div className="jp-row">
-        {[0, 1].map((p) => {
+        {([0, 1] as const).map((p) => {
           const seen = view.players[p].hand.filter((id: string) => id !== 'hidden')
           if (!seen.length) return null
           const sel = discardSel[p] && seen.includes(discardSel[p]) ? discardSel[p] : seen[0]
@@ -6644,7 +6650,7 @@ function JudgePanel({ view, me, send, selectedUnitId, selectedSiteId, selectedAr
       </div>
       {/* player extras: absolute setters + untap-all */}
       <div className="jp-row">
-        {[0, 1].map((p) => (
+        {([0, 1] as const).map((p) => (
           <span key={p} className="jp-group">
             {view.players[p].name}:
             <label>life=<input data-judge-life-input={p} defaultValue="20" style={{ width: '3.5em' }} id={`jp-life-${p}`} /></label>
@@ -6835,8 +6841,8 @@ function JudgePanel({ view, me, send, selectedUnitId, selectedSiteId, selectedAr
               </label>
               <label title="Grant or reduce movement (extra steps this turn). Uses the duration above.">
                 move
-                <button data-judge-mv="up" onClick={() => judge({ k: 'keyword', unitId: u.id, keyword: 'movement +1', duration: powDur })}>+1</button>
-                <button data-judge-mv="down" onClick={() => judge({ k: 'keyword', unitId: u.id, keyword: 'movement -1', duration: powDur })}>−1</button>
+                <button data-judge-mv="up" onClick={() => judge({ k: 'keyword', unitId: u.id, keyword: { movement: 1 }, duration: powDur })}>+1</button>
+                <button data-judge-mv="down" onClick={() => judge({ k: 'keyword', unitId: u.id, keyword: { movement: -1 }, duration: powDur })}>−1</button>
               </label>
               <button onClick={() => judge({ k: 'tap', id: u.id, tapped: !u.tapped })}>{u.tapped ? 'untap' : 'tap'}</button>
               <button onClick={() => judge({ k: 'disable', unitId: u.id, on: !u.disabled })}>{u.disabled ? 'enable' : 'disable'}</button>
@@ -6873,15 +6879,15 @@ function JudgePanel({ view, me, send, selectedUnitId, selectedSiteId, selectedAr
               effect
               <select data-judge-kw value={kwSel} onChange={(e) => setKwSel(e.target.value)}>
                 {JUDGE_KEYWORDS.map((k) => (
-                  <option key={k.kw} value={k.kw}>{k.label}</option>
+                  <option key={k.label} value={k.label}>{k.label}</option>
                 ))}
               </select>
               <select data-judge-kw-dur value={kwDur} onChange={(e) => setKwDur(e.target.value as any)}>
                 <option value="permanent">permanent</option>
                 <option value="endOfTurn">turn</option>
               </select>
-              <button data-judge-kw-go={u.id} onClick={() => judge({ k: 'keyword', unitId: u.id, keyword: kwSel, duration: kwDur })}>grant</button>
-              <button data-judge-kw-rm={u.id} title="Strip this keyword (works even on a printed one)" onClick={() => judge({ k: 'keyword', unitId: u.id, keyword: kwSel, duration: kwDur, remove: true })}>remove</button>
+              <button data-judge-kw-go={u.id} onClick={() => judge({ k: 'keyword', unitId: u.id, keyword: judgeKeyword(kwSel), duration: kwDur })}>grant</button>
+              <button data-judge-kw-rm={u.id} title="Strip this keyword (works even on a printed one)" onClick={() => judge({ k: 'keyword', unitId: u.id, keyword: judgeKeyword(kwSel), duration: kwDur, remove: true })}>remove</button>
             </label>
             <label>
               give artifact

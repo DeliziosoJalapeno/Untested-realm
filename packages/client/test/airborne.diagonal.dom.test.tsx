@@ -19,7 +19,7 @@ function airborneBoard(): { g: GameState; id: string } {
   const id = usummon(g, 0, 'Fine Courser', 2, 1)
   const u = g.units[id]; u.enteredTurn = -5; u.tapped = false; u.region = 'surface'
   u.modifiers.push({ kind: 'keyword', keyword: 'airborne' } as any)
-  u.modifiers.push({ kind: 'keyword', keyword: 'movement +2' } as any)
+  u.modifiers.push({ kind: 'keyword', keyword: { movement: 2 } } as any)
   return { g, id }
 }
 

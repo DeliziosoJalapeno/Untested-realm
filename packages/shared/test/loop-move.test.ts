@@ -11,7 +11,7 @@ function row(): GameState {
   for (let x = 0; x < 3; x++) placeSite(g, 0, 'Spire', x, 1) // sites at (0,1),(1,1),(2,1)
   return g
 }
-const withMove = (u: UnitState) => { u.enteredTurn = -5; u.modifiers.push({ kind: 'keyword', keyword: 'movement +1', duration: 'permanent', turn: 0, sourcePlayer: 0 } as any) }
+const withMove = (u: UnitState) => { u.enteredTurn = -5; u.modifiers.push({ kind: 'keyword', keyword: { movement: 1 }, duration: 'permanent', turn: 0, sourcePlayer: 0 } as any) }
 
 describe('loopRoutes — move out and back to your own site', () => {
   it('offers an out-and-back hop off each reachable neighbour when movement ≥ 2', () => {

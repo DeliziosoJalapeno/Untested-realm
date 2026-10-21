@@ -3,7 +3,7 @@
 // a hardcoded surface. Region-scoped: Crucifix, Pendragon Banner, The Immortal Throne (+ Scarecrow,
 // Shrine, Rolling Boulder use the same rule).
 import { describe, it, expect } from 'vitest'
-import { newGame, keepBoth, summonCard, placeSite, answer } from './helpers'
+import { newGame, keepBoth, summonCard, placeSite, answer, giveArtifact } from './helpers'
 import { getScript, makeCtx, avatarOf, unitsAt, type GameState, type Region } from '../src'
 import '../src/cards/scripts/index'
 
@@ -36,7 +36,9 @@ describe("Pendragon Banner ignores enemies in other regions", () => {
   it('a burrowed enemy under the Banner does not switch off the +1', () => {
     const g = newGame() as GameState; keepBoth(g)
     placeSite(g, 0, 'Rustic Village', 2, 2)
-    const id = putArtifact(g, 'Pendragon Banner', 2, 2)
+    // carried by an ally: an uncontrolled Banner on the ground has no allies to rally
+    const bearer = summonCard(g, 0, 'Bone Jumble', 2, 2); bearer.enteredTurn = -1
+    const id = giveArtifact(g, bearer, 'Pendragon Banner').id
     const ally = summonCard(g, 0, 'Bone Jumble', 2, 3); ally.enteredTurn = -1 // nearby ally
     expect(power(g, id, ally), 'no enemies here → +1').toBe(1)
 

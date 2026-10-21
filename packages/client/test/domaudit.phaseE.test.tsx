@@ -26,6 +26,7 @@
 // NEGATIVE CONTROL (documented break→red→revert→green): E.1's allocateDamage parity
 // assert is proven able to go red by cloning the panel and dropping a candidate row.
 
+import type { KeywordGrant } from '../../shared/src/engine/keywords'
 import { describe, it, expect, afterEach } from 'vitest'
 import { GameHarness } from './harness'
 import { board, usummon } from './domaudit'
@@ -58,9 +59,8 @@ function combatBoard(): GameState {
   return g
 }
 
-/** grant a keyword to a unit via a modifier (effKeywords reads modifiers through the
- *  same applyKeywordString map used for printed text). */
-function grantKeyword(g: GameState, unitId: string, keyword: string): void {
+/** grant a keyword to a unit via a keyword modifier (effKeywords applies its typed grant). */
+function grantKeyword(g: GameState, unitId: string, keyword: KeywordGrant): void {
   g.units[unitId].modifiers = [...g.units[unitId].modifiers, { kind: 'keyword', keyword } as any]
 }
 
@@ -159,7 +159,7 @@ describe('E.2 multi-round: strikeFirst pass then normal pass both resolve', () =
     // 5-defence defender → the SF blow (3 < 5) leaves the defender alive, so the fight
     // proceeds to the NORMAL pass where BOTH strike (attacker takes 3 < 4 defence, survives).
     const atk = place(g, 0, 'Sir Bedivere', 2, 1) // 3/4
-    grantKeyword(g, atk, 'Strike First')
+    grantKeyword(g, atk, 'strikeFirst')
     const def = place(g, 1, 'Sir Gawain', 2, 2) // 3/5
     const atkDef0 = g.units[atk].damage
     const defDef0 = g.units[def].damage
@@ -206,8 +206,8 @@ describe('E.3 regression: strike-first lethal attacker fells its target in the S
   it('resolves without crashing when the target dies before the normal pass', () => {
     const g = combatBoard()
     const atk = place(g, 0, 'Amazon Warriors', 2, 1) // power 5
-    grantKeyword(g, atk, 'Strike First')
-    grantKeyword(g, atk, 'Lethal')
+    grantKeyword(g, atk, 'strikeFirst')
+    grantKeyword(g, atk, 'lethal')
     const weak = place(g, 1, 'Foot Soldier', 2, 2) // weaker → dies to the SF lethal blow
 
     const h = new GameHarness(g).mount()

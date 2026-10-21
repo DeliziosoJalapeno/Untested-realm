@@ -20,7 +20,7 @@ function corridor(ridgeX: number, startX: number): { g: GameState; u: UnitState 
   const u = summonCard(g, 0, 'Bone Jumble', startX, 1)
   u.enteredTurn = -5
   u.modifiers.push({ kind: 'keyword', keyword: 'airborne', duration: 'permanent', turn: 0, sourcePlayer: 0 } as any)
-  u.modifiers.push({ kind: 'keyword', keyword: 'movement +1', duration: 'permanent', turn: 0, sourcePlayer: 0 } as any)
+  u.modifiers.push({ kind: 'keyword', keyword: { movement: 1 }, duration: 'permanent', turn: 0, sourcePlayer: 0 } as any)
   return { g, u }
 }
 
@@ -46,7 +46,7 @@ describe('enumeratePaths honors Updraft Ridge free steps', () => {
     for (let x = 0; x < 5; x++) placeSite(g, 0, 'Spire', x, 1)
     const u = summonCard(g, 0, 'Bone Jumble', 0, 1); u.enteredTurn = -5
     u.modifiers.push({ kind: 'keyword', keyword: 'airborne', duration: 'permanent', turn: 0, sourcePlayer: 0 } as any)
-    u.modifiers.push({ kind: 'keyword', keyword: 'movement +1', duration: 'permanent', turn: 0, sourcePlayer: 0 } as any)
+    u.modifiers.push({ kind: 'keyword', keyword: { movement: 1 }, duration: 'permanent', turn: 0, sourcePlayer: 0 } as any)
     expect(enumeratePaths(g, u, { x: 3, y: 1, region: 'surface' }, 40, { allLengths: true }).length, 'no free step → 3-away is out of reach').toBe(0)
     expect(enumeratePaths(g, u, { x: 2, y: 1, region: 'surface' }, 40, { allLengths: true }).length, '2-away is reachable').toBeGreaterThan(0)
   })

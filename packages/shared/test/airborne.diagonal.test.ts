@@ -15,7 +15,7 @@ describe('airborne diagonals are only taken from the surface', () => {
     placeSite(g, 0, 'Rustic Village', 1, 1) // a diagonal SURFACE site to land on
     // (2,0) is left a void (no site) for the into-void diagonal case
     const u = summonCard(g, 0, 'Bone Jumble', 2, 2); u.enteredTurn = -1
-    for (const kw of ['airborne', 'voidwalk']) u.modifiers.push({ kind: 'keyword', keyword: kw, duration: 'permanent', turn: 0, sourcePlayer: 0 })
+    for (const kw of ['airborne', 'voidwalk'] as const) u.modifiers.push({ kind: 'keyword', keyword: kw, duration: 'permanent', turn: 0, sourcePlayer: 0 })
 
     // surface → surface diagonal (onto a site): legal
     expect(isLegalStep(g, u, { x: 2, y: 2, region: 'surface' }, { x: 1, y: 1, region: 'surface' }), 'diagonal from the surface').toBe(true)

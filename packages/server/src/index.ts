@@ -187,6 +187,9 @@ const rooms = new Map<string, Room>()
 // (i.e. from inside the container: `docker exec … node -e fetch(127.0.0.1…)`), read by
 // every client via GET /api/announce. In-memory, so a restart clears it.
 let restartNotice: { deadline: number } | null = null
+// A generic site-wide message (scripts/send-message.sh), shown as a banner until `until`. Same loopback-only
+// POST (/api/message) and rides in the same GET /api/announce poll. In-memory too.
+let siteMessage: { text: string; until: number } | null = null
 
 // autobattle: a single matchmaking queue. Clock is fixed so paired players agree.
 const AUTOBATTLE_CLOCK: ClockConfig = { base: 25 * 60_000, inc: 30_000 } // 25 min + 30 s/turn
@@ -1480,7 +1483,8 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, path: string
     if (path === '/api/announce') {
       if (method === 'GET') {
         if (restartNotice && restartNotice.deadline < Date.now() - 15_000) restartNotice = null // auto-clear ~15s past
-        return sendJson(res, 200, { deadline: restartNotice?.deadline ?? null })
+        if (siteMessage && siteMessage.until <= Date.now()) siteMessage = null
+        return sendJson(res, 200, { deadline: restartNotice?.deadline ?? null, message: siteMessage })
       }
       if (method === 'POST') {
         const ra = req.socket.remoteAddress ?? ''
@@ -1493,6 +1497,20 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, path: string
         return sendJson(res, 200, { ok: true, deadline: restartNotice.deadline })
       }
       return sendJson(res, 405, { error: 'Method not allowed.' })
+    }
+
+    // --- generic site-wide message: LOOPBACK-ONLY like the restart notice. Body {text, minutes}: shows `text`
+    // (plain text, ≤300 chars) to everyone for `minutes` (≤1 day); empty text or minutes ≤ 0 clears it. ---
+    if (path === '/api/message' && method === 'POST') {
+      const ra = req.socket.remoteAddress ?? ''
+      const isLocal = ra === '127.0.0.1' || ra === '::1' || ra === '::ffff:127.0.0.1'
+      if (!isLocal) return sendJson(res, 403, { error: 'Local-only (run from inside the container).' })
+      const body = await readJsonBody(req)
+      const text = String(body.text ?? '').trim().slice(0, 300)
+      const minutes = Number(body.minutes)
+      if (!text || !Number.isFinite(minutes) || minutes <= 0) { siteMessage = null; return sendJson(res, 200, { ok: true, cleared: true }) }
+      siteMessage = { text, until: Date.now() + Math.min(minutes, 1440) * 60_000 }
+      return sendJson(res, 200, { ok: true, until: siteMessage.until })
     }
 
     // --- file a bug report (sign-in NOT required: guests may report, they just get no reply) ---

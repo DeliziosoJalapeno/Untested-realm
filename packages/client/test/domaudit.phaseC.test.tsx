@@ -228,9 +228,10 @@ function selectAndGetButtons(h: GameHarness, sourceId: string, type: string): HT
     if (!card) return null
     h.click(card)
   } else if (type === 'Artifact') {
-    // ground artifacts render as a single .ground-art div (no id attribute) on the
-    // artifact's site square; our board places exactly one, so it is unambiguous.
-    const art = root.querySelector('.ground-art')
+    // a carried artifact's abilities live in its BEARER's panel; a Monument/Automaton renders as a
+    // single .ground-art div (no id attribute) on its site square — our board places exactly one.
+    const bearer = h.state.artifacts[sourceId]?.carriedBy
+    const art = bearer ? root.querySelector(`[data-unit="${bearer}"]`) : root.querySelector('.ground-art')
     if (!art) return null
     h.click(art)
   } else {
@@ -698,7 +699,7 @@ describe('C.2 combat prompt-shape coverage — every shape reached + parity-chec
     // then dive) — which is exactly what makes reachableLocations report a both-regions sq.
     const atk = place(g, 0, 'Coral-Reef Kelpie', 0, 0) // Submerge, 3/3
     g.units[atk].region = 'surface'
-    g.units[atk].modifiers = [{ kind: 'keyword', keyword: 'Movement +1' } as any]
+    g.units[atk].modifiers = [{ kind: 'keyword', keyword: { movement: 1 } } as any]
 
     // ORACLE: reachableLocations must report a both-regions square (submerge dive is a step).
     const byXY: Record<string, Set<string>> = {}

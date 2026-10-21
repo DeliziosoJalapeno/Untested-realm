@@ -1,6 +1,6 @@
 import { registerScript } from '../registry'
 import { getCard } from '../../db'
-import { cemeteryProtected } from '../../../engine/statics'
+import { cemeteryProtected, payZoneToll } from '../../../engine/statics'
 import { pushLog } from '../../../engine/effects'
 import type { PlayerId } from '../../../engine/types'
 
@@ -48,6 +48,7 @@ registerScript('Book Burners', {
           const p = ctx.state.players[pid]
           const idx = p.cemetery.findIndex((id) => ctx.state.cards[id].name === name)
           if (idx >= 0) {
+            if (!payZoneToll(ctx.state, ctx.controller)) return ctx.log('The Bureau of Occult Control demands (2) for cemetery access.')
             const [id] = p.cemetery.splice(idx, 1)
             p.banished.push(id)
             pushLog(ctx.state, ctx.controller, `${name} burns.`)

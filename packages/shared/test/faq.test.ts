@@ -800,7 +800,7 @@ describe('FAQ: Army of the Dead', () => {
     const g = board()
     placeSite(g, 0, 'Rustic Village', 1, 0)
     const army = summonCard(g, 0, 'Army of the Dead', 3, 0)
-    army.modifiers.push({ kind: 'keyword', keyword: 'movement +1', duration: 'permanent', turn: 0, sourcePlayer: 0 })
+    army.modifiers.push({ kind: 'keyword', keyword: { movement: 1 }, duration: 'permanent', turn: 0, sourcePlayer: 0 })
     act(g, 0, {
       t: 'moveAttack', unitId: army.id,
       path: [{ x: 2, y: 0, region: 'surface' }, { x: 1, y: 0, region: 'surface' }],
@@ -3533,8 +3533,9 @@ describe('Auto-pick → player-choice conversions (prompt only on a real tie)', 
 
     expect(g.prompts[0]?.kind).toBe('chooseCards')
     const names = (g.prompts[0] as any).data.cards as string[]
-    expect([...names].sort()).toEqual(['Bosk Troll', 'Foot Soldier'])
-    answer(g, [names.indexOf('Foot Soldier')]) // banish the Foot Soldier corpse
+    // labels name the cemetery each corpse lies in (dead minions come from either cemetery)
+    expect([...names].sort()).toEqual(['Bosk Troll (Alice)', 'Foot Soldier (Alice)'])
+    answer(g, [names.indexOf('Foot Soldier (Alice)')]) // banish the Foot Soldier corpse
 
     expect(g.players[0].banished).toContain(c2)
     expect(g.players[0].cemetery).toContain(c1) // the unchosen corpse remains

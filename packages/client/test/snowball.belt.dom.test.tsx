@@ -51,7 +51,7 @@ describe('direction-picker conveyor preview', () => {
     const g = board() as any
     const id = usummon(g, 0, 'Stygian Archers', 2, 1) // an Air unit
     g.units[id].enteredTurn = -5; g.units[id].tapped = false
-    g.units[id].modifiers = [{ kind: 'keyword', keyword: 'ranged 2' }]
+    g.units[id].modifiers = [{ kind: 'keyword', keyword: { ranged: 2 } }]
     const h = new GameHarness(g).mount(); active = h
     h.click(h.container.querySelector(`[data-unit="${id}"]`) as HTMLElement)              // select the unit
     h.click(h.container.querySelector(`[data-ability="ranged"][data-source="${id}"]`) as HTMLElement) // Shoot → shoot mode

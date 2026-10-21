@@ -31,7 +31,7 @@ describe('activated-ability reveal', () => {
 
   it('a built-in Ranged shot → "<card> shoots!" (golden shooter + its site)', () => {
     const g: any = newGame(); keepBoth(g)
-    mkUnit(g, 'sh', 'Field Laborers', 0, 1, 1, [{ kind: 'keyword', keyword: 'ranged' }])
+    mkUnit(g, 'sh', 'Field Laborers', 0, 1, 1, [{ kind: 'keyword', keyword: { ranged: 1 } }])
     mkUnit(g, 'en', 'Field Laborers', 1, 1, 2) // enemy one step north, in range
     act(g, 0, { t: 'activate', sourceId: 'sh', ability: 'ranged', extra: { direction: 'n' } })
     const rev = g.flow.areaReveal

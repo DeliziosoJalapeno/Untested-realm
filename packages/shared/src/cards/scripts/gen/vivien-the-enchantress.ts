@@ -1,4 +1,5 @@
 import { registerScript, getScript, type EffectAPI, type AbilityDef } from '../registry'
+import type { Element } from '../../../engine/types'
 import { getCard, getKeywords } from '../../db'
 import { pushLog, makeCtx, noAtlasDraw, drawCards } from '../../../engine/effects'
 import { awardAchievement } from '../../../engine/achievements.catalog'
@@ -126,12 +127,12 @@ registerScript('Vivien the Enchantress', {
     if (self.silenced) return []
     let unrestricted = false
     let any = false
-    const els = new Set<string>()
+    const els = new Set<Element>()
     const consider = (kw: ReturnType<typeof effKeywords> | undefined) => {
       if (!kw?.spellcaster) return
       any = true
-      if (kw.spellcasterElements?.length) kw.spellcasterElements.forEach((e) => els.add(e))
-      else if (kw.spellcasterElement) els.add(kw.spellcasterElement)
+      if (kw.spellcasterElements?.length) kw.spellcasterElements.forEach((e) => els.add(e as Element))
+      else if (kw.spellcasterElement) els.add(kw.spellcasterElement as Element)
       else unrestricted = true
     }
     for (const u of Object.values(state.units)) {
@@ -143,7 +144,7 @@ registerScript('Vivien the Enchantress', {
     }
     if (!any) return []
     if (unrestricted || els.size === 0) return ['spellcaster']
-    return [`spellcaster:${[...els].join(',')}`]
+    return [{ addSpellcasterElements: [...els] }]
   },
   // Copies the ACTIVATED abilities of every Avatar and Spellcaster in the realm — units in play,
   // spellcaster ARTIFACTS (Omphaloi), and spellcasters that act from a cemetery — plus the

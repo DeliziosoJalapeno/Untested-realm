@@ -233,9 +233,9 @@ describe('judge: keyword add/remove', () => {
   it('remove tolerates the parametric "ranged 1" form', () => {
     const g = ready()
     const u = summonCard(g, 0, 'Foot Soldier', 1, 1)
-    expect(judge(g, { k: 'keyword', unitId: u.id, keyword: 'ranged 1', duration: 'permanent' })).toBeNull()
+    expect(judge(g, { k: 'keyword', unitId: u.id, keyword: { ranged: 1 }, duration: 'permanent' })).toBeNull()
     expect(effKeywords(g, g.units[u.id]).ranged).toBeTruthy()
-    expect(judge(g, { k: 'keyword', unitId: u.id, keyword: 'ranged 1', duration: 'permanent', remove: true })).toBeNull()
+    expect(judge(g, { k: 'keyword', unitId: u.id, keyword: { ranged: 1 }, duration: 'permanent', remove: true })).toBeNull()
     expect(effKeywords(g, g.units[u.id]).ranged).toBeFalsy()
   })
 })

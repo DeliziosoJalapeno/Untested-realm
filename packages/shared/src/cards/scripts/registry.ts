@@ -3,6 +3,7 @@
 
 import type { GameState, UnitState, SiteState, AuraState, PlayerId, Thresholds, Region, Duration } from '../../engine/types'
 import { scriptedNames, getCard } from '../db'
+import type { KeywordGrant, KeywordKey, ModifierKeyword } from '../../engine/keywords'
 
 /** A reference to something an effect can point at. */
 export type TargetRef =
@@ -87,7 +88,7 @@ export interface EffectAPI {
    *  opponent's mana (that's a loss of their total, which should show). */
   spendMana(player: PlayerId, n: number): void
   addPower(unitId: string, amount: number, duration: 'endOfTurn' | 'permanent'): void
-  grantKeyword(unitId: string, keyword: string, duration: 'endOfTurn' | 'permanent'): void
+  grantKeyword(unitId: string, keyword: ModifierKeyword, duration: 'endOfTurn' | 'permanent'): void
   summonToken(name: string, owner: PlayerId, x: number, y: number, region?: Region): UnitState | null
   // `shape`: for a rigid multi-square body (an Enchantress wall), the chosen footprint offsets from the
   // destination anchor — lets a player ROTATE it as they teleport it (a 2x2 needs no shape; its anchor
@@ -230,11 +231,11 @@ export interface CardScript {
   /** this unit attacked and killed `victim` */
   onAttackKill?: (ctx: EffectAPI, victim: UnitState) => void
   /** artifact: keywords granted to the bearer (e.g. ['airborne']) */
-  bearerKeywords?: string[]
+  bearerKeywords?: KeywordGrant[]
   /** artifact: power bonus granted to the bearer (weapons) */
   bearerPower?: number
   /** static: keywords this unit grants to other units */
-  grantsKeywords?: (state: GameState, self: UnitState, other: UnitState) => string[]
+  grantsKeywords?: (state: GameState, self: UnitState, other: UnitState) => KeywordGrant[]
   /** static: power this unit grants to other units */
   grantsPower?: (state: GameState, self: UnitState, other: UnitState) => number
   /** PERF hint: this unit's grantsKeywords/grantsPower are STRUCTURALLY self-only — they return
@@ -249,7 +250,7 @@ export interface CardScript {
    *  the realm. Opt-in so a one-shot claimer that never re-sweeps isn't stranded. */
   releaseControlWhenHushed?: boolean
   /** aura statics */
-  auraGrantsKeywords?: (state: GameState, self: AuraState, unit: UnitState) => string[]
+  auraGrantsKeywords?: (state: GameState, self: AuraState, unit: UnitState) => KeywordGrant[]
   auraGrantsPower?: (state: GameState, self: AuraState, unit: UnitState) => number
   /** extra mana this site provides (beyond the standard 1) */
   siteExtraMana?: number
@@ -278,7 +279,7 @@ export interface CardScript {
   /** minion must be summoned at a position passing this check (e.g. Forsaken → outer column) */
   summonFilter?: (state: GameState, player: PlayerId, at: { x: number; y: number }) => string | null
   /** artifact static: keywords granted to units (e.g. Horn of Caerleon) */
-  artifactGrantsKeywords?: (state: GameState, artifactId: string, unit: UnitState) => string[]
+  artifactGrantsKeywords?: (state: GameState, artifactId: string, unit: UnitState) => KeywordGrant[]
   /** enemies near this unit/site permanently lose Stealth ('nearby' | 'global') */
   stripStealth?: 'nearby' | 'global'
   /** units carried by this unit are disabled (e.g. Hyperparasite) */
@@ -346,7 +347,7 @@ export interface CardScript {
   /** avatar: fires after the avatar plays a site with its basic ability (Geomancer) */
   afterAvatarSitePlay?: (ctx: EffectAPI, siteId: string) => void
   /** keywords this card grants to ITSELF while a condition holds (Realm-Eater: immobile) */
-  selfKeywords?: (state: GameState, self: UnitState) => string[]
+  selfKeywords?: (state: GameState, self: UnitState) => KeywordGrant[]
   /** avatar: fires once during game setup, after avatars are placed (Harbinger) */
   onSetup?: (state: GameState, player: PlayerId) => void
   /** avatar: its controller may summon minions at this square regardless of site control (Harbinger) */
@@ -388,6 +389,12 @@ export interface CardScript {
   auraAllowsSummon?: (state: GameState, aura: { id: string; controller: PlayerId; squares: { x: number; y: number }[] }, player: PlayerId, cardName: string, at: { x: number; y: number }) => boolean
   /** on an aura: covered sites provide this much extra mana to their controller (Abundance) */
   auraSiteExtraMana?: number
+  /** on a carriable artifact: its effects name no player ("each player", "a nearby Avatar"), so they keep
+   *  working while it lies on the ground uncontrolled (Doomsday Device, Thumb Screws). Without this an
+   *  uncontrolled artifact's triggers do nothing — they'd otherwise benefit whoever conjured it. */
+  actsUncontrolled?: boolean
+  /** on an aura: covered sites it floods — also a site played under it later (Flood: all; Atlantean Fate: non-Ordinary) */
+  auraFloodsSite?: (state: GameState, site: SiteState) => boolean
   /** on a site: OTHER nearby sites are silenced (Smokestacks of Gnaak) */
   silencesNearbySites?: boolean
   /** on a site: silences specific other sites (Fields of Phyxis: directly in front) */
@@ -423,7 +430,7 @@ export interface CardScript {
   /** removal layer: keywords this card STRIPS from a unit, applied after all
    *  grants (Sky Baron: other minions lose Airborne). Works on units, sites,
    *  artifacts, and auras in play. */
-  removesKeywords?: (state: GameState, selfId: string, unit: UnitState) => string[]
+  removesKeywords?: (state: GameState, selfId: string, unit: UnitState) => KeywordKey[]
   /** a unit was declared the target of an attack; fires before the defend
    *  window. A prompt queued here resolves first, and if the target leaves the
    *  attacker's square the fight fizzles (Wills-o'-the-Wisp, Witherwing Hero,
@@ -619,7 +626,7 @@ export interface CardScript {
   damageBecomesLifeLoss?: boolean
   /** site: keywords granted globally, visible even at SUMMON time
    *  (Kingdom of Agartha: with (E)(E)(E), all minions have Burrowing) */
-  summonsGainKeywords?: (state: GameState, siteId: string, player: PlayerId) => string[]
+  summonsGainKeywords?: (state: GameState, siteId: string, player: PlayerId) => KeywordGrant[]
   /** replacement: banish a unit BEFORE it enters the realm — no genesis, no
    *  enter triggers (Order of the White Wing) */
   interceptsUnitEnter?: (state: GameState, selfId: string, entering: UnitState) => boolean
@@ -784,7 +791,7 @@ export interface CardScript {
   /** static: reduce damage dealt to `victim` (e.g. Shield Maidens) */
   damageReduction?: (state: GameState, self: UnitState, victim: UnitState) => number
   /** static: keywords a SITE grants to units (e.g. Standing Stones) */
-  siteGrantsKeywords?: (state: GameState, site: { id: string; x: number; y: number; controller: PlayerId | null }, unit: UnitState) => string[]
+  siteGrantsKeywords?: (state: GameState, site: { id: string; x: number; y: number; controller: PlayerId | null }, unit: UnitState) => KeywordGrant[]
   /**
    * "Printed area" damage preview. Given the fully-chosen cast parameters
    * (direction / target square / target sites / edge — the same bag the cast

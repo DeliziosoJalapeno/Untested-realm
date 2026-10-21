@@ -13,7 +13,7 @@ function denseBoard(): { g: GameState; u: UnitState } {
   const u = Object.values(g.units).find((v) => v.name === 'Bone Jumble')! as UnitState
   u.enteredTurn = -5
   u.modifiers.push({ kind: 'keyword', keyword: 'airborne' } as any) // diagonals → many routes
-  u.modifiers.push({ kind: 'keyword', keyword: 'movement +5' } as any) // maxSteps 6 → whole board reachable
+  u.modifiers.push({ kind: 'keyword', keyword: { movement: 5 } } as any) // maxSteps 6 → whole board reachable
   return { g, u }
 }
 

@@ -43,7 +43,7 @@ describe('Vivien gains Spellcaster from a minion that GAINED the keyword', () =>
     const v = vivien(g)
     const beast = summonCard(g, 0, 'Bone Jumble', 3, 3)
     // grant a Fire-locked spellcaster identity
-    beast.modifiers.push({ kind: 'keyword', keyword: 'spellcaster:fire', duration: 'permanent', turn: g.turn, sourcePlayer: 0 } as any)
+    beast.modifiers.push({ kind: 'keyword', keyword: { addSpellcasterElements: ['fire'] }, duration: 'permanent', turn: g.turn, sourcePlayer: 0 } as any)
     const kw = effKeywords(g, v)
     expect(kw.spellcaster, 'Vivien is a Spellcaster').toBe(true)
     expect(kw.spellcasterElements ?? (kw.spellcasterElement ? [kw.spellcasterElement] : []), 'restricted to Fire').toContain('fire')

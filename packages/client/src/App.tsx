@@ -17,6 +17,7 @@ import {
   type GameState,
   type PlayerId,
   type PlayerView,
+  migrateLegacyKeywords,
 } from '@sorcery/shared'
 import { Net, type ServerMsg, type SealedStateMsg, type SealedConfig } from './net'
 import { botAction, botNeedsToAct, botActionKey } from './bot'
@@ -270,6 +271,9 @@ export default function App() {
   const [restartAt, setRestartAt] = useState<number | null>(null)
   const [restartNow, setRestartNow] = useState(Date.now())
   const [restartDismissed, setRestartDismissed] = useState<number | null>(null)
+  // site-wide generic message (scripts/send-message.sh); dismissing hides THIS message (keyed by its expiry)
+  const [siteMsg, setSiteMsg] = useState<{ text: string; until: number } | null>(null)
+  const [siteMsgDismissed, setSiteMsgDismissed] = useState<number | null>(null)
 
   // on load: if a token is stored, confirm it's still valid and pull the account's decks
   useEffect(() => {
@@ -291,7 +295,7 @@ export default function App() {
   // and tick a 1s countdown while one is pending.
   useEffect(() => {
     let stop = false
-    const poll = () => { void auth.fetchAnnounce().then((a) => { if (!stop) setRestartAt(a.deadline) }).catch(() => { /* offline */ }) }
+    const poll = () => { void auth.fetchAnnounce().then((a) => { if (!stop) { setRestartAt(a.deadline); setSiteMsg(a.message) } }).catch(() => { /* offline */ }) }
     poll()
     const id = setInterval(poll, 5000)
     return () => { stop = true; clearInterval(id) }
@@ -583,7 +587,9 @@ export default function App() {
   function startScenario(state: GameState) {
     myDeckFromCollection.current = false
     // scenarios are sandboxes (any board is constructible) → no achievements here
-    beginHotseatState(JSON.parse(JSON.stringify(state)) as GameState, true)
+    const copy = JSON.parse(JSON.stringify(state)) as GameState
+    migrateLegacyKeywords(copy) // scenarios saved before typed keywords hold them as text
+    beginHotseatState(copy, true)
   }
 
   /** online: the SERVER snapshots its full state (this client only holds a redacted view). Saved
@@ -1073,12 +1079,20 @@ export default function App() {
 
   return (
     <div className={appClass}>
-      {restartAt && restartAt > restartNow && restartDismissed !== restartAt && (
-        <div className="restart-banner" data-restart>
-          <span>⚠ Server restarts in {fmtRestart(restartAt - restartNow)} — all ongoing battles will end.</span>
-          <button className="restart-x" title="Dismiss" onClick={() => setRestartDismissed(restartAt)}>✕</button>
-        </div>
-      )}
+      <div className="site-banners">
+        {restartAt && restartAt > restartNow && restartDismissed !== restartAt && (
+          <div className="restart-banner" data-restart>
+            <span>⚠ Server restarts in {fmtRestart(restartAt - restartNow)} — all ongoing battles will end.</span>
+            <button className="restart-x" title="Dismiss" onClick={() => setRestartDismissed(restartAt)}>✕</button>
+          </div>
+        )}
+        {siteMsg && siteMsgDismissed !== siteMsg.until && (
+          <div className="restart-banner site-message" data-site-message>
+            <span>📢 {siteMsg.text}</span>
+            <button className="restart-x" title="Dismiss" onClick={() => setSiteMsgDismissed(siteMsg.until)}>✕</button>
+          </div>
+        )}
+      </div>
       {error && <div className="toast error">{error}</div>}
       <AchievementToasts toasts={achvToasts} onDismiss={(key) => setAchvToasts((c) => c.filter((t) => t.key !== key))} />
       {/* Non-blocking so you can keep browsing (decks, collection…) while you queue — and it runs on its

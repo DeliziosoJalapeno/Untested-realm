@@ -19,7 +19,7 @@ function bigMoveBoard(): { g: GameState; id: string } {
   for (const u of Object.values(g.units)) if (u.controller === 1) delete g.units[u.id] // no enemy units either
   const id = usummon(g, 0, 'Fine Courser', 2, 1)
   g.units[id].enteredTurn = -5; g.units[id].tapped = false
-  g.units[id].modifiers.push({ kind: 'keyword', keyword: 'movement +2' }) // base +1 → total 3 → maxSteps 4
+  g.units[id].modifiers.push({ kind: 'keyword', keyword: { movement: 2 } }) // base +1 → total 3 → maxSteps 4
   return { g, id }
 }
 
