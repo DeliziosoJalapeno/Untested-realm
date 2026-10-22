@@ -1,5 +1,5 @@
 // A card in your cemetery that offers a "from the cemetery" ability (here: Vivien copying a realm
-// Savior-Spellcaster's ward) glows slimy green in the cemetery viewer and gets a ⚗ activate button.
+// Grigori-Rasputin-Spellcaster's cemetery ability) glows slimy green in the cemetery viewer and gets a ⚗ activate button.
 import { describe, it, expect, afterEach } from 'vitest'
 import { act } from '@testing-library/react'
 import { GameHarness } from './harness'
@@ -16,15 +16,15 @@ describe('cemetery from-cemetery abilities in the viewer', () => {
     const g = sweepBoardBase() as any
     const me = hotseatViewpoint(g)
     g.players[me].mana = 20
-    // a realm Savior made a Spellcaster — a source Vivien copies
-    const sc = `cs${g.nextId++}`; g.cards[sc] = { id: sc, name: 'Savior', owner: me }
+    // a realm Grigori Rasputin made a Spellcaster — a source Vivien copies
+    const sc = `cs${g.nextId++}`; g.cards[sc] = { id: sc, name: 'Grigori Rasputin', owner: me }
     const su = `us${g.nextId++}`
     g.units[su] = {
-      id: su, cardId: sc, name: 'Savior', owner: me, controller: me, isAvatar: false, x: 0, y: 0, region: 'surface',
+      id: su, cardId: sc, name: 'Grigori Rasputin', owner: me, controller: me, isAvatar: false, x: 0, y: 0, region: 'surface',
       tapped: false, damage: 0, enteredTurn: 0, usedThisTurn: {}, carrying: [], carryingUnits: [],
       modifiers: [{ kind: 'keyword', keyword: 'spellcaster', duration: 'permanent', turn: g.turn, sourcePlayer: me }],
     }
-    // Vivien lies in my cemetery — she inherits the Savior's location-independent ward
+    // Vivien lies in my cemetery — she inherits Rasputin's own from-the-cemetery ability
     const vc = `cv${g.nextId++}`; g.cards[vc] = { id: vc, name: 'Vivien the Enchantress', owner: me }
     g.players[me].cemetery.push(vc)
 
@@ -35,6 +35,6 @@ describe('cemetery from-cemetery abilities in the viewer', () => {
     expect(h.container.querySelector('[data-cem-glow="1"]'), 'the card with a from-cemetery effect glows').toBeTruthy()
     const btn = h.container.querySelector('[data-cem-activate]') as HTMLElement
     expect(btn, 'a ⚗ activate button is offered').toBeTruthy()
-    expect(btn.textContent, 'labelled with the copied ability + its source').toMatch(/Savior/)
+    expect(btn.textContent, 'labelled with the copied ability + its source').toMatch(/Grigori Rasputin/)
   })
 })

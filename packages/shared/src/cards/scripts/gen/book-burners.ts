@@ -12,7 +12,6 @@ registerScript('Book Burners', {
     label: 'Burn a Document or a dead magic',
     cost: {},
     oncePerTurn: true,
-    usableFromCemetery: true, // banishes any realm Document or a dead magic in either cemetery (no self-position, no tap) → Vivien can do it from the grave
     effect: (ctx) => {
       const docs = Object.values(ctx.state.artifacts).filter((a) => getCard(a.name).subtypes.includes('Document')).map((a) => `realm: ${a.name}`)
       const magics: string[] = []

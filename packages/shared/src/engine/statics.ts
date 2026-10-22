@@ -1129,10 +1129,9 @@ export function effElements(state: GameState, unit: UnitState): string[] {
 }
 
 /** The from-cemetery activatable abilities a specific card in a cemetery offers `player`: its own
- *  `cemeteryAbilities` (Grigori Rasputin). For a card that copies abilities "wherever it is" (Vivien),
- *  its cemeteryAbilities hook itself folds in the realm sources' `usableFromCemetery` activated
- *  abilities — so an ORDINARY dead minion never offers a from-realm ability, only Vivien does. Used
- *  by the GUI cemetery list/glow and by grantedAbilities below, so the same keys drive both. */
+ *  `cemeteryAbilities` (Grigori Rasputin; a dead Vivien offers her sources' cemetery abilities, never
+ *  their realm ones). Used by the GUI cemetery list/glow and by grantedAbilities below, so the same
+ *  keys drive both. */
 export function cardCemeteryAbilities(state: GameState, cardId: string, player: PlayerId): AbilityDef[] {
   const sc = getScript(state.cards[cardId]?.name ?? '')
   return sc?.cemeteryAbilities ? sc.cemeteryAbilities(state, cardId, player) : []
@@ -1231,7 +1230,7 @@ export function grantedAbilities(state: GameState, unit: UnitState): AbilityDef[
     const toll = zoneAccessToll(state)
     for (const cardId of owner.cemetery ?? []) {
       const name = state.cards[cardId]?.name ?? ''
-      // cemeteryAbilities + usableFromCemetery activated abilities (Savior via a cemetery Vivien)
+      // cemetery-activated abilities (Grigori Rasputin, or the same copied by a dead Vivien)
       const ab = cardCemeteryAbilities(state, cardId, unit.controller)
       // the toll rides in the cost, so the effect itself (and its prompts) must not charge it again
       if (ab.length) out.push(...tag(ab, name).map((a) => (toll ? { ...a, cost: { ...a.cost, mana: (a.cost.mana ?? 0) + toll }, effect: (ctx: Parameters<typeof a.effect>[0]) => { markZoneTollPaid(ctx.state, unit.controller); return a.effect(ctx) } } : a)))

@@ -46,6 +46,7 @@ import {
   abilityAnchor,
   resolveCaster,
   oversizedTeleportPlacements,
+  nearbySquaresW,
   type TeleportPlacement,
   canActivate,
   isEvilUnit,
@@ -127,7 +128,7 @@ type Mode =
   | { m: 'conjure'; cardId: string; casterId: string }
   | { m: 'aura'; cardId: string; casterId: string }
   | { m: 'editAura'; auraId: string } // Editor: a placed aura selected for hand-editing
-  | { m: 'magic'; cardId: string; casterId: string; picked: string[] }
+  | { m: 'magic'; cardId: string; casterId: string; picked: string[]; anchorPart?: { x: number; y: number } }
   // after a relocation spell's targets are chosen, an oversized/rigid unit picks its placement
   // (2x2 corner / wall / Megamoeba rotation) among the legal options. Two sources: a spell cast (cardId
   // + casterId + picked → sends castSpell) OR an ENGINE prompt from a teleport ability (promptId → answers
@@ -2053,7 +2054,11 @@ function GameInner({
         const magicName = view.cards[mode.cardId]?.name
         const magicScript = magicName ? getScript(magicName) : null
         const magicSpec = (magicScript?.targets ?? [])[mode.picked.length]
-        if (magicSpec?.what === 'square') {
+        const anchoring = anchorUnit()
+        if (magicSpec?.what === 'square' && anchoring && !mode.anchorPart) {
+          // step 1 for an oversized ally: pick which of its squares anchors the teleport
+          for (const s of occupiedSquares(anchoring)) set.set(`${s.x},${s.y}`, 'hl-place')
+        } else if (magicSpec?.what === 'square') {
           const magicCaster = (resolveCaster(st, mode.casterId, me) ?? avatar) as UnitState // unit / Omphalos artifact / spellcaster site
           // the already-picked targets, so a `whereOf` square (Blink: nearby the chosen ally) is measured
           // from the right anchor instead of the caster.
@@ -2062,12 +2067,12 @@ function GameInner({
           // highlight EXACTLY those squares, so a too-far location is never clickable.
           const opts = legalTargetOptions(st, magicScript, magicCaster, pickedRefs, mode.picked.length)
           if (opts) {
-            for (const o of opts) if ('square' in o) set.set(`${o.square.x},${o.square.y}`, 'hl-place')
+            for (const o of opts) if ('square' in o && nearAnchor(o.square.x, o.square.y)) set.set(`${o.square.x},${o.square.y}`, 'hl-place')
           } else {
             for (let x = 0; x < GRID_W; x++) {
               for (let y = 0; y < GRID_H; y++) {
                 try {
-                  if (!validateTarget(st, magicSpec, { square: { x, y } }, magicCaster, me, pickedRefs))
+                  if (nearAnchor(x, y) && !validateTarget(st, magicSpec, { square: { x, y } }, magicCaster, me, pickedRefs))
                     set.set(`${x},${y}`, 'hl-place')
                 } catch { /* ignore */ }
               }
@@ -2194,6 +2199,12 @@ function GameInner({
     // square-target picking for spells (magic) AND activated abilities (Ancient
     // Dragon's breath, Ignis Rex's roar, Midland Army's bombard, Sparkmage's spark…)
     if ((mode.m === 'magic' || mode.m === 'abilityTargets') && currentSpec()?.what === 'square') {
+      const anchoring = anchorUnit()
+      if (anchoring && mode.m === 'magic' && !mode.anchorPart) {
+        if (occupiedSquares(anchoring).some((s) => s.x === x && s.y === y)) setMode({ ...mode, anchorPart: { x, y } })
+        return
+      }
+      if (!nearAnchor(x, y)) return
       // respect an engine-authoritative legal set (explosion step-range): a too-far square is inert
       const opts = currentTargetOptions()
       if (opts && !opts.some((o) => 'square' in o && o.square.x === x && o.square.y === y)) return
@@ -2949,6 +2960,26 @@ function GameInner({
 
   // ---- casting from hand ----
 
+  /** Blink-style relocation of an OVERSIZED unit: its destination square (a `whereOf` spec) is measured
+   *  from ONE part of the body, which the player picks first — then a square nearby that part, then the
+   *  rotation. Returns the unit while that step applies (anchor not picked yet, or picked), else null. */
+  function anchorUnit(): UnitState | null {
+    if (mode.m !== 'magic') return null
+    const name = view.cards[mode.cardId]?.name
+    const script = name ? getScript(name) : null
+    const spec = currentSpec()
+    if (!script?.teleportPlacement || spec?.what !== 'square' || spec.whereOf == null) return null
+    const u = view.units[mode.picked[spec.whereOf] ?? ''] as UnitState | undefined
+    return u && (u.size === '2x2' || (u.extraSquares?.length ?? 0) > 0) ? u : null
+  }
+  /** with an anchor part chosen, only squares nearby that part (in its region) are destinations */
+  function nearAnchor(x: number, y: number): boolean {
+    const u = anchorUnit()
+    if (!u || mode.m !== 'magic' || !mode.anchorPart) return true
+    const a = mode.anchorPart
+    return nearbySquaresW(st, a.x, a.y).some((s) => s.x === x && s.y === y)
+  }
+
   function currentSpec() {
     if (mode.m === 'abilityTargets') return mode.specs[mode.picked.length] ?? null
     if (mode.m !== 'magic') return null
@@ -2980,8 +3011,14 @@ function GameInner({
       const reloc = script?.teleportPlacement?.(st, picked.map(refOfId).filter(Boolean) as TargetRef[])
       const ru = reloc ? view.units[reloc.unitId] : undefined
       if (reloc && ru && (ru.size === '2x2' || (ru.extraSquares?.length ?? 0) > 0)) {
-        const places = oversizedTeleportPlacements(st, ru, reloc.dest)
+        const places = oversizedTeleportPlacements(st, ru, reloc.dest, reloc.from ?? mode.anchorPart)
         if (places.length > 1) { setMode({ m: 'teleportPlace', cardId: mode.cardId, casterId: mode.casterId, picked, placements: places, idx: 0 }); return }
+        if (places.length === 1) {
+          const p = places[0]
+          send({ t: 'castSpell', cardId: mode.cardId, casterId: mode.casterId, targets: picked, extra: { teleportPlace: { x: p.x, y: p.y, shape: p.shape, from: p.from } } })
+          setMode({ m: 'idle' })
+          return
+        }
       }
       // "printed area" damage spells whose area is now fully determined by the chosen
       // targets get a final-confirmation panel before the cast is actually sent.
@@ -4898,7 +4935,9 @@ function GameInner({
 
       {(mode.m === 'magic' || mode.m === 'abilityTargets') && (
         <div className="promptbanner" data-modebanner={mode.m} data-spec-what={currentSpec()?.what ?? undefined}>
-          {currentSpec()?.label ?? 'Choose a target'} —{' '}
+          {anchorUnit() && mode.m === 'magic' && !mode.anchorPart
+            ? `Which part of ${anchorUnit()!.name} does the teleport start from?`
+            : currentSpec()?.label ?? 'Choose a target'} —{' '}
           {/* optional (`upTo`) choices — e.g. the Gifts' "an allied minion" — can be declined:
               cast/activate with whatever's been picked so far (0 for a bare Gift → just draws). */}
           {currentSpec()?.upTo && (mode.m === 'magic' || mode.m === 'abilityTargets') && (
@@ -5006,7 +5045,7 @@ function GameInner({
               // engine-prompt path (Avatar of Air…): answer with the chosen placement index
               send({ t: 'prompt', promptId: mode.promptId, choice: mode.idx })
             } else {
-              send({ t: 'castSpell', cardId: mode.cardId!, casterId: mode.casterId!, targets: mode.picked!, extra: { teleportPlace: { x: p.x, y: p.y, shape: p.shape } } })
+              send({ t: 'castSpell', cardId: mode.cardId!, casterId: mode.casterId!, targets: mode.picked!, extra: { teleportPlace: { x: p.x, y: p.y, shape: p.shape, from: p.from } } })
             }
             setMode({ m: 'idle' })
           }}>✓ Place</button>

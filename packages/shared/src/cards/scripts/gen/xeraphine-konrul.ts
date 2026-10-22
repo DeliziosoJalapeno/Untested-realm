@@ -6,7 +6,6 @@ import { payZoneToll } from '../../../engine/statics'
 // 'At the end of your turn, you may choose three of your dead minions. Banish
 //  two to return the remaining one to hand.'
 registerScript('Xeraphine Konrul', {
-  turnTriggersFromCemetery: true, // its end-of-turn bargain touches only your cemetery → Vivien fires it from the grave
   endOfTurn: (ctx) => {
     const p = ctx.state.players[ctx.controller]
     const dead = p.cemetery.filter((id) => getCard(ctx.state.cards[id].name).type === 'Minion')

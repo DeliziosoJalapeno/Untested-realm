@@ -61,6 +61,19 @@ describe('wired achievements', () => {
     expect(has(g, 'man-eater-bug', 0)).toBe(true)
   })
 
+  it("ghost-vivien: a dead Vivien activates a copied cemetery ability (a realm Rasputin's)", () => {
+    const g = newGame(); keepBoth(g)
+    applyJudge(g, 0, { k: 'summonUnit', name: 'Grigori Rasputin', player: 0, x: 0, y: 0, region: 'surface', noGenesis: true })
+    const ras = Object.values(g.units).find((u) => u.name === 'Grigori Rasputin')!
+    applyJudge(g, 0, { k: 'keyword', unitId: ras.id, keyword: 'spellcaster', duration: 'permanent' })
+    applyJudge(g, 0, { k: 'addToCemetery', name: 'Vivien the Enchantress', player: 0 })
+    const vcard = g.players[0].cemetery.find((id) => g.cards[id].name === 'Vivien the Enchantress')!
+    const ab = getScript('Vivien the Enchantress')!.cemeteryAbilities!(g, vcard, 0).find((a) => /Grigori Rasputin/.test(a.label))
+    expect(ab, 'the dead Vivien offers Rasputin\'s cemetery ability').toBeTruthy()
+    ab!.effect!(makeCtx(g, vcard, 0, []))
+    expect(has(g, 'ghost-vivien', 0)).toBe(true)
+  })
+
   it('zombie-vivien: a dead Vivien copying a bone-raiser raises herself with a Skeleton', () => {
     const g = newGame(); keepBoth(g)
     // a SPELLCASTER bone-raiser in the realm → a dead Vivien copies its cemetery raise

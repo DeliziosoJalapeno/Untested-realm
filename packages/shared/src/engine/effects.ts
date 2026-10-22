@@ -3565,11 +3565,13 @@ export function makeCtx(
       // it, so a shove elsewhere in the same cast can't steal the choice.
       let shape = opts?.shape
       if (!push && (u.size === '2x2' || (u.extraSquares?.length ?? 0) > 0) && state.flow?.teleportPlace) {
-        const pl = state.flow.teleportPlace as { x: number; y: number; shape?: { dx: number; dy: number }[] }
+        const pl = state.flow.teleportPlace as { x: number; y: number; shape?: { dx: number; dy: number }[]; from?: { x: number; y: number } }
         delete state.flow.teleportPlace
         // only a placement the engine itself offers at this destination (raw actions could otherwise move
-        // the body anywhere, or reshape it); anything else falls back to the default placement
-        const legal = oversizedTeleportPlacements(state, u, { x, y })
+        // the body anywhere, or reshape it) — rotated about the anchor PART the player picked (`from`, which
+        // must be one of the body's squares); anything else falls back to the default placement
+        const from = pl?.from && Number.isInteger(pl.from.x) && Number.isInteger(pl.from.y) ? { x: pl.from.x, y: pl.from.y } : undefined
+        const legal = oversizedTeleportPlacements(state, u, { x, y }, from)
           .find((o) => o.x === pl?.x && o.y === pl?.y && JSON.stringify(o.shape ?? null) === JSON.stringify(pl.shape ?? null))
         if (legal) { x = legal.x; y = legal.y; shape = legal.shape }
       }

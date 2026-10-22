@@ -101,41 +101,37 @@ describe('Vivien copies CAST RESTRICTIONS of realm Spellcasters (Lugbog Cat)', (
   })
 })
 
-describe('Vivien ACTIVATES abilities from the cemetery only when they need no realm position', () => {
+describe("out of the realm, Vivien has ONLY her sources' hand/cemetery/spellbook abilities", () => {
+  // "wherever she is" lets her keep abilities that work from that zone (Grigori Rasputin's, tested
+  // above) — a realm ability (Savior's ward, Seer's peek, Merlin's foresee…) can't be used from there.
   const avatarOf0 = (g: GameState) => g.units[g.players[0].avatarUnitId]
   function cemVivien(g: GameState) {
     const vcard = `cv${g.nextId++}`; g.cards[vcard] = { id: vcard, name: 'Vivien the Enchantress', owner: 0 } as any
     g.players[0].cemetery.push(vcard); return vcard
   }
-
-  it('offers a Savior-Spellcaster ward (location-independent) from the cemetery', () => {
+  const realmSource = (name: string) => () => {
     const g: GameState = newGame(); keepBoth(g)
     placeSite(g, 0, 'Rustic Village', 3, 3)
-    const s = summonCard(g, 0, 'Savior', 3, 3); s.modifiers.push(SPELLCASTER(g.turn))
+    const s = summonCard(g, 0, name, 3, 3); s.modifiers.push(SPELLCASTER(g.turn))
     cemVivien(g)
     const abils = grantedAbilities(g, avatarOf0(g))
-    expect(abils.some((a) => /Savior/.test(a.label)), "Savior's ward is usable from the cemetery").toBe(true)
-  })
+    expect(abils.some((a) => a.label.includes(name)), `${name}'s realm ability is not usable by a dead Vivien`).toBe(false)
+  }
 
-  it('does NOT offer a Necromancer-Spellcaster "summon a Skeleton here" (needs a realm square)', () => {
-    const g: GameState = newGame(); keepBoth(g)
-    placeSite(g, 0, 'Rustic Village', 3, 3)
-    const n = summonCard(g, 0, 'Necromancer', 3, 3); n.modifiers.push(SPELLCASTER(g.turn))
-    cemVivien(g)
-    const abils = grantedAbilities(g, avatarOf0(g))
-    expect(abils.some((a) => /Necromancer/.test(a.label)), 'a here-summon can NOT be used from the cemetery').toBe(false)
-  })
+  it("does NOT offer a Savior-Spellcaster's ward from the cemetery", realmSource('Savior'))
+  it("does NOT offer a Merlin-Spellcaster's foresee from the cemetery", realmSource('Merlin'))
+  it('does NOT offer a Necromancer-Spellcaster "summon a Skeleton here"', realmSource('Necromancer'))
 
-  it('fires a Seer-Spellcaster start-of-turn deck peek from the cemetery', () => {
+  it("does NOT fire a Seer-Spellcaster's start-of-turn peek from the cemetery", () => {
     const g: GameState = newGame(); keepBoth(g)
     placeSite(g, 0, 'Rustic Village', 3, 3)
     const seer = summonCard(g, 0, 'Seer', 3, 3); seer.modifiers.push(SPELLCASTER(g.turn))
     const vcard = cemVivien(g)
     getScript('Vivien the Enchantress')!.startOfTurn!(makeCtx(g, vcard, 0, []))
-    expect(g.prompts[0]?.title, "Vivien performs the Seer's gaze from the grave").toMatch(/Seer/i)
+    expect(g.prompts[0], 'no Seer peek from the grave').toBeUndefined()
   })
 
-  it('does NOT forward the Enchantress\'s board-only trigger from the cemetery', () => {
+  it("does NOT forward the Enchantress's board trigger from the cemetery", () => {
     const g: GameState = newGame(); keepBoth(g)
     placeSite(g, 0, 'Rustic Village', 3, 3)
     const e = summonCard(g, 0, 'Enchantress', 3, 3); e.modifiers.push(SPELLCASTER(g.turn))
@@ -143,31 +139,15 @@ describe('Vivien ACTIVATES abilities from the cemetery only when they need no re
     g.auras['ar1'] = { id: 'ar1', cardId: 'car1', name: 'Blizzard', controller: 0, squares: [{ x: 3, y: 3 }] } as any
     g.cards['car1'] = { id: 'car1', name: 'Blizzard', owner: 0 } as any
     const vcard = cemVivien(g)
-    // Vivien-in-cemetery's onSpellCast forwarding must NOT run the Enchantress (not listensFromCemetery)
     ;(getScript('Vivien the Enchantress')!.onSpellCast as any)(makeCtx(g, vcard, 0, []), 0, 'Fireball', undefined, [])
     expect(g.prompts[0], 'no animate-an-aura prompt — that needs Vivien in the realm').toBeUndefined()
   })
-})
 
-describe('cemetery-usable abilities are Vivien-only, and cover more than the examples', () => {
-  const avatarOf0 = (g: GameState) => g.units[g.players[0].avatarUnitId]
-
-  it('Vivien-in-cemetery inherits a realm Merlin-Spellcaster\'s deck-peek (foresee)', () => {
+  it('a plain dead card offers no realm ability from its grave either', () => {
     const g: GameState = newGame(); keepBoth(g)
-    placeSite(g, 0, 'Rustic Village', 3, 3)
-    const m = summonCard(g, 0, 'Merlin', 3, 3); m.modifiers.push(SPELLCASTER(g.turn))
-    const vc = `cv${g.nextId++}`; g.cards[vc] = { id: vc, name: 'Vivien the Enchantress', owner: 0 } as any
-    g.players[0].cemetery.push(vc)
-    const abils = grantedAbilities(g, avatarOf0(g))
-    expect(abils.some((a) => /Merlin/.test(a.label)), "Merlin's foresee is offered on a cemetery Vivien").toBe(true)
-  })
-
-  it('but an ORDINARY dead card does NOT offer its usable-from-cemetery ability (only Vivien copies it)', () => {
-    const g: GameState = newGame(); keepBoth(g)
-    // a dead Archimago (its 'echo' ability is flagged usableFromCemetery) sitting in the cemetery
     const ac = `ca${g.nextId++}`; g.cards[ac] = { id: ac, name: 'Archimago', owner: 0 } as any
     g.players[0].cemetery.push(ac)
     const abils = grantedAbilities(g, avatarOf0(g))
-    expect(abils.some((a) => /Archimago/.test(a.label)), 'a plain dead Archimago must NOT offer echo from its own grave').toBe(false)
+    expect(abils.some((a) => /Archimago/.test(a.label))).toBe(false)
   })
 })

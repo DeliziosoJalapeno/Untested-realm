@@ -1,7 +1,7 @@
 import { getCard, cardSupport, getKeywords } from '../cards/db'
 import { getScript, type CardScript, type TargetRef, type TargetSpec } from '../cards/scripts/registry'
 import type { GameState, PlayerId, Region, Thresholds, UnitState } from './types'
-import { adjacentSquares, adjacentSquaresW, avatarOf, chebyshev, chebyshevW, orthAdjacentWrapped, nearbySquares, nearbySquaresW, siteAt, sitesOf, inBounds, unitsAt, occupies, occupiedSquares, GRID_W, GRID_H, edgesConnected, aura2x2Squares } from './grid'
+import { occupiedLocations, adjacentSquares, adjacentSquaresW, avatarOf, chebyshev, chebyshevW, orthAdjacentWrapped, nearbySquares, nearbySquaresW, siteAt, sitesOf, inBounds, unitsAt, occupies, occupiedSquares, GRID_W, GRID_H, edgesConnected, aura2x2Squares } from './grid'
 import { newId, pushLog, makeCtx, checkStateBased, opponent, emitUnitEnters, directionReach, emitEvent, isMagicProtected, loseLife, checkWard, pushPrompt, registerCont, runCont, toCemetery, bumpManaSpent, beginAreaReveal, recordAffectedSites, snapshotRealm, recordTouchedSites, sealSpellReveal, setActionCredit, restoreActionCredit, firesGenesisOnEntry, recordManaGain, deferTurnStep, settleEntering, runDamageEvent, notifySilencerEntered, applyFlood } from './effects'
 import { affinity, effKeywords, isDisabled, disabledByEffect, canExistIn, siteSilenced, siteDisabledByArtifact, artifactSilenced, artScript, zoneAccessToll, isArtifactUnit, isEvilUnit, isEvilUnitIntrinsic, isEvilCardName, isEvilCardNameFor, cardSubtypesFor, collectionBanned, payZoneToll, takeFromCollection, carriedInside, isBlanked, isCarriableArtifact, terrainAt, artifactController } from './statics'
 import { siteEntryAllowed } from './movement'
@@ -755,19 +755,32 @@ function targetCompulsion(
   return null
 }
 
-/** the x/y a `where` bound is measured from: a previously-picked target (spec.whereOf) if given, else the
- *  caster — so Blink's square is checked against the ally you selected, not the caster. */
-function whereAnchor(state: GameState, spec: TargetSpec, caster: UnitState, picked?: TargetRef[]): { x: number; y: number } {
+/** the locations a `where` bound is measured from: a previously-picked target (spec.whereOf) if given, else
+ *  the caster — so Blink's square is checked against the ally you selected, not the caster. A UNIT is
+ *  measured from EVERY square it occupies (an oversized ally is "nearby" anything nearby any of its parts),
+ *  each with that part's own region; a site/positional source has no region (it reaches subsurface). */
+function whereAnchors(state: GameState, spec: TargetSpec, caster: UnitState, picked?: TargetRef[]): { x: number; y: number; region?: Region }[] {
   const ref = spec.whereOf != null ? picked?.[spec.whereOf] : undefined
   if (ref) {
-    if ('unit' in ref) { const u = state.units[ref.unit]; if (u) return { x: u.x, y: u.y } }
-    else if ('site' in ref) { const s = state.sites[ref.site]; if (s) return { x: s.x, y: s.y } }
-    else if ('artifact' in ref) { const a = state.artifacts[ref.artifact]; if (a) return { x: a.x, y: a.y } }
-    else if ('aura' in ref) { const r = state.auras[ref.aura]; const sq = r?.squares?.[0]; if (sq) return { x: sq.x, y: sq.y } }
-    else if ('square' in ref) return { x: ref.square.x, y: ref.square.y }
+    if ('unit' in ref) { const u = state.units[ref.unit]; if (u) return occupiedLocations(u) }
+    else if ('site' in ref) { const s = state.sites[ref.site]; if (s) return [{ x: s.x, y: s.y }] }
+    else if ('artifact' in ref) { const a = state.artifacts[ref.artifact]; if (a) return [{ x: a.x, y: a.y }] }
+    else if ('aura' in ref) { const r = state.auras[ref.aura]; const sq = r?.squares?.[0]; if (sq) return [{ x: sq.x, y: sq.y }] }
+    else if ('square' in ref) return [{ x: ref.square.x, y: ref.square.y }]
+    return [{ x: caster.x, y: caster.y }]
   }
-  return { x: caster.x, y: caster.y }
+  // a real unit caster at its own square: all its parts; a stand-in moved elsewhere: just that square
+  const real = state.units[caster.id]
+  if (real && real.x === caster.x && real.y === caster.y) return occupiedLocations(real)
+  return [real ? { x: caster.x, y: caster.y, region: caster.region } : { x: caster.x, y: caster.y }]
 }
+
+/** the squares a here/adjacent/nearby bound reaches from one anchor location */
+function reachFrom(state: GameState, where: string, a: { x: number; y: number }): { x: number; y: number }[] {
+  return where === 'here' ? [{ x: a.x, y: a.y }] : where === 'adjacent' ? adjacentSquaresW(state, a.x, a.y) : nearbySquaresW(state, a.x, a.y)
+}
+const inReach = (state: GameState, where: string, anchors: { x: number; y: number }[], x: number, y: number) =>
+  anchors.some((a) => reachFrom(state, where, a).some((s) => s.x === x && s.y === y))
 
 function validateTargetCore(
   state: GameState,
@@ -777,7 +790,7 @@ function validateTargetCore(
   player: PlayerId,
   picked?: TargetRef[],
 ): string | null {
-  const wa = whereAnchor(state, spec, caster, picked)
+  const anchors = whereAnchors(state, spec, caster, picked)
   if ('unit' in ref) {
     const unit = state.units[ref.unit]
     if (!unit) return 'No such unit.'
@@ -805,8 +818,7 @@ function validateTargetCore(
       }
     }
     if (spec.where && spec.where !== 'anywhere') {
-      const squares = spec.where === 'here' ? [{ x: wa.x, y: wa.y }] : spec.where === 'adjacent' ? adjacentSquaresW(state, wa.x, wa.y) : nearbySquaresW(state, wa.x, wa.y)
-      if (!squares.some((s) => s.x === unit.x && s.y === unit.y)) return `Target must be ${spec.where}.`
+      if (!inReach(state, spec.where, anchors, unit.x, unit.y)) return `Target must be ${spec.where}.`
       // a here/nearby/adjacent UNIT target is region-locked to a real-UNIT source's region (a card
       // that reaches across regions says so and targets imperatively, e.g. Lacuna Entity). A SITE /
       // positional pseudo-caster (not in state.units) still reaches sub-surface targets.
@@ -822,8 +834,7 @@ function validateTargetCore(
     if (spec.owner === 'ally' && site.controller !== player) return 'Must choose your own site.'
     if (spec.owner === 'enemy' && (site.controller === player || site.controller === null)) return 'Must choose an enemy site.'
     if (spec.where && spec.where !== 'anywhere') {
-      const squares = spec.where === 'here' ? [{ x: wa.x, y: wa.y }] : spec.where === 'adjacent' ? adjacentSquaresW(state, wa.x, wa.y) : nearbySquaresW(state, wa.x, wa.y)
-      if (!squares.some((s) => s.x === site.x && s.y === site.y)) return `Target must be ${spec.where}.`
+      if (!inReach(state, spec.where, anchors, site.x, site.y)) return `Target must be ${spec.where}.`
     }
     if (spec.filter && !spec.filter(state, site, caster)) return 'Not a legal target.'
     return null
@@ -853,13 +864,13 @@ function validateTargetCore(
     // enforce the spatial bound (Draconian Bonekite's "target nearby location") — the unit/site
     // branches already do this; without it a `where:'nearby'` SQUARE spec validated the whole board.
     if (spec.where && spec.where !== 'anywhere') {
-      const squares = spec.where === 'here' ? [{ x: wa.x, y: wa.y }] : spec.where === 'adjacent' ? adjacentSquaresW(state, wa.x, wa.y) : nearbySquaresW(state, wa.x, wa.y)
-      if (!squares.some((s) => s.x === ref.square.x && s.y === ref.square.y)) return `Target must be ${spec.where}.`
+      const near = anchors.filter((a) => reachFrom(state, spec.where!, a).some((s) => s.x === ref.square.x && s.y === ref.square.y))
+      if (!near.length) return `Target must be ${spec.where}.`
       // "nearby/adjacent/here" is same-region (Blink can't hop a surface ally underground): measured from the
-      // earlier-picked unit (whereOf) or a real-unit caster; a site / positional source reaches subsurface.
-      const prior = spec.whereOf != null ? picked?.[spec.whereOf] : undefined
-      const anchorUnit = prior && 'unit' in prior ? state.units[prior.unit] : prior ? undefined : state.units[caster.id]
-      if (anchorUnit && ref.square.region && ref.square.region !== anchorUnit.region) return 'Target must be in the same region.'
+      // part of the earlier-picked unit (whereOf) / real-unit caster it's nearby; a site / positional source
+      // has no region and reaches subsurface.
+      const sq = ref.square
+      if (sq.region && !near.some((a) => !a.region || a.region === sq.region)) return 'Target must be in the same region.'
     }
     return null
   }

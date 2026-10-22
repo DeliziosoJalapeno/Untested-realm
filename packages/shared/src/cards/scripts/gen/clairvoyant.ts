@@ -12,7 +12,6 @@ registerScript('Clairvoyant', {
     label: 'Banish a dead minion → peek at your top spell',
     cost: {},
     oncePerTurn: true,
-    usableFromCemetery: true, // banishes a dead minion + peeks your top spell (cemetery/spellbook only, no self-position) → Vivien can do it from the grave
     effect: (ctx) => {
       // "a dead minion" is unqualified → a minion in EITHER cemetery counts
       const corpses: string[] = []

@@ -155,12 +155,6 @@ export interface AbilityDef {
   /** dynamic button label that overrides `label` (e.g. appends a remaining
    *  count like "(2)"). Purely cosmetic — the client renders it. */
   dynamicLabel?: (state: GameState, sourceId: string) => string
-  /** the ability does NOT need its activator to be a unit at a realm location — its effect
-   *  touches only decks / life / hand / a chosen realm object, never the activator's own square
-   *  (Savior wards any minion summoned this turn). Such abilities can be activated even from the
-   *  cemetery, and Vivien-in-the-cemetery inherits them. Contrast Necromancer ("summon a Skeleton
-   *  HERE") which needs the activator on a square. */
-  usableFromCemetery?: boolean
   /** the ability flips its own card over (Druid → Bruin). A masked Imposter must
    *  NOT be offered it — flipping leaves it with no Avatar and it loses the game
    *  (FAQ), so Imposter filters flipsSelf abilities out of its granted set. */
@@ -464,10 +458,6 @@ export interface CardScript {
   /** this card's event hooks also fire while it lies in a cemetery, with
    *  ctx.sourceId = its card id (Bone Rabble, Scourge Zombies) */
   listensFromCemetery?: boolean
-  /** this card's start/end-of-turn triggers don't need it to be at a realm location — they touch
-   *  only decks / life / hand (Seer's deck peek). Vivien-in-the-cemetery fires such source triggers;
-   *  location-dependent turn triggers (that read the unit's square) are NOT copied from the cemetery. */
-  turnTriggersFromCemetery?: boolean
   /** aura placement rule, validated at cast time BEFORE costs are paid — an illegal square rejects
    *  the cast outright (walls: must be your site). `caster` is the unit casting it (a Spellcaster
    *  minion, an Omphalos pseudo-caster, or the avatar), so "nearby" is measured from the CASTER —
@@ -811,8 +801,10 @@ export interface CardScript {
   targetOptions?: (state: GameState, caster: UnitState, picked: TargetRef[], specIndex: number) => TargetRef[]
   /** A relocation spell declares which chosen target UNIT it teleports and to which destination square,
    *  so the client can offer an oversized-placement/rotation picker (and pass the chosen placement back
-   *  in `extra.teleportPlace = { x, y, shape }`, which the onCast reads). null = no relocation to offer. */
-  teleportPlacement?: (state: GameState, targets: TargetRef[]) => { unitId: string; dest: { x: number; y: number } } | null
+   *  in `extra.teleportPlace = { x, y, shape, from }`, which the onCast reads). `from` = the body part that
+   *  anchors the move when the card fixes it (Flanking Maneuver: the part on the chosen location); omitted
+   *  → the player picks the anchor part first (Blink). null = no relocation to offer. */
+  teleportPlacement?: (state: GameState, targets: TargetRef[]) => { unitId: string; dest: { x: number; y: number }; from?: { x: number; y: number } } | null
   /** continuations for ask(); key → handler */
   conts?: Record<string, (ctx: EffectAPI, contCtx: any, choice: any) => void>
   /** UI hint: how to pick `at` when casting (minions default to own sites) */
