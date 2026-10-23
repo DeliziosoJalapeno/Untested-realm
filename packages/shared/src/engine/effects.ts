@@ -884,7 +884,18 @@ export function resolvePrompt(state: GameState, promptId: string, player: Player
   if (err) return err
   checkStateBased(state)
   runTurnSteps(state)
+  refreshActivePrompt(state)
   return null
+}
+
+/** The prompt now waiting may have been queued before the answers just given (two triggers off one
+ *  move): let its script rebuild the choices from the state as it is now (see refreshPrompts). */
+function refreshActivePrompt(state: GameState): void {
+  const prompt = state.prompts[0]
+  if (!prompt?.cont.startsWith('script:')) return
+  const rest = prompt.cont.slice('script:'.length)
+  const sep = rest.indexOf(':')
+  getScript(rest.slice(0, sep))?.refreshPrompts?.[rest.slice(sep + 1)]?.(state, prompt)
 }
 
 // ---- zones ----
