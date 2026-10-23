@@ -1531,7 +1531,8 @@ function applyResolvedDamage(
   emitEvent(state, 'onUnitDamaged', { ...unit }, n, source)
   // "whenever this takes damage" triggers (Flagellant...)
   const script = getScript(unit.name)
-  if (script?.onSelfDamaged && !unit.silenced) {
+  // a disabled minion has no abilities (Codex); an Avatar's damage hooks are durations (Imposter's mask)
+  if (script?.onSelfDamaged && !unit.silenced && (unit.isAvatar || !isDisabled(state, unit))) {
     script.onSelfDamaged(makeCtx(state, unit.id, unit.controller, []), n)
   }
   if (opts?.lethal && n > 0) {
@@ -1832,7 +1833,7 @@ export function strikeAllSimultaneous(state: GameState, strikerId: string, targe
     const survivor = state.units[snap.id]
     if (survivor) {
       const s = getScript(survivor.name)
-      if (s?.onSelfStruck && !survivor.silenced) s.onSelfStruck(makeCtx(state, survivor.id, survivor.controller, []), striker)
+      if (s?.onSelfStruck && !survivor.silenced && !isDisabled(state, survivor)) s.onSelfStruck(makeCtx(state, survivor.id, survivor.controller, []), striker)
     } else {
       if (state.units[strikerId]) striker.counters = { ...striker.counters, everKilled: 1 }
       const killHook = !striker.silenced ? getScript(striker.name)?.onKill : undefined
@@ -3519,7 +3520,7 @@ export function makeCtx(
       const survivor = state.units[snapshot.id]
       if (survivor) {
         const s = getScript(survivor.name)
-        if (s?.onSelfStruck && !survivor.silenced) s.onSelfStruck(makeCtx(state, survivor.id, survivor.controller, []), attacker)
+        if (s?.onSelfStruck && !survivor.silenced && !isDisabled(state, survivor)) s.onSelfStruck(makeCtx(state, survivor.id, survivor.controller, []), attacker)
       } else if (!wasAvatar) {
         // the strike killed the target → kill triggers (Stygian Archers, Sir Pellinore).
         // everKilled bookkeeping only applies while the striker is still alive.
