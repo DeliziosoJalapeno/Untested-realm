@@ -3470,6 +3470,9 @@ export function makeCtx(
       // strike (Hotwheel's roll, Wraetannis Titan's genesis, …) fires the SAME
       // consequences a melee blow does: "whenever this strikes", the enemy-Avatar
       // trigger (Interrogator), "when struck", and kill triggers (Stygian Archers).
+      // Codex: a disabled minion "cannot strike or deal damage", nor take an action another card
+      // grants it — so no effect (Shatter Strike's ally, Smite…) makes it strike, not even for 0.
+      if (isDisabled(state, attacker)) return
       const kw = effKeywords(state, attacker)
       const power = effAttack(state, attacker)
       if (!('unit' in target)) {
