@@ -1793,7 +1793,8 @@ export function trySubmerge(state: GameState, unit: UnitState): boolean {
  *  De-dupe the caller's list first if the same unit could appear twice (each is struck once). */
 export function strikeAllSimultaneous(state: GameState, strikerId: string, targetIds: string[], controller: PlayerId): void {
   const striker = state.units[strikerId]
-  if (!striker) return
+  // a disabled unit cannot strike, for any effect (Codex) — the same rule as ctx.strike
+  if (!striker || isDisabled(state, striker)) return
   const targets = [...new Set(targetIds)].filter((id) => id !== strikerId && state.units[id]).map((id) => state.units[id]!)
   if (!targets.length) return
   const kw = effKeywords(state, striker)

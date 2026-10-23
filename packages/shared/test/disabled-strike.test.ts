@@ -45,3 +45,45 @@ describe('no card effect makes a disabled unit strike', () => {
     expect(g.units[foe.id]?.damage, 'the target is alive and unhurt').toBe(0)
   })
 })
+
+// The same rule for the other "an ally …" magics: the ally acts, so a disabled ally does nothing.
+describe('other actions a disabled ally cannot take', () => {
+  it('Spin Attack (strikeAllSimultaneous): a disabled ally strikes no one', () => {
+    for (const asleep of [true, false]) {
+      const g = newGame() as GameState; keepBoth(g); waiveThreshold(g, 0)
+      placeSite(g, 0, 'Rustic Village', 2, 2)
+      const ally = summonCard(g, 0, 'Slumbering Giantess', 2, 2); ally.enteredTurn = -1
+      const foe = summonCard(g, 1, 'Wild Boars', 2, 2); foe.enteredTurn = -1
+      if (asleep) ally.disabled = true
+      castMagic(g, 0, 'Spin Attack', { targets: [ally.id] })
+      if (asleep) expect(g.units[foe.id]?.damage, 'disabled: the Boars are alive and unhurt').toBe(0)
+      else expect(g.units[foe.id], 'awake: the strike kills the Boars').toBeUndefined()
+    }
+  })
+
+  it('Raze: a disabled ally does not destroy its site', () => {
+    for (const asleep of [true, false]) {
+      const g = newGame() as GameState; keepBoth(g); waiveThreshold(g, 0)
+      placeSite(g, 0, 'Rustic Village', 2, 2)
+      const site = placeSite(g, 0, 'Rustic Village', 2, 1)
+      const ally = summonCard(g, 0, 'Slumbering Giantess', 2, 1); ally.enteredTurn = -1
+      if (asleep) ally.disabled = true
+      castMagic(g, 0, 'Raze', { targets: [ally.id] })
+      const standing = !!g.sites[site.id] && !g.sites[site.id].isRubble
+      expect(standing, asleep ? 'disabled: the site stands' : 'awake: the site is razed').toBe(asleep)
+    }
+  })
+
+  it('Trial by Water: a disabled ally submerges no one', () => {
+    for (const asleep of [true, false]) {
+      const g = newGame() as GameState; keepBoth(g); waiveThreshold(g, 0)
+      placeSite(g, 0, 'Rustic Village', 2, 2)
+      const ally = summonCard(g, 0, 'Slumbering Giantess', 2, 2); ally.enteredTurn = -1
+      const victim = summonCard(g, 1, 'Wild Boars', 2, 2); victim.enteredTurn = -1
+      if (asleep) ally.disabled = true
+      castMagic(g, 0, 'Trial by Water', { targets: [ally.id, victim.id] })
+      const untouched = g.units[victim.id]?.region === 'surface'
+      expect(untouched, asleep ? 'disabled: the victim stays on the surface' : 'awake: the victim is submerged or drowned').toBe(asleep)
+    }
+  })
+})
