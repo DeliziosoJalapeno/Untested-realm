@@ -4,9 +4,9 @@ import { getScript } from '../cards/scripts/registry'
 import { findCard } from '../cards/db'
 import { pickUpUnits, dropUnits, syncCarried, detachFromCarrier } from './carrying'
 import type { GameState, PlayerId, Region, Step, UnitState, AttackTarget } from './types'
-import { pushLog, pushPrompt, registerCont, dealDamageToUnit, dealDamage, checkStateBased, opponent, makeCtx, emitUnitMoved, gainLife, tapUnit, emitEvent, drawCards, askDrawCard, recordAreaReveal, markRevealShoots, beginAreaReveal, sealAbilityReveal, beginBattleCapture, finishBattleCapture, avatarTrappedAt, isMagicProtected } from './effects'
+import { pushLog, pushPrompt, registerCont, resumeWhenSettled, dealDamageToUnit, dealDamage, checkStateBased, opponent, makeCtx, emitUnitMoved, gainLife, tapUnit, emitEvent, drawCards, askDrawCard, recordAreaReveal, markRevealShoots, beginAreaReveal, sealAbilityReveal, beginBattleCapture, finishBattleCapture, avatarTrappedAt, isMagicProtected } from './effects'
 import { effAttack, effKeywords, isDisabled, canTap, projectileCanHit, attackBlockedAt, interceptBlockedAt, siteSilenced as siteSilencedC, artScript, regionPresentAt, carriedInside, isBlanked, isCarriableArtifact } from './statics'
-import { findPath, isFreeStep, isLegalStep, maxSteps, reachableLocations, reachableWithPaths, resolveMovement } from './movement'
+import { findPath, isFreeStep, isLegalStep, maxSteps, reachableLocations, reachableWithPaths, resolveMovement, type Walk } from './movement'
 import { unitsAt, occupies, occupiedSquares, sharedLocation, inBounds, edgesConnected, GRID_W, GRID_H, squareLabel } from './grid'
 
 // ---------- entry: the Move and Attack basic ability ----------
@@ -38,61 +38,75 @@ export function moveAttack(state: GameState, player: PlayerId, unitId: string, p
   try {
     tapUnit(state, unit)
     delete state.flow.lastStepFrom // set by resolveMovement only if THIS move takes a step
-    const taken = resolveMovement(state, unit, path)
-    // Blaze: when the runner stops, the trail detonates (2 damage along it)
-    const blaze = (state.flow?.blazeTrail ?? []).find((e: any) => e.unitId === unitId && e.turn === state.turn)
-    if (blaze && blaze.squares.length) {
-      for (const sq of blaze.squares as { x: number; y: number }[]) {
-        for (const u of unitsAt(state, sq.x, sq.y, 'surface')) {
-          if (u.id === unitId) continue // the runner does not burn in its own trail
-          // the trail is the Blaze spell's damage: tag it as Fire magic so magic-protection (Failed Mutation) and fire interactions apply
-          dealDamageToUnit(state, u, 2, player, { source: { player, kind: 'magic', name: 'Blaze', elements: ['Fire'] } })
-        }
-      }
-      pushLog(state, player, 'The fire trail erupts!')
-      state.flow.blazeTrail = state.flow.blazeTrail.filter((e: any) => e.unitId !== unitId)
-      checkStateBased(state)
-      if (!state.units[unitId]) return null
-    }
-    if (taken > 0) {
-      if (unit.carriedBy) detachFromCarrier(state, unit) // moving on your own ends the ride
-      syncCarried(state, unit)
-      pushLog(state, player, `${unit.name} moves to ${squareLabel(unit.x, unit.y)}${unit.region !== 'surface' ? ' ' + unit.region : ''}.`)
-    }
-    // stealth is lost when the minion interacts; moving alone doesn't break it
-
-    if (attack) {
-      // area/site statics resolve BETWEEN the move and the attack of a Move & Attack:
-      // if arriving here disabled the unit (a Root Spider burrowed below it, Babbling Brook, an
-      // aura...), it can move onto the square but cannot then attack from it this action. An "at
-      // rest" disabler (Basilisk / Gorgons) is skipped here — the unit isn't at rest yet.
-      if (isDisabled(state, unit)) {
-        pushLog(state, player, `${unit.name} is disabled on arrival and cannot attack.`)
-        offerIntercept(state, unit)
-        return null
-      }
-      // An entry trigger may have interposed a prompt during the movement — e.g. Sold-out Cemetery makes
-      // the SITE's controller push another Undead out of the square the mover just entered. Per the
-      // rulebook the attack target is declared only AFTER all movement (and its triggers) resolve, so we
-      // PARK the attack and let the applyAction boundary resume it (resolvePendingMoveAttack) once the
-      // queue is clear — re-validating the declared target, which the interposed effect may have moved,
-      // and re-prompting the attacker to retarget (or end movement) if it did. The GUI still declares the
-      // attack up front as a simplification; this only changes how the ENGINE resolves it.
-      if (state.prompts.length > 0) {
-        state.flow.pendingMoveAttack = { unitId: unit.id, attack }
-        return null
-      }
-      // no interposed prompt — resolve the attack now, but an AUTO-resolved entry effect (a Sold-out
-      // Cemetery with a single Undead and a single exit) may already have moved the target, so go
-      // through the same re-validate/retarget path rather than blindly attacking.
-      finishMoveAttack(state, unit, attack)
+    // the walk stops at a step whose trigger asked something; the rest of the path waits (Storyline)
+    const promptsBefore = state.prompts.length
+    const walk: Walk = { pauseWhen: () => state.prompts.length > promptsBefore }
+    const taken = resolveMovement(state, unit, path, walk)
+    if (walk.remaining) {
+      state.flow.pendingMoveAttack = { unitId, attack, path: walk.remaining, at: { x: unit.x, y: unit.y, region: unit.region }, taken }
       return null
     }
-    offerIntercept(state, unit)
-    return null
+    return afterMovement(state, player, unit, taken, attack)
   } finally {
     state.flow.actingUnitId = prevActing // it has come to rest → an at-rest disabler now bites
   }
+}
+
+/** The rest of a Move & Attack once its whole path has been walked: Blaze's trail, the end of a ride,
+ *  then the attack (parked if the movement left a decision open) or the chance to intercept. */
+function afterMovement(state: GameState, player: PlayerId, unit: UnitState, taken: number, attack?: AttackTarget): string | null {
+  const unitId = unit.id
+  // Blaze: when the runner stops, the trail detonates (2 damage along it)
+  const blaze = (state.flow?.blazeTrail ?? []).find((e: any) => e.unitId === unitId && e.turn === state.turn)
+  if (blaze && blaze.squares.length) {
+    for (const sq of blaze.squares as { x: number; y: number }[]) {
+      for (const u of unitsAt(state, sq.x, sq.y, 'surface')) {
+        if (u.id === unitId) continue // the runner does not burn in its own trail
+        // the trail is the Blaze spell's damage: tag it as Fire magic so magic-protection (Failed Mutation) and fire interactions apply
+        dealDamageToUnit(state, u, 2, player, { source: { player, kind: 'magic', name: 'Blaze', elements: ['Fire'] } })
+      }
+    }
+    pushLog(state, player, 'The fire trail erupts!')
+    state.flow.blazeTrail = state.flow.blazeTrail.filter((e: any) => e.unitId !== unitId)
+    checkStateBased(state)
+    if (!state.units[unitId]) return null
+  }
+  if (taken > 0) {
+    if (unit.carriedBy) detachFromCarrier(state, unit) // moving on your own ends the ride
+    syncCarried(state, unit)
+    pushLog(state, player, `${unit.name} moves to ${squareLabel(unit.x, unit.y)}${unit.region !== 'surface' ? ' ' + unit.region : ''}.`)
+  }
+  // stealth is lost when the minion interacts; moving alone doesn't break it
+
+  if (attack) {
+    // area/site statics resolve BETWEEN the move and the attack of a Move & Attack:
+    // if arriving here disabled the unit (a Root Spider burrowed below it, Babbling Brook, an
+    // aura...), it can move onto the square but cannot then attack from it this action. An "at
+    // rest" disabler (Basilisk / Gorgons) is skipped here — the unit isn't at rest yet.
+    if (isDisabled(state, unit)) {
+      pushLog(state, player, `${unit.name} is disabled on arrival and cannot attack.`)
+      offerIntercept(state, unit)
+      return null
+    }
+    // An entry trigger may have interposed a prompt during the movement — e.g. Sold-out Cemetery makes
+    // the SITE's controller push another Undead out of the square the mover just entered. Per the
+    // rulebook the attack target is declared only AFTER all movement (and its triggers) resolve, so we
+    // PARK the attack and let the applyAction boundary resume it (resolvePendingMoveAttack) once the
+    // queue is clear — re-validating the declared target, which the interposed effect may have moved,
+    // and re-prompting the attacker to retarget (or end movement) if it did. The GUI still declares the
+    // attack up front as a simplification; this only changes how the ENGINE resolves it.
+    if (state.prompts.length > 0) {
+      state.flow.pendingMoveAttack = { unitId: unit.id, attack }
+      return null
+    }
+    // no interposed prompt — resolve the attack now, but an AUTO-resolved entry effect (a Sold-out
+    // Cemetery with a single Undead and a single exit) may already have moved the target, so go
+    // through the same re-validate/retarget path rather than blindly attacking.
+    finishMoveAttack(state, unit, attack)
+    return null
+  }
+  offerIntercept(state, unit)
+  return null
 }
 
 // ---------- deferred Move & Attack (target declared after all movement + its triggers) ----------
@@ -154,12 +168,48 @@ function finishMoveAttack(state: GameState, unit: UnitState, attack: AttackTarge
 
 /** Resume a Move & Attack whose attack was PARKED because an entry trigger interposed a prompt (see
  *  moveAttack). Called at the applyAction boundary once the prompt queue clears. */
+interface PendingMoveAttack {
+  unitId: string
+  attack?: AttackTarget
+  /** steps still to walk: the walk stopped at a step whose trigger asked something (Storyline) */
+  path?: Step[]
+  /** where it stopped, and how many steps it had taken by then */
+  at?: Step
+  taken?: number
+}
+
 export function resolvePendingMoveAttack(state: GameState): void {
-  const pend = state.flow?.pendingMoveAttack as { unitId: string; attack: AttackTarget } | undefined
+  const pend = state.flow?.pendingMoveAttack as PendingMoveAttack | undefined
   if (!pend) return
   state.flow.pendingMoveAttack = undefined
   const unit = state.units[pend.unitId]
-  if (unit) finishMoveAttack(state, unit, pend.attack)
+  if (!unit) return // the trigger killed it: the rest of its movement and its attack never happen
+  if (!pend.path) {
+    if (pend.attack) finishMoveAttack(state, unit, pend.attack)
+    return
+  }
+  // The rest of the walk. Moved away by force meanwhile (or no longer able to step), it goes no further:
+  // the remaining steps started from where it was, and resolveMovement skips any it can no longer take.
+  let taken = pend.taken ?? 0
+  const stillThere = !!pend.at && unit.x === pend.at.x && unit.y === pend.at.y && unit.region === pend.at.region
+  if (stillThere) {
+    const prevActing = state.flow.actingUnitId
+    state.flow.actingUnitId = unit.id
+    try {
+      const walk: Walk = { pauseWhen: () => state.prompts.length > 0 }
+      taken += resolveMovement(state, unit, pend.path, walk)
+      if (walk.remaining) {
+        state.flow.pendingMoveAttack = { ...pend, path: walk.remaining, at: { x: unit.x, y: unit.y, region: unit.region }, taken }
+        return
+      }
+      if (!state.units[unit.id]) return
+      afterMovement(state, unit.controller, unit, taken, pend.attack)
+    } finally {
+      state.flow.actingUnitId = prevActing
+    }
+    return
+  }
+  afterMovement(state, unit.controller, unit, taken, pend.attack)
 }
 
 // the attacker declared a new target after its original one was moved away (or declined → end movement)
@@ -561,6 +611,18 @@ registerCont('combat:defenders', (state, ctx: FightCtx, choice: DefendPick[]) =>
       chosen = []
     }
   }
+  walkInDefenders(state, ctx, loc, chosen, 0)
+})
+
+type DefendPickNorm = { unitId: string; path?: Step[] }
+
+/** Pass 1 and 2 of declaring defenders, from `chosen[from]` on. A defender walking to the fight stops at a
+ *  step whose trigger asked something (Codex, Storyline: "each step is resolved one at a time") — and so
+ *  does the declaration: the rest of that walk, the other defenders and the fight wait until it is
+ *  settled (combat:defendersWalk resumes here). */
+function walkInDefenders(state: GameState, ctx: FightCtx, loc: Step, chosen: DefendPickNorm[], from: number): void {
+  const attacker = state.units[ctx.attackerId]
+  if (!attacker) return
   const atLoc = (u: UnitState | undefined): boolean => !!u && u.x === loc.x && u.y === loc.y && u.region === loc.region
   const commit = (u: UnitState) => {
     tapUnit(state, u)
@@ -577,7 +639,8 @@ registerCont('combat:defenders', (state, ctx: FightCtx, choice: DefendPick[]) =>
   // Pass 1 — non-carried defenders (carriers included) tap and WALK to the fight; per-step
   // effects (Wall of Fire, Brambles, enter-square triggers) apply along the way. A carrier
   // that defends drags its cargo along (syncCarried), setting up its riders for Pass 2.
-  for (const pick of chosen) {
+  for (let i = from; i < chosen.length; i++) {
+    const pick = chosen[i]
     const id = pick.unitId
     const u = state.units[id]
     if (!u || u.carriedBy || u.controller === attacker.controller || !canTap(state, u) || isDisabled(state, u)) continue
@@ -586,26 +649,14 @@ registerCont('combat:defenders', (state, ctx: FightCtx, choice: DefendPick[]) =>
       const path = validDeclaredDefendPath(state, u, pick.path, loc) ?? findPath(state, u, loc)
       if (!path) continue // can't reach the fight
       tapUnit(state, u)
-      resolveMovement(state, u, path)
-      const survivor = state.units[id]
-      if (!survivor) { pushLog(state, null, `${u.name} never reaches the fight.`); continue }
-      if (!atLoc(survivor)) continue
-      // the arrived defender is now a combatant → exempt from AT-REST disablers (Basilisk/Gorgon) for the
-      // fight. But a NON-at-rest disabler on the fight square (Cold Iron Rod on a Faerie, a Root Spider
-      // burrowed below) disables it regardless, and a disabled unit can't defend — so it doesn't count
-      // (and gives the attacked unit no reason to withdraw).
-      state.flow = state.flow ?? {}
-      state.flow.battleUnits = [...new Set([...(state.flow.battleUnits ?? []), survivor.id])]
-      if (isDisabled(state, survivor)) {
-        state.flow.battleUnits = (state.flow.battleUnits ?? []).filter((bid: string) => bid !== survivor.id)
-        pushLog(state, survivor.controller, `${survivor.name} reaches the fight but is disabled and cannot defend.`)
-        continue
+      const asked = state.prompts.length
+      const walk: Walk = { pauseWhen: () => state.prompts.length > asked }
+      resolveMovement(state, u, path, walk)
+      if (walk.remaining || state.prompts.length > asked) {
+        resumeWhenSettled(state, 'combat:defendersWalk', { ctx, loc, chosen, index: i, name: u.name, path: walk.remaining ?? [], at: { x: u.x, y: u.y, region: u.region } })
+        return
       }
-      breakStealth(state, survivor) // defending breaks Stealth (movement usually already did)
-      syncCarried(state, survivor)
-      ctx.defenderIds.push(id)
-      pushLog(state, u.controller, `${u.name} defends!`)
-      emitEvent(state, 'onAllyDefends', state.units[id])
+      arriveDefender(state, ctx, loc, id, u.name)
     } else {
       commit(u)
     }
@@ -621,6 +672,45 @@ registerCont('combat:defenders', (state, ctx: FightCtx, choice: DefendPick[]) =>
     commit(u)
   }
   afterDefenders(state, ctx)
+}
+
+/** a defender that walked in: it defends if it got there, alive and able to */
+function arriveDefender(state: GameState, ctx: FightCtx, loc: Step, id: string, name: string): void {
+  const atLoc = (u: UnitState | undefined): boolean => !!u && u.x === loc.x && u.y === loc.y && u.region === loc.region
+  const survivor = state.units[id]
+  if (!survivor) { pushLog(state, null, `${name} never reaches the fight.`); return }
+  if (!atLoc(survivor)) return
+  // the arrived defender is now a combatant → exempt from AT-REST disablers (Basilisk/Gorgon) for the
+  // fight. But a NON-at-rest disabler on the fight square (Cold Iron Rod on a Faerie, a Root Spider
+  // burrowed below) disables it regardless, and a disabled unit can't defend — so it doesn't count
+  // (and gives the attacked unit no reason to withdraw).
+  state.flow = state.flow ?? {}
+  state.flow.battleUnits = [...new Set([...(state.flow.battleUnits ?? []), survivor.id])]
+  if (isDisabled(state, survivor)) {
+    state.flow.battleUnits = (state.flow.battleUnits ?? []).filter((bid: string) => bid !== survivor.id)
+    pushLog(state, survivor.controller, `${survivor.name} reaches the fight but is disabled and cannot defend.`)
+    return
+  }
+  breakStealth(state, survivor) // defending breaks Stealth (movement usually already did)
+  syncCarried(state, survivor)
+  ctx.defenderIds.push(id)
+  pushLog(state, survivor.controller, `${survivor.name} defends!`)
+  emitEvent(state, 'onAllyDefends', state.units[id])
+}
+
+// a defender's walk stopped for a trigger: finish it, then the other defenders, then the fight
+registerCont('combat:defendersWalk', (state, c: { ctx: FightCtx; loc: Step; chosen: DefendPickNorm[]; index: number; name: string; path: Step[]; at: Step }) => {
+  const u = state.units[c.chosen[c.index].unitId]
+  if (u && c.path.length && u.x === c.at.x && u.y === c.at.y && u.region === c.at.region) {
+    const walk: Walk = { pauseWhen: () => state.prompts.length > 0 }
+    resolveMovement(state, u, c.path, walk)
+    if (walk.remaining || state.prompts.length > 0) {
+      resumeWhenSettled(state, 'combat:defendersWalk', { ...c, path: walk.remaining ?? [], at: { x: u.x, y: u.y, region: u.region } })
+      return
+    }
+  }
+  arriveDefender(state, c.ctx, c.loc, c.chosen[c.index].unitId, c.name)
+  walkInDefenders(state, c.ctx, c.loc, c.chosen, c.index + 1)
 })
 
 function afterDefenders(state: GameState, ctx: FightCtx): void {
@@ -964,7 +1054,7 @@ function runFightPass(state: GameState, ctx: FightCtx): void {
     const survivor = state.units[blow.target.id]
     if (survivor) {
       const script = getScript(survivor.name)
-      if (script?.onSelfStruck && !survivor.silenced) {
+      if (script?.onSelfStruck && !survivor.silenced && !isDisabled(state, survivor)) {
         script.onSelfStruck(makeCtx(state, survivor.id, survivor.controller, []), blow.striker)
       }
     }
