@@ -759,6 +759,11 @@ function fightSides(state: GameState, ctx: FightCtx): { attackers: UnitState[]; 
       if (shares && regionOk) defenders.push(t)
     }
   }
+  // a unit already DEAD whose death is on hold while its Deathrite asks something (flow.pendingDeaths)
+  // still sits in state.units, but it's out of the fight: killed by a strike-first blow, it must not
+  // strike back in the normal pass (Lance / Strike First vs Estranged Loner).
+  const dying = new Set(((state.flow?.pendingDeaths ?? []) as { unitId: string }[]).map((p) => p.unitId))
+  if (dying.size) return { attackers: attackers.filter((u) => !dying.has(u.id)), defenders: defenders.filter((u) => !dying.has(u.id)) }
   return { attackers, defenders }
 }
 
