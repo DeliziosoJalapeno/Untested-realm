@@ -1821,6 +1821,7 @@ describe('Animist + Evil Presence: cast a magic as a Spirit into the Evil Presen
     const av = avatarOf(g, 0)
     av.name = 'Animist'
     g.players[0].mana = 20
+    waiveThreshold(g, 0) // a Spirit is a real cast: it needs the magic's threshold
     const magicId = injectToHand(g, 0, 'Fireball') // a Magic with a cost
     const cost = getCard('Fireball').cost ?? 0
     // an ENEMY site at (1,1) — normally off-limits for our summons — but our Evil
@@ -1851,6 +1852,7 @@ describe('Animist + Evil Presence: cast a magic as a Spirit into the Evil Presen
     const av = avatarOf(g, 0)
     av.name = 'Animist'
     g.players[0].mana = 20
+    waiveThreshold(g, 0) // a Spirit is a real cast: it needs the magic's threshold
     injectToHand(g, 0, 'Fireball')
     const cost = getCard('Fireball').cost ?? 0
     act(g, 0, { t: 'activate', sourceId: av.id, ability: 'animate' })
@@ -1869,6 +1871,7 @@ describe('Animist + Evil Presence: cast a magic as a Spirit into the Evil Presen
     g.flow = g.flow ?? {}
     ;(g.flow as any).imposterMask = { 0: 'Animist' } // wearing the Animist's face
     g.players[0].mana = 20
+    waiveThreshold(g, 0) // a Spirit is a real cast: it needs the magic's threshold
     const magicId = injectToHand(g, 0, 'Fireball')
     const cost = getCard('Fireball').cost ?? 0
     // the client "Cast as Spirit" shortcut: activate the masked 'animate' with the magic pre-selected

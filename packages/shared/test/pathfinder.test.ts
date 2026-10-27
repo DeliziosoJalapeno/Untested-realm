@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { newGame, keepBoth, answer, act, actFail } from './helpers'
-import { noAtlasDrawChoice, type GameState, type PlayerId } from '../src'
+import { noAtlasDrawChoice, createGame, starterDecks, getCard, type GameState, type PlayerId } from '../src'
 
 function makePathfinder(g: GameState, player: PlayerId): void {
   g.units[g.players[player].avatarUnitId].name = 'Pathfinder'
@@ -57,5 +57,28 @@ describe('Pathfinder', () => {
 
     expect(g.prompts.some((p) => p.player === 0 && p.kind === 'drawDeck')).toBe(false)
     expect(g.players[0].hand.length).toBe(before + 1) // a spell, drawn automatically
+  })
+})
+
+describe('Pathfinder: no phantom site draw, and the blazed site is revealed first', () => {
+  it('setup draws no site and logs none', () => {
+    const pf = createGame([{ ...starterDecks[0], avatar: 'Pathfinder' }, starterDecks[1]], ['Pat', 'Opp'], 7, 0)
+    expect(pf.players[0].hand.every((id) => getCard(pf.cards[id].name).type !== 'Site')).toBe(true)
+    expect(pf.log.some((l) => l.player === 0 && /from their atlas/.test(l.msg)), 'no "draws a card from their atlas" line').toBe(false)
+  })
+
+  it('the ability reveals the topmost site before you choose where it goes (FAQ)', () => {
+    const g = newGame()
+    makePathfinder(g, 0)
+    keepBoth(g)
+    const avatar = g.units[g.players[0].avatarUnitId]
+    avatar.tapped = false
+    const top = g.cards[g.players[0].atlas[0]].name
+    act(g, 0, { t: 'activate', sourceId: avatar.id, ability: 'blaze' })
+    expect(g.prompts[0]?.kind).toBe('chooseSquare')
+    expect(g.prompts[0]?.data?.reveal, 'the site is shown').toBe(top)
+    expect(g.prompts[0]?.title).toContain(top)
+    answer(g, g.prompts[0].data.squares[0])
+    expect(Object.values(g.sites).some((s) => s.name === top && !s.isRubble), 'and that site is the one played').toBe(true)
   })
 })

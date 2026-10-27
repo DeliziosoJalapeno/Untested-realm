@@ -7267,6 +7267,7 @@ function unitActions(st: any, view: PlayerView, me: PlayerId, mode: Mode, setMod
           (artifacts flagged cantDrop, e.g. cursed gear, are excluded from the count). */}
       {(() => {
         if (u.interactedTurn === view.turn) return null
+        if (isDisabled(st, u)) return null // a disabled unit has no basic abilities (Iron Shackles)
         if (getScript(u.name)?.unitCantDrop && !u.silenced) return null
         const droppable = u.carrying.filter((id) => !getScript((view.artifacts as any)[id]?.name ?? '')?.cantDrop)
         if (droppable.length === 1) {
@@ -7293,7 +7294,7 @@ function unitActions(st: any, view: PlayerView, me: PlayerId, mode: Mode, setMod
           )
         })
       })}
-      {!(getScript(u.name)?.carriedCantDrop && !u.silenced) && u.interactedTurn !== view.turn && u.carryingUnits?.map((id) => {
+      {!(getScript(u.name)?.carriedCantDrop && !u.silenced) && u.interactedTurn !== view.turn && !isDisabled(st, u) && u.carryingUnits?.map((id) => {
         const o = view.units[id]
         return o ? (
           <button key={id} data-setdown={id} data-source={u.id} onClick={() => send({ t: 'drop', unitId: u.id, artifactIds: [], unitIds: [id] })}>

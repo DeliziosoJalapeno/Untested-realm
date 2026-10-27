@@ -31,10 +31,11 @@ describe('Khamaseen Mummy → Vast Desert Genesis → scour', () => {
     expect(g.prompts[0]?.kind).toBe('yesNo')
     answer(g, true)
 
-    // Vast Desert's Genesis now asks WHICH nearby site to scour (cont 'scour', owned by Vast Desert).
-    // Before the fix this prompt was filed as script:Khamaseen Mummy:scour and threw on resolution.
-    expect(g.prompts[0]?.kind).toBe('chooseSquare')
-    expect(() => answer(g, { x: 2, y: 2 })).not.toThrow()
+    // Vast Desert's Genesis now asks WHICH nearby site to scour (a follow-up owned by Vast Desert).
+    // Before the fix this prompt was filed under the Khamaseen Mummy's script and threw on resolution.
+    expect(g.prompts[0]?.kind).toBe('chooseTargets')
+    const target = Object.values(g.sites).find((s) => s.x === 2 && s.y === 2)!
+    expect(() => answer(g, [target.id])).not.toThrow()
 
     // the scour dealt its 1 damage to the minion atop the chosen site
     const after = Object.values(g.units).find((u) => u.name === 'Escyllion Cyclops')!

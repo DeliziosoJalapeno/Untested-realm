@@ -969,7 +969,7 @@ function runFightPass(state: GameState, ctx: FightCtx): void {
     const survivor = state.units[blow.target.id]
     if (survivor) {
       const script = getScript(survivor.name)
-      if (script?.onSelfStruck && !survivor.silenced) {
+      if (script?.onSelfStruck && !survivor.silenced && !isDisabled(state, survivor)) {
         script.onSelfStruck(makeCtx(state, survivor.id, survivor.controller, []), blow.striker)
       }
     }
@@ -1742,6 +1742,8 @@ export function pickUp(state: GameState, player: PlayerId, unitId: string, artif
 export function drop(state: GameState, player: PlayerId, unitId: string, artifactIds: string[], unitIds: string[] = []): string | null {
   const unit = state.units[unitId]
   if (!unit || unit.controller !== player) return 'Not your unit.'
+  // Drop is a basic ability, and a disabled unit has none (Iron Shackles' bearer can't shed them)
+  if (isDisabled(state, unit)) return `${unit.name} is disabled.`
   if (getScript(unit.name)?.unitCantDrop && !unit.silenced && artifactIds.length > 0) return `${unit.name} refuses to let go.`
   if ((unit.usedThisTurn['drop'] ?? 0) >= 1) return 'Drop was already used this turn.'
   // Drop basic ability: only a unit that HASN'T interacted with the realm this turn may

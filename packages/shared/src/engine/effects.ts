@@ -884,7 +884,18 @@ export function resolvePrompt(state: GameState, promptId: string, player: Player
   if (err) return err
   checkStateBased(state)
   runTurnSteps(state)
+  refreshActivePrompt(state)
   return null
+}
+
+/** The prompt now waiting may have been queued before the answers just given (two triggers off one
+ *  move): let its script rebuild the choices from the state as it is now (see refreshPrompts). */
+function refreshActivePrompt(state: GameState): void {
+  const prompt = state.prompts[0]
+  if (!prompt?.cont.startsWith('script:')) return
+  const rest = prompt.cont.slice('script:'.length)
+  const sep = rest.indexOf(':')
+  getScript(rest.slice(0, sep))?.refreshPrompts?.[rest.slice(sep + 1)]?.(state, prompt)
 }
 
 // ---- zones ----
@@ -930,6 +941,9 @@ export function registerSpellDraw(state: GameState, player: PlayerId): boolean {
 
 export function drawCards(state: GameState, player: PlayerId, deck: DeckName, n = 1): void {
   const p = state.players[player]
+  // drawing nothing is not a draw — Pathfinder's "draw no sites during setup" asks for 0, and the log
+  // below would otherwise report "draws a card from their atlas"
+  if (n <= 0) return
   // Magician (and any noAtlasDraw avatar) has no atlas: site draws are skipped
   // entirely — never a loss for an "empty" atlas, never a card gained.
   if (deck === 'atlas' && noAtlasDraw(state, player)) return
@@ -1520,7 +1534,8 @@ function applyResolvedDamage(
   emitEvent(state, 'onUnitDamaged', { ...unit }, n, source)
   // "whenever this takes damage" triggers (Flagellant...)
   const script = getScript(unit.name)
-  if (script?.onSelfDamaged && !unit.silenced) {
+  // a disabled minion has no abilities (Codex); an Avatar's damage hooks are durations (Imposter's mask)
+  if (script?.onSelfDamaged && !unit.silenced && (unit.isAvatar || !isDisabled(state, unit))) {
     script.onSelfDamaged(makeCtx(state, unit.id, unit.controller, []), n)
   }
   if (opts?.lethal && n > 0) {
@@ -1776,6 +1791,7 @@ export function trySubmerge(state: GameState, unit: UnitState): boolean {
     }
   }
   unit.region = 'underwater'
+  syncCarried(state, unit) // its carried artifacts (and riders) go under with it
   if (!canExistIn(state, unit, 'underwater', unit.x, unit.y)) {
     pushLog(state, null, `${unit.name} drowns!`)
     const snapshot = { ...unit }
@@ -1793,7 +1809,8 @@ export function trySubmerge(state: GameState, unit: UnitState): boolean {
  *  De-dupe the caller's list first if the same unit could appear twice (each is struck once). */
 export function strikeAllSimultaneous(state: GameState, strikerId: string, targetIds: string[], controller: PlayerId): void {
   const striker = state.units[strikerId]
-  if (!striker) return
+  // a disabled unit cannot strike, for any effect (Codex) — the same rule as ctx.strike
+  if (!striker || isDisabled(state, striker)) return
   const targets = [...new Set(targetIds)].filter((id) => id !== strikerId && state.units[id]).map((id) => state.units[id]!)
   if (!targets.length) return
   const kw = effKeywords(state, striker)
@@ -1820,7 +1837,7 @@ export function strikeAllSimultaneous(state: GameState, strikerId: string, targe
     const survivor = state.units[snap.id]
     if (survivor) {
       const s = getScript(survivor.name)
-      if (s?.onSelfStruck && !survivor.silenced) s.onSelfStruck(makeCtx(state, survivor.id, survivor.controller, []), striker)
+      if (s?.onSelfStruck && !survivor.silenced && !isDisabled(state, survivor)) s.onSelfStruck(makeCtx(state, survivor.id, survivor.controller, []), striker)
     } else {
       if (state.units[strikerId]) striker.counters = { ...striker.counters, everKilled: 1 }
       const killHook = !striker.silenced ? getScript(striker.name)?.onKill : undefined
@@ -3353,6 +3370,30 @@ export function summonToken(state: GameState, name: string, owner: PlayerId, x: 
   return state.units[unitId] ?? null
 }
 
+/** TRANSFORM a minion into a token (Pollimorph's Frog, Degradation's Foot Soldier). A transform is not an
+ *  entry: the token takes the minion's place, controller and summoning status, and NOTHING "enters" —
+ *  no Genesis, no "whenever … enters" trigger (the Druid's thorns), no summon ban (No Man's Land), no
+ *  summon tax (Mock Court), no "summoned nearby" banish (Order of the White Wing). The old card is
+ *  removed from the game and its cargo stays behind (FAQ). An Avatar or a "can't be modified" minion
+ *  can't be transformed. */
+export function transformIntoToken(state: GameState, unit: UnitState, name: string): UnitState | null {
+  if (unit.isAvatar) return null
+  if (isUnmodifiable(state, unit)) { pushLog(state, unit.controller, `${unit.name} can't be modified.`); return null }
+  const { x, y, region, controller, enteredTurn } = unit
+  if (removeUnitFromRealm(state, unit.id)) delete state.units[unit.id]
+  const cardId = newId(state, 'c')
+  state.cards[cardId] = { id: cardId, name, owner: controller, isToken: true }
+  const token: UnitState = {
+    id: newId(state, 'u'), cardId, name, owner: controller, controller, isAvatar: false, x, y, region,
+    tapped: false, damage: 0, enteredTurn, modifiers: [], carrying: [], carryingUnits: [], usedThisTurn: {},
+    counters: { transformed: 1 },
+  }
+  state.units[token.id] = token
+  pushLog(state, controller, `${unit.name} transforms into a ${name}.`)
+  checkStateBased(state)
+  return state.units[token.id] ?? null
+}
+
 // ---- the EffectAPI context handed to card scripts ----
 
 /** Synthesize a positioned pseudo-unit for a spellcaster ARTIFACT source (Omphalos & kin), so
@@ -3470,6 +3511,9 @@ export function makeCtx(
       // strike (Hotwheel's roll, Wraetannis Titan's genesis, …) fires the SAME
       // consequences a melee blow does: "whenever this strikes", the enemy-Avatar
       // trigger (Interrogator), "when struck", and kill triggers (Stygian Archers).
+      // Codex: a disabled minion "cannot strike or deal damage", nor take an action another card
+      // grants it — so no effect (Shatter Strike's ally, Smite…) makes it strike, not even for 0.
+      if (isDisabled(state, attacker)) return
       const kw = effKeywords(state, attacker)
       const power = effAttack(state, attacker)
       if (!('unit' in target)) {
@@ -3504,7 +3548,7 @@ export function makeCtx(
       const survivor = state.units[snapshot.id]
       if (survivor) {
         const s = getScript(survivor.name)
-        if (s?.onSelfStruck && !survivor.silenced) s.onSelfStruck(makeCtx(state, survivor.id, survivor.controller, []), attacker)
+        if (s?.onSelfStruck && !survivor.silenced && !isDisabled(state, survivor)) s.onSelfStruck(makeCtx(state, survivor.id, survivor.controller, []), attacker)
       } else if (!wasAvatar) {
         // the strike killed the target → kill triggers (Stygian Archers, Sir Pellinore).
         // everKilled bookkeeping only applies while the striker is still alive.
