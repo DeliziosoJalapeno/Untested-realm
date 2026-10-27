@@ -879,8 +879,10 @@ function runFightPass(state: GameState, ctx: FightCtx): void {
     const flags: any[] = state.flow?.strikeFlags ?? []
     // ALL of the striker's pending flags apply to this strike and stack
     // multiplicatively (Critical Strike FAQ: doubling twice = ×4)
-    const myFlags = flags.filter((f: any) => f.player === striker.controller)
-    if (myFlags.length && state.flow) state.flow.strikeFlags = flags.filter((f: any) => f.player !== striker.controller)
+    // a flag on one chosen minion (Gift of the Raven) waits for that minion's strike
+    const mine = (f: any) => f.player === striker.controller && (!f.unitId || f.unitId === striker.id)
+    const myFlags = flags.filter(mine)
+    if (myFlags.length && state.flow) state.flow.strikeFlags = flags.filter((f: any) => !mine(f))
     const doubles = myFlags.filter((f: any) => f.type === 'double').length
     // lifelink STACKS: each Gift of the Raven flag AND a passive strikeLifelink is its own source
     const lifelinkSources = myFlags.filter((f: any) => f.type === 'lifelink').length + ((getScript(striker.name)?.strikeLifelink && !striker.silenced) ? 1 : 0)
