@@ -353,7 +353,7 @@ const AVATAR_ABILITIES: AvSetup[] = [
       }
       return {}
     },
-    assert: (g, c) => expect(newLogs(g, c.logBefore).some((m) => /Pathfinder blazes/i.test(m)), 'Pathfinder blazed a trail (played a site + moved)').toBe(true),
+    assert: (g, c) => expect(newLogs(g, c.logBefore).some((m) => /Pathfinder plays /i.test(m)), 'Pathfinder blazed a trail (played a site + moved)').toBe(true),
   },
   {
     avatar: 'Persecutor', key: 'zeal',

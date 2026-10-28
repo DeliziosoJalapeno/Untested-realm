@@ -1,7 +1,8 @@
 // Troll Bridge: 'The first time a lone enemy enters here each turn, strike it unless they discard a card.'
-// Hotwheel rolls two steps in one action, so crossing two Troll Bridges queues BOTH tolls at once. The
-// second toll used to offer the hand as it was before the first was paid, so choosing the card already
-// discarded paid nothing and the troll struck. Each toll must be a real choice from the current hand.
+// Hotwheel rolls two steps in one action across two Troll Bridges. The second toll used to offer the hand as
+// it was before the first was paid (both were queued at once), so choosing the card already discarded paid
+// nothing and the troll struck. Each toll must be a real choice from the current hand — and, per the
+// storyline, the roll waits on each bridge until its toll is settled.
 import { describe, it, expect } from 'vitest'
 import { newGame, keepBoth, placeSite, summonCard, answer } from './helpers'
 import { getScript, makeCtx, type GameState } from '../src'
@@ -18,9 +19,11 @@ function rollOverTwoBridges() {
 }
 
 describe('Troll Bridge: two tolls from one move', () => {
-  it('asks for both tolls', () => {
+  it('asks the tolls one at a time: the second only once the first is settled', () => {
     const { g } = rollOverTwoBridges()
-    expect(g.prompts.map((p) => p.cont)).toEqual(['script:Troll Bridge:toll', 'script:Troll Bridge:toll'])
+    expect(g.prompts.map((p) => p.cont)).toEqual(['script:Troll Bridge:toll'])
+    answer(g, [0])
+    expect(g.prompts.map((p) => p.cont)).toEqual(['script:Troll Bridge:toll'])
   })
 
   it('the second toll offers the hand left after the first, and paying both keeps Hotwheel safe', () => {

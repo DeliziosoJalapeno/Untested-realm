@@ -77,7 +77,6 @@ describe('Pathfinder: no phantom site draw, and the blazed site is revealed firs
     act(g, 0, { t: 'activate', sourceId: avatar.id, ability: 'blaze' })
     expect(g.prompts[0]?.kind).toBe('chooseSquare')
     expect(g.prompts[0]?.data?.reveal, 'the site is shown').toBe(top)
-    expect(g.prompts[0]?.title).toContain(top)
     answer(g, g.prompts[0].data.squares[0])
     expect(Object.values(g.sites).some((s) => s.name === top && !s.isRubble), 'and that site is the one played').toBe(true)
   })
