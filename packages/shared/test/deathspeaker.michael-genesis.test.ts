@@ -12,6 +12,7 @@ describe('Deathspeaker echo of Archangel Michael resolves its full Genesis', () 
     waiveThreshold(g, 0) // the echo is a cast: it must meet the copied minion's threshold
     placeSite(g, 0, 'Rustic Village', 2, 2)
     placeSite(g, 0, 'Rustic Village', 3, 2)
+    placeSite(g, 0, 'Rustic Village', 1, 2) // a second way to step, so the Genesis asks
     const foe = summonCard(g, 1, 'Foot Soldier', 3, 2); foe.enteredTurn = -1 // the smite target
     giveMana(g, 0, 20)
 
@@ -24,10 +25,9 @@ describe('Deathspeaker echo of Archangel Michael resolves its full Genesis', () 
     answer(g, 'Archangel Michael')              // speak for Michael
     if (g.prompts[0]?.kind === 'chooseSquare') answer(g, { x: 2, y: 2 }) // echo appears at (2,2)
 
-    // Genesis: Michael steps to a nearby site. Step to (3,2) where the foe stands.
-    const site32 = Object.values(g.sites).find((s) => s.x === 3 && s.y === 2)!.id
-    expect(g.prompts[0]?.kind, 'the Genesis step prompt fired (not cut short)').toBe('chooseTargets')
-    answer(g, [site32])
+    // Genesis: Michael takes a step. Step to (3,2) where the foe stands.
+    expect(g.prompts[0]?.kind, 'the Genesis step prompt fired (not cut short)').toBe('chooseSquare')
+    answer(g, { x: 3, y: 2 })
     // drain any trailing strike-order prompts
     let guard = 0
     while (g.prompts.length && guard++ < 10) answer(g, g.prompts[0].kind === 'defend' ? [] : true)
