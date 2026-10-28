@@ -1801,11 +1801,12 @@ export function loseLife(state: GameState, player: PlayerId, n: number, emit = t
   }
 }
 
-/** is this unit protected from being moved by enemy spells and abilities?
- *  (its own `immovable`, or a nearby Old Salt Anchorman ally) */
-export function moveProtected(state: GameState, unit: UnitState): boolean {
+/** Can't player `by` move this unit by force? "Can't be moved by force" (`immovable`: Iron Man Talus,
+ *  Talamh Dreig) stops ANY forced movement — its controller's own Blink, push or ride included; a nearby
+ *  Old Salt Anchorman ally stops only ENEMY spells and abilities. */
+export function moveProtected(state: GameState, unit: UnitState, by: PlayerId): boolean {
   if (getScript(unit.name)?.immovable && !unit.silenced) return true
-  return protectedFromEnemyMoves(state, unit)
+  return by !== unit.controller && protectedFromEnemyMoves(state, unit)
 }
 
 /** An ally shields it from being moved by enemy spells and abilities (Old Salt Anchorman) — a lured step
@@ -1820,9 +1821,15 @@ export function protectedFromEnemyMoves(state: GameState, unit: UnitState): bool
 }
 
 /** central submerge: honors submerge-protection (Driftwood Marrows) and drowns
- *  units that can't exist underwater. Returns true if the unit went under. */
-export function trySubmerge(state: GameState, unit: UnitState): boolean {
+ *  units that can't exist underwater. Returns true if the unit went under. Being forced under is forced
+ *  movement (surface to underwater is another location), so `by`'s effect can't submerge a unit it
+ *  can't move by force (moveProtected). */
+export function trySubmerge(state: GameState, unit: UnitState, by: PlayerId): boolean {
   if (unit.isAvatar || unit.region === 'underwater') return false
+  if (moveProtected(state, unit, by)) {
+    pushLog(state, unit.controller, `${unit.name} holds its ground — it can't be dragged under.`)
+    return false
+  }
   // An oversized unit is submerged only if its WHOLE footprint is water (rulebook: a
   // forced submerge of an oversized unit fails unless it occupies a single terrain).
   // It does NOT drown here — the effect simply fails to move a unit straddling land.
@@ -3827,8 +3834,8 @@ export function makeCtx(
       state.flow!.cagedUnits = (state.flow!.cagedUnits as { unitId: string }[]).filter((c) => c.unitId !== unitId)
       if (u.counters) delete u.counters.caged
     }
-    // forced-move protection: enemy effects can't relocate protected units
-    if (u.controller !== controller && moveProtected(state, u)) {
+    // forced-move protection: "can't be moved by force" stops every forced move; an Anchorman, enemy ones
+    if (moveProtected(state, u, controller)) {
       pushLog(state, u.controller, `${u.name} holds its ground — it can't be moved by force.`)
       return
     }
@@ -4060,8 +4067,14 @@ export function makeCtx(
       const then: ThenRef | undefined = opts?.then
         ? { card: meta?.name ?? routeCardName, key: opts.then.key, ctx: opts.then.ctx ?? {}, sourceId, controller, targets, at, extra, meta }
         : undefined
-      if (teleportBody(unitId, x, y, region, opts) === 'paused') parkThen(state, unitId, then)
+      const before = state.units[unitId]
+      const from = before ? { x: before.x, y: before.y, region: before.region } : null
+      const paused = teleportBody(unitId, x, y, region, opts) === 'paused'
+      if (paused) parkThen(state, unitId, then)
       else runThen(state, then)
+      // did it leave where it was? (refused, blocked at the first step, or killed on the way: no)
+      const u = state.units[unitId]
+      return paused || (!!u && !!from && (u.x !== from.x || u.y !== from.y || u.region !== from.region))
     },
     tap: (unitId) => {
       const u = state.units[unitId]

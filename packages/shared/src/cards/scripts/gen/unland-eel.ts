@@ -15,7 +15,7 @@ registerScript('Unland Eel', {
       const id = Array.isArray(choice) ? choice[0] : choice
       const u = typeof id === 'string' ? ctx.state.units[id] : null
       if (!u) return
-      if (trySubmerge(ctx.state, u)) pushLog(ctx.state, ctx.controller, `${u.name} is dragged beneath the surface!`)
+      if (trySubmerge(ctx.state, u, ctx.controller)) pushLog(ctx.state, ctx.controller, `${u.name} is dragged beneath the surface!`)
     },
   },
 })

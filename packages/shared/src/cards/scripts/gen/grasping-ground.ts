@@ -10,7 +10,7 @@ registerScript('Grasping Ground', {
     for (const digger of diggers) {
       // a "can't be moved by force" enemy (Iron Man Talus, Talamh Dreig…) resists being dragged under
       const above = unitsAt(ctx.state, digger.x, digger.y, 'surface')
-        .filter((u) => !u.isAvatar && !(u.controller !== ctx.controller && moveProtected(ctx.state, u)))
+        .filter((u) => !u.isAvatar && !moveProtected(ctx.state, u, ctx.controller))
         .map((u) => u.id)
       if (above.length) {
         ctx.ask(
