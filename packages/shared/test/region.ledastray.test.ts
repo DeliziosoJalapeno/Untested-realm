@@ -27,7 +27,8 @@ describe('Led Astray moves avatars', () => {
     const foeAv = avatarOf(g, 1); foeAv.x = 2; foeAv.y = 2; foeAv.region = 'surface'
     waiveThreshold(g, 0)
     castMagic(g, 0, 'Led Astray', { targets: ['sq:2,2,surface'] })
-    answer(g, { x: 3, y: 2 }) // lead them to the adjacent site
+    answer(g, (g.prompts[0].data as { candidates: string[] }).candidates) // choose every enemy there
+    if (g.prompts[0]?.kind === 'chooseSquare') answer(g, { x: 3, y: 2 }) // lead them to the adjacent site
     expect([foeAv.x, foeAv.y], 'the enemy avatar was moved').toEqual([3, 2])
   })
 })

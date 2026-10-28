@@ -17,7 +17,8 @@ describe('forced "take a step" effects skip units that can\'t step', () => {
     const stuck = summonCard(g, 1, 'Bone Jumble', 2, 2); stuck.enteredTurn = 0; immobilize(stuck)
     waiveThreshold(g, 0)
     castMagic(g, 0, 'Led Astray', { targets: ['sq:2,2,surface'] })
-    answer(g, { x: 3, y: 2 })
+    answer(g, (g.prompts[0].data as { candidates: string[] }).candidates) // choose every enemy there
+    if (g.prompts[0]?.kind === 'chooseSquare') answer(g, { x: 3, y: 2 })
     expect([g.units[free.id]?.x, g.units[free.id]?.y], 'the free enemy was led away').toEqual([3, 2])
     expect([g.units[stuck.id]?.x, g.units[stuck.id]?.y], 'the Immobile enemy stayed put').toEqual([2, 2])
   })
