@@ -2244,6 +2244,46 @@ describe('FAQ: Divine Intervention', () => {
   })
 })
 
+describe('Twist of Fate at Death\u2019s Door', () => {
+  it('a caster at Death\u2019s Door cannot gain life; the opponent takes the 0 and arrives at Death\u2019s Door', () => {
+    const g = board()
+    avatarOf(g, 0).life = 0
+    avatarOf(g, 0).deathsDoor = true
+    avatarOf(g, 1).life = 12
+    giveMana(g, 0, 12)
+    waiveThreshold(g, 0)
+    castMagic(g, 0, 'Twist of Fate', {})
+    expect(avatarOf(g, 0).life).toBe(0)
+    expect(avatarOf(g, 0).deathsDoor).toBe(true)
+    expect(avatarOf(g, 1).life).toBe(0)
+    expect(avatarOf(g, 1).deathsDoor).toBe(true)
+  })
+
+  it('an opponent at Death\u2019s Door stays at 0 while the caster drops to 0', () => {
+    const g = board()
+    avatarOf(g, 0).life = 5
+    avatarOf(g, 1).life = 0
+    avatarOf(g, 1).deathsDoor = true
+    giveMana(g, 0, 5)
+    waiveThreshold(g, 0)
+    castMagic(g, 0, 'Twist of Fate', {})
+    expect(avatarOf(g, 1).life).toBe(0)
+    expect(avatarOf(g, 0).life).toBe(0)
+    expect(avatarOf(g, 0).deathsDoor).toBe(true)
+  })
+
+  it('still exchanges normally when neither Avatar is at Death\u2019s Door', () => {
+    const g = board()
+    avatarOf(g, 0).life = 4
+    avatarOf(g, 1).life = 15
+    giveMana(g, 0, 11)
+    waiveThreshold(g, 0)
+    castMagic(g, 0, 'Twist of Fate', {})
+    expect(avatarOf(g, 0).life).toBe(15)
+    expect(avatarOf(g, 1).life).toBe(4)
+  })
+})
+
 describe('FAQ: Dome of Osiros', () => {
   it('an attack cannot be declared against a minion here', () => {
     const g = board()
