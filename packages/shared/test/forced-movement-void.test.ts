@@ -56,6 +56,9 @@ describe('Into the Abyss pulls a minion into an adjacent void', () => {
     // choose the void pull (submerge isn't offered — (1,1) isn't water)
     expect(g.prompts[0]?.kind).toBe('chooseOption')
     answer(g, 'pull into the void')
+    // its four neighbours are all void: the caster picks one
+    expect(g.prompts[0]?.kind).toBe('chooseSquare')
+    answer(g, { x: 2, y: 1 })
     expect(g.units[foe.id], 'the target was pulled into the void and lost').toBeUndefined()
   })
 })
