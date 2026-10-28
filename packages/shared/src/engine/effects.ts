@@ -1830,6 +1830,11 @@ export function trySubmerge(state: GameState, unit: UnitState, by: PlayerId): bo
     pushLog(state, unit.controller, `${unit.name} holds its ground — it can't be dragged under.`)
     return false
   }
+  // Cage of Sidrak: only a teleport takes a locked minion out — being dragged under is not one
+  if ((state.flow?.cagedUnits ?? []).some((c: { unitId: string }) => c.unitId === unit.id)) {
+    pushLog(state, unit.controller, `${unit.name} is locked in the Cage of Sidrak — force alone can't free it.`)
+    return false
+  }
   // An oversized unit is submerged only if its WHOLE footprint is water (rulebook: a
   // forced submerge of an oversized unit fails unless it occupies a single terrain).
   // It does NOT drown here — the effect simply fails to move a unit straddling land.

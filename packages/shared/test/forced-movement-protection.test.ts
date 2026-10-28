@@ -4,7 +4,7 @@
 // A carried unit is moved by force: it can't be carried where it can't enter (it stays behind, dropped),
 // and a Voidwalk carrier takes it into the void (Codex, Carrying Units: Phantom Steed and Bosk Troll).
 import { describe, it, expect } from 'vitest'
-import { newGame, keepBoth, fillSites, summonCard, placeSite, act, actFail } from './helpers'
+import { newGame, keepBoth, fillSites, summonCard, placeSite, act, actFail, castMagic, waiveThreshold } from './helpers'
 import { makeCtx, trySubmerge, type GameState, type UnitState } from '../src'
 import '../src/cards/scripts/index'
 
@@ -58,6 +58,23 @@ describe('being forced under water is forced movement', () => {
     summonCard(g, 0, 'Old Salt Anchorman', 1, 2)
     expect(trySubmerge(g, ally, 1)).toBe(false)
     expect(ally.region).toBe('surface')
+  })
+
+  it('Drown can\'t submerge Talamh Dreig, even its own controller\'s', () => {
+    const g = board(); waiveThreshold(g, 0)
+    placeSite(g, 0, 'Pond', 1, 1)
+    const dreig = summonCard(g, 0, 'Talamh Dreig', 1, 1)
+    castMagic(g, 0, 'Drown', { targets: [dreig.id] })
+    expect(dreig.region).toBe('surface')
+  })
+
+  it('a minion locked in the Cage of Sidrak isn\'t dragged under', () => {
+    const g = board()
+    placeSite(g, 0, 'Pond', 1, 1)
+    const u = summonCard(g, 1, 'Wild Boars', 1, 1)
+    g.flow = { ...(g.flow ?? {}), cagedUnits: [{ unitId: u.id }] }
+    expect(trySubmerge(g, u, 0)).toBe(false)
+    expect(u.region).toBe('surface')
   })
 })
 
