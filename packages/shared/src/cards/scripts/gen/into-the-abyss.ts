@@ -1,6 +1,5 @@
 import { registerScript, type EffectAPI } from '../registry'
 import { checkStateBased, emitUnitMoved, pushLog, trySubmerge } from '../../../engine/effects'
-import { syncCarried } from '../../../engine/carrying'
 import { adjacentSquaresW, siteAt } from '../../../engine/grid'
 import { terrainAt } from '../../../engine/statics'
 import type { UnitState } from '../../../engine/types'
@@ -29,18 +28,13 @@ registerScript('Into the Abyss', {
       const u = ctx.state.units[contCtx.unitId]
       if (!u) return
       if (choice === 'submerge it') {
-        // a forced submerge (trySubmerge): "can't be moved by force", an Anchorman, Driftwood Marrows and
-        // a land-straddling oversized body all stop it, and a minion that can't live underwater drowns.
-        // Cage of Sidrak: only a teleport takes a locked minion out — being dragged under is not one.
-        if ((ctx.state.flow?.cagedUnits ?? []).some((c: { unitId: string }) => c.unitId === u.id)) {
-          pushLog(ctx.state, u.controller, `${u.name} is locked in the Cage of Sidrak — force alone can't free it.`)
-          return
-        }
+        // a forced submerge (trySubmerge): "can't be moved by force", an Anchorman, the Cage of Sidrak,
+        // Driftwood Marrows and a land-straddling oversized body all stop it; what it carries goes under
+        // with it, and a minion that can't live underwater drowns.
         const from = { x: u.x, y: u.y, region: u.region }
         if (!trySubmerge(ctx.state, u, ctx.controller)) return
         const sunk = ctx.state.units[u.id]
         if (!sunk) return // drowned
-        syncCarried(ctx.state, sunk) // what it carries goes under with it
         emitUnitMoved(ctx.state, sunk, from)
         pushLog(ctx.state, ctx.controller, `${sunk.name} is dragged into the depths!`)
         checkStateBased(ctx.state)

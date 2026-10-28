@@ -217,6 +217,26 @@ describe('"target" cards: an enemy\'s Stealth hides it, its Ward breaks', () => 
     expect((p0(g)?.data as { upTo?: boolean }).upTo, 'the Genesis isn\'t optional').toBe(false)
   })
 
+  it('Undertow\'s "move one step" is the unit\'s own step: Talamh Dreig moves, Gloam Toads (Immobile) don\'t', () => {
+    const g = board()
+    const tow = swapSite(g, 'Undertow', 1, 1)
+    swapSite(g, 'Pond', 1, 2)
+    const dreig = ready(summonCard(g, 1, 'Talamh Dreig', 1, 1))
+    getScript('Undertow')!.genesis!(makeCtx(g, tow.id, 0, []))
+    answer(g, [dreig.id])
+    answer(g, { x: 1, y: 2 })
+    expect(`${dreig.x},${dreig.y}`, '"can\'t be moved by force" doesn\'t stop its own step').toBe('1,2')
+
+    const h = board()
+    const tow2 = swapSite(h, 'Undertow', 1, 1)
+    swapSite(h, 'Pond', 1, 2)
+    const toads = ready(summonCard(h, 1, 'Gloam Toads', 1, 1))
+    getScript('Undertow')!.genesis!(makeCtx(h, tow2.id, 0, []))
+    answer(h, [toads.id])
+    expect(h.prompts.length, 'no step to offer').toBe(0)
+    expect(`${toads.x},${toads.y}`).toBe('1,1')
+  })
+
   it('Grasping Ground can\'t pick a Stealthed enemy, and reaches an artifact above', () => {
     const g = board()
     ready(summonCard(g, 0, 'Cave Trolls', 1, 1, 'underground'))
