@@ -8,9 +8,13 @@ registerScript('Undertow', {
     const self = ctx.state.sites[ctx.sourceId]
     if (!self) return
     const body = waterBody(ctx.state, self.x, self.y)
-    const swimmers = body.flatMap((s) => unitsAt(ctx.state, s.x, s.y)).map((u) => u.id)
+    // "target unit": an enemy's Stealth hides it from targeting (as a targeted TargetSpec does); and the
+    // Genesis isn't optional — a legal target must be chosen
+    const swimmers = body.flatMap((s) => unitsAt(ctx.state, s.x, s.y))
+      .filter((u) => !(u.stealth && u.controller !== ctx.controller))
+      .map((u) => u.id)
     if (!swimmers.length) return
-    ctx.ask({ kind: 'chooseTargets', title: 'The undertow tugs at which unit?', data: { candidates: swimmers, count: 1, upTo: true, kind: 'unit' } }, 'tug', { body })
+    ctx.ask({ kind: 'chooseTargets', title: 'The undertow tugs at which unit?', data: { candidates: swimmers, count: 1, upTo: false, kind: 'unit' } }, 'tug', { body })
   },
   conts: {
     tug: (ctx, c, choice) => {
