@@ -45,7 +45,7 @@ registerScript('Sold-out Cemetery', {
       if (ctx.state.prompts.some((p) => p.cont === 'script:Sold-out Cemetery:shamble' && (p.ctx as any)?.unitId === u.id)) return
       const steps = orthAdjacentWrapped(ctx.state, u.x, u.y).filter((s) => siteAt(ctx.state, s.x, s.y))
       if (!steps.length) return
-      if (steps.length === 1) return ctx.teleport(u.id, steps[0].x, steps[0].y, u.region, { push: true }) // "push away one step"
+      if (steps.length === 1) { ctx.teleport(u.id, steps[0].x, steps[0].y, u.region, { push: true }); return } // "push away one step"
       // the site's ability: its controller pushes, so its controller picks the way too
       ctx.ask({ kind: 'chooseSquare', title: `${u.name} shambles out — which way?`, data: { squares: steps } }, 'shamble', { unitId: u.id })
     },
