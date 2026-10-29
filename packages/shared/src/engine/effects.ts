@@ -1803,15 +1803,11 @@ export function loseLife(state: GameState, player: PlayerId, n: number, emit = t
 
 /** Can't player `by` move this unit by force? "Can't be moved by force" (`immovable`: Iron Man Talus,
  *  Talamh Dreig) stops ANY forced movement — its controller's own Blink, push or ride included; a nearby
- *  Old Salt Anchorman ally stops only ENEMY spells and abilities. */
+ *  Old Salt Anchorman ally stops only ENEMY spells and abilities. Neither stops a unit's own step
+ *  (takeOwnStep: lures, "take a step"). */
 export function moveProtected(state: GameState, unit: UnitState, by: PlayerId): boolean {
   if (getScript(unit.name)?.immovable && !unit.silenced) return true
-  return by !== unit.controller && protectedFromEnemyMoves(state, unit)
-}
-
-/** An ally shields it from being moved by enemy spells and abilities (Old Salt Anchorman) — a lured step
- *  included, unlike "can't be moved by force" (immovable), which only stops forced movement. */
-export function protectedFromEnemyMoves(state: GameState, unit: UnitState): boolean {
+  if (by === unit.controller) return false
   for (const o of Object.values(state.units)) {
     if (o.silenced || o.controller !== unit.controller) continue
     const f = getScript(o.name)?.protectsAlliesFromMoves

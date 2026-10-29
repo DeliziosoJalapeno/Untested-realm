@@ -47,7 +47,7 @@ registerScript('Undertow', {
       const u = ctx.state.units[c.unitId as string]
       if (!u || !sq) return
       const to = stepsWithin(ctx.state, u, c.body as { x: number; y: number }[]).find((s) => s.x === sq.x && s.y === sq.y)
-      if (to && takeOwnStep(ctx.state, u, to, ctx.controller)) checkStateBased(ctx.state)
+      if (to && takeOwnStep(ctx.state, u, to)) checkStateBased(ctx.state)
     },
   },
 })

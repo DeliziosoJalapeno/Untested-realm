@@ -40,13 +40,13 @@ describe('Lure: an enemy minion at a site nearby the ally takes a step closer', 
     expect(at(foe)).toBe('0,1')
   })
 
-  it('Old Salt Anchorman keeps a nearby ally from being lured by an enemy spell', () => {
+  it('Old Salt Anchorman doesn\'t keep a nearby ally from an enemy lure (FAQ: its own step)', () => {
     const g = board()
     const ally = summonCard(g, 0, 'Snow Leopard', 0, 2)
     const foe = summonCard(g, 1, 'Wild Boars', 0, 1)
     summonCard(g, 1, 'Old Salt Anchorman', 1, 0)
     castMagic(g, 0, 'Lure', { targets: [ally.id, foe.id] })
-    expect(at(foe)).toBe('0,1')
+    expect(at(foe)).toBe('0,2')
   })
 
   it('only a minion nearby the chosen ally can be picked', () => {
@@ -153,16 +153,16 @@ describe('the other lures move the enemy as its own step too', () => {
     expect(at(foe)).toBe('0,0')
   })
 
-  it('Abaddon Succubus: a lured minion held back by Old Salt Anchorman never arrives — no damage, no heal', () => {
+  it('Abaddon Succubus: Old Salt Anchorman doesn\'t hold a lured minion back — it arrives, takes 2, you heal 2', () => {
     const g = board()
     const succubus = summonCard(g, 0, 'Abaddon Succubus', 0, 2)
-    const foe = summonCard(g, 1, 'Wild Boars', 0, 1)
+    const foe = summonCard(g, 1, 'Ogre Goons', 0, 1)
     summonCard(g, 1, 'Old Salt Anchorman', 1, 0)
-    const life = avatarOf(g, 0 as PlayerId).life
+    avatarOf(g, 0 as PlayerId).life = 15
     act(g, 0, { t: 'activate', sourceId: succubus.id, ability: 'lure', targets: [foe.id] })
-    expect(at(foe)).toBe('0,1')
-    expect(foe.damage).toBe(0)
-    expect(avatarOf(g, 0 as PlayerId).life).toBe(life)
+    expect(at(foe)).toBe('0,2')
+    expect(foe.damage).toBe(2)
+    expect(avatarOf(g, 0 as PlayerId).life).toBe(17)
   })
 
   it('Abaddon Succubus: one that arrives takes 2 and you heal 2', () => {

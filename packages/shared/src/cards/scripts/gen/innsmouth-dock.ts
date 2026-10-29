@@ -5,8 +5,8 @@ import { checkStateBased } from '../../../engine/effects'
 
 // 'Once on your turn, you may lure an adjacent minion to step here.'
 // Codex (Phrases that are Synonymous): "'Lure' requires the unit to take the step themselves" — its own
-// step (takeOwnStep): an Immobile minion stays, "can't be moved by force" doesn't stop it, and Old Salt
-// Anchorman keeps its nearby allies from an enemy's lure.
+// step (takeOwnStep): an Immobile minion stays, while "can't be moved by force" and Old Salt Anchorman
+// (FAQ: lures aren't stopped) don't hold it back.
 registerScript('Innsmouth Dock', {
   abilities: [{
     key: 'lure',
@@ -27,7 +27,7 @@ registerScript('Innsmouth Dock', {
       const from = { x: u.x, y: u.y, region: u.region }
       const to = { x: self.x, y: self.y, region: 'surface' as const }
       if (!isLegalStep(ctx.state, u, from, to)) return ctx.log("It can't step here.")
-      takeOwnStep(ctx.state, u, to, ctx.controller)
+      takeOwnStep(ctx.state, u, to)
       checkStateBased(ctx.state)
     },
   }],

@@ -156,14 +156,15 @@ describe('Joust!: both take a step of their own to swap places', () => {
     expect(walked(g, knight)).toBe(true)
   })
 
-  it('Old Salt Anchorman keeps his nearby ally from the enemy spell\'s step: no joust', () => {
+  it('Old Salt Anchorman doesn\'t keep his nearby ally from its own step: the joust happens', () => {
     const g = board()
     const knight = summonCard(g, 0, 'Wyvern', 1, 1)
     const foe = summonCard(g, 1, 'Cave Trolls', 1, 2)
     summonCard(g, 1, 'Old Salt Anchorman', 2, 3)
     castMagic(g, 0, 'Joust!', { targets: [knight.id, foe.id] })
-    expect(at(knight)).toBe('1,1')
-    expect(at(foe)).toBe('1,2')
+    expect(at(knight)).toBe('1,2')
+    expect(walked(g, knight)).toBe(true)
+    expect(walked(g, foe)).toBe(true)
   })
 })
 
@@ -221,13 +222,13 @@ describe('Innsmouth Dock: the lured minion takes a step of its own', () => {
     expect(walked(g, boars)).toBe(true)
   })
 
-  it('Old Salt Anchorman keeps a nearby ally from an enemy\'s lure', () => {
+  it('Old Salt Anchorman doesn\'t keep a nearby ally from an enemy\'s lure (FAQ)', () => {
     const g = board()
     const dock = placeSite(g, 0, 'Innsmouth Dock', 1, 1)
     const boars = summonCard(g, 1, 'Wild Boars', 1, 2)
     summonCard(g, 1, 'Old Salt Anchorman', 2, 3)
     getScript('Innsmouth Dock')!.abilities![0].effect(makeCtx(g, dock.id, 0, [{ unit: boars.id }]))
-    expect(at(boars)).toBe('1,2')
+    expect(at(boars)).toBe('1,1')
   })
 })
 

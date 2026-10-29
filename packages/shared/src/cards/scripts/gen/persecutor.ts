@@ -42,7 +42,7 @@ registerScript('Persecutor', {
         const steps = evilSteps(ctx.state, self)
         if (!steps.length) return ctx.log('No step brings the Persecutor closer.')
         if (steps.length === 1) {
-          if (takeOwnStep(ctx.state, self, steps[0], ctx.controller)) {
+          if (takeOwnStep(ctx.state, self, steps[0])) {
             self.usedThisTurn.zeal = 1 // committed → spend the once-per-turn use
             pushLog(ctx.state, ctx.controller, 'The Persecutor stalks toward the nearest Evil.')
           }
@@ -68,7 +68,7 @@ registerScript('Persecutor', {
     persecutorStep: (ctx, _c, sq) => {
       const self = ctx.state.units[ctx.sourceId]
       const step = self && sq ? evilSteps(ctx.state, self).find((s) => s.x === sq.x && s.y === sq.y) : undefined
-      if (self && step && takeOwnStep(ctx.state, self, step, ctx.controller)) {
+      if (self && step && takeOwnStep(ctx.state, self, step)) {
         self.usedThisTurn.zeal = 1 // committed → spend the once-per-turn use
         pushLog(ctx.state, ctx.controller, 'The Persecutor stalks toward the nearest Evil.')
       }

@@ -42,7 +42,7 @@ registerScript('Bladedancer', {
 /** she takes the step; "when she does, she may attack a unit there" */
 function dance(ctx: EffectAPI, step: Step): void {
   const self = ctx.state.units[ctx.sourceId]
-  if (!self || !takeOwnStep(ctx.state, self, step, ctx.controller)) return
+  if (!self || !takeOwnStep(ctx.state, self, step)) return
   const now = ctx.state.units[self.id]
   if (!now) return
   const prey = unitsAt(ctx.state, now.x, now.y, now.region).filter((u) => u.controller !== ctx.controller && !u.stealth)

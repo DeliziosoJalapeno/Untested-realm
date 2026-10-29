@@ -48,7 +48,7 @@ registerScript('Aino', {
       ctx.state.flow.ainoSlip = self.id
       let moved = false
       try {
-        moved = takeOwnStep(ctx.state, self, to, ctx.controller)
+        moved = takeOwnStep(ctx.state, self, to)
       } finally {
         delete ctx.state.flow.ainoSlip
       }

@@ -33,7 +33,7 @@ registerScript('Crave Golem', {
     const best = hungrySteps(ctx)
     if (!best.length) return
     if (best.length === 1) {
-      if (takeOwnStep(ctx.state, self, best[0], ctx.controller)) pushLog(ctx.state, ctx.controller, 'The Crave Golem lumbers toward fresh prey.')
+      if (takeOwnStep(ctx.state, self, best[0])) pushLog(ctx.state, ctx.controller, 'The Crave Golem lumbers toward fresh prey.')
       return
     }
     ctx.ask({ kind: 'chooseSquare', title: 'The Crave Golem craves — which way does it lumber?', data: { squares: best.map((s) => ({ x: s.x, y: s.y })) } }, 'lumber')
@@ -42,7 +42,7 @@ registerScript('Crave Golem', {
     lumber: (ctx, _c, sq) => {
       const self = ctx.state.units[ctx.sourceId]
       const step = self && sq ? hungrySteps(ctx).find((s) => s.x === sq.x && s.y === sq.y) : undefined
-      if (self && step) takeOwnStep(ctx.state, self, step, ctx.controller)
+      if (self && step) takeOwnStep(ctx.state, self, step)
     },
     crave: (ctx, c, choice) => craveAttack(ctx, (c.__opts as string[])[luckyChoiceIndex(c, choice)]),
   },

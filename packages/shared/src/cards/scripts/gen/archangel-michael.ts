@@ -14,14 +14,14 @@ registerScript('Archangel Michael', {
     if (!self) return
     const steps = ownSteps(ctx.state, self)
     if (!steps.length) return michaelSmite(ctx)
-    if (steps.length === 1) { takeOwnStep(ctx.state, self, steps[0], ctx.controller); return michaelSmite(ctx) }
+    if (steps.length === 1) { takeOwnStep(ctx.state, self, steps[0]); return michaelSmite(ctx) }
     ctx.ask({ kind: 'chooseSquare', title: 'Michael takes a step — to where?', data: { squares: steps.map((s) => ({ x: s.x, y: s.y })) } }, 'step')
   },
   conts: {
     step: (ctx, _c, sq) => {
       const self = ctx.state.units[ctx.sourceId]
       const step = self ? ownStepTo(ctx.state, self, sq) : undefined
-      if (self && step) takeOwnStep(ctx.state, self, step, ctx.controller)
+      if (self && step) takeOwnStep(ctx.state, self, step)
       michaelSmite(ctx)
     },
   },

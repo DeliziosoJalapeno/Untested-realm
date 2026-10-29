@@ -40,14 +40,14 @@ registerScript('Tringh Constrictor', {
       if (!self) return
       const step = readMayStep(ctx, self, sq, 'slitherVertical')
       if (step === 'asked') return
-      if (step !== 'stay') takeOwnStep(ctx.state, self, step, ctx.controller)
+      if (step !== 'stay') takeOwnStep(ctx.state, self, step)
       constrict(ctx)
     },
     slitherVertical: (ctx, _c, choice) => {
       const self = ctx.state.units[ctx.sourceId]
       if (!self) return
       const step = mayStepOption(ctx.state, self, choice)
-      if (step !== 'stay') takeOwnStep(ctx.state, self, step, ctx.controller)
+      if (step !== 'stay') takeOwnStep(ctx.state, self, step)
       constrict(ctx)
     },
     squeeze: (ctx, _c, choice) => {

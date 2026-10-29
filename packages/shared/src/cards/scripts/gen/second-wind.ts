@@ -24,7 +24,7 @@ registerScript('Second Wind', {
       const u = ctx.state.units[c.unitId as string]
       if (!u) return
       const step = ownStepTo(ctx.state, u, sq)
-      if (step) takeOwnStep(ctx.state, u, step, ctx.controller)
+      if (step) takeOwnStep(ctx.state, u, step)
       checkStateBased(ctx.state)
     },
   },

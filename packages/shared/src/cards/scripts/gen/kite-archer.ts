@@ -31,6 +31,6 @@ registerScript('Kite Archer', {
 function kite(ctx: EffectAPI, step: Step): void {
   const self = ctx.state.units[ctx.sourceId]
   if (!self) return
-  takeOwnStep(ctx.state, self, step, ctx.controller)
+  takeOwnStep(ctx.state, self, step)
   checkStateBased(ctx.state)
 }

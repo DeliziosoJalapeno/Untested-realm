@@ -25,14 +25,14 @@ registerScript('Leap Attack', {
       if (!ally) return
       const step = readMayStep(ctx, ally, sq, 'leapVertical', { unitId: ally.id })
       if (step === 'asked') return
-      if (step !== 'stay') takeOwnStep(ctx.state, ally, step, ctx.controller)
+      if (step !== 'stay') takeOwnStep(ctx.state, ally, step)
       leapStrike(ctx, ally.id)
     },
     leapVertical: (ctx, c, choice) => {
       const ally = ctx.state.units[c.unitId as string]
       if (!ally) return
       const step = mayStepOption(ctx.state, ally, choice)
-      if (step !== 'stay') takeOwnStep(ctx.state, ally, step, ctx.controller)
+      if (step !== 'stay') takeOwnStep(ctx.state, ally, step)
       leapStrike(ctx, ally.id)
     },
   },

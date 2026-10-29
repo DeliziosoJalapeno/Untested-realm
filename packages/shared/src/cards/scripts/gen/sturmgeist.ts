@@ -47,7 +47,7 @@ function stepsCloser(ctx: EffectAPI, casterId: string): Step[] {
 function sturmArrive(ctx: EffectAPI, step: Step, casterId: string): void {
   const self = ctx.state.units[ctx.sourceId]
   if (!self) return
-  takeOwnStep(ctx.state, self, step, ctx.controller)
+  takeOwnStep(ctx.state, self, step)
   sturmStrike(ctx, casterId)
 }
 
