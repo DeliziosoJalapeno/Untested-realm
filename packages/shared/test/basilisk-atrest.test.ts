@@ -45,18 +45,18 @@ describe('at-rest disable keeps ward/stealth, and lets an entering minion act', 
 
   it('Archangel Michael cast in front of a Basilisk takes its step + strikes, keeping its ward', () => {
     const { g, basId } = withBasilisk()
+    placeSite(g, 0, 'Rustic Village', 1, 2) // a second way to step, so the Genesis asks
     giveMana(g, 0, 30); waiveThreshold(g, 0)
     castMagic(g, 0, 'Archangel Michael', { at: { x: 2, y: 2 } })
     const mike = Object.values(g.units).find((u) => u.name === 'Archangel Michael')!
-    // Genesis is asking which site to step to — Michael is ENTERING, so not disabled, ward intact
+    // Genesis is asking where to step — Michael is ENTERING, so not disabled, ward intact
     expect((g.flow as any).entering?.includes(mike.id), 'entering during its Genesis prompt').toBe(true)
     expect(isDisabled(g, mike), 'not disabled mid-Genesis').toBe(false)
     expect(mike.ward, 'ward intact mid-Genesis').toBe(true)
     // step onto the Basilisk's own site (2,3) and strike it
-    const cands: string[] = g.prompts[0].data.candidates
-    const onto = cands.find((id) => g.sites[id]?.x === 2 && g.sites[id]?.y === 3)!
-    expect(onto, 'can step onto the Basilisk’s square').toBeTruthy()
-    answer(g, onto)
+    const squares: { x: number; y: number }[] = g.prompts[0].data.squares
+    expect(squares.some((s) => s.x === 2 && s.y === 3), 'can step onto the Basilisk’s square').toBe(true)
+    answer(g, { x: 2, y: 3 })
     // drain any strike-order prompt
     while (g.prompts.length) answer(g, g.prompts[0].data?.candidates?.[0] ?? g.prompts[0].data?.order ?? [])
     expect(mike.x === 2 && mike.y === 3, 'Michael took his step onto the Basilisk').toBe(true)

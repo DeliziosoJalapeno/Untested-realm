@@ -16,7 +16,7 @@ describe('Displace targets artifacts', () => {
     expect(art.carriedBy).toBe(carrier.id)
 
     castMagic(g, 0, 'Displace', { targets: [art.id] })
-    if (g.prompts.length) answer(g, dest.id) // (single diagonal site may auto-resolve)
+    if (g.prompts.length) answer(g, { x: dest.x, y: dest.y }) // (the destination is a square)
 
     expect(g.artifacts[art.id].x).toBe(3)
     expect(g.artifacts[art.id].y).toBe(3)
@@ -32,7 +32,7 @@ describe('Displace targets artifacts', () => {
     ;(g.auras as any)[aid] = { id: aid, cardId: acid, name: 'Wildfire', controller: 0, squares: [{ x: 2, y: 2 }], enteredTurn: 0 }
 
     castMagic(g, 0, 'Displace', { targets: [aid] })
-    if (g.prompts.length) answer(g, dest.id)
+    if (g.prompts.length) answer(g, { x: dest.x, y: dest.y })
 
     expect(g.auras[aid].squares).toEqual([{ x: 3, y: 3 }])
   })
@@ -78,7 +78,7 @@ describe('Displace targets artifacts', () => {
     const foe = summonCard(g, 1, 'Bone Jumble', 2, 2); foe.enteredTurn = -1
 
     castMagic(g, 0, 'Displace', { targets: [foe.id] })
-    if (g.prompts.length) answer(g, dest.id)
+    if (g.prompts.length) answer(g, { x: dest.x, y: dest.y })
 
     expect(g.units[foe.id].x).toBe(3)
     expect(g.units[foe.id].y).toBe(3)

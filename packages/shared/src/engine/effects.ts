@@ -1801,10 +1801,13 @@ export function loseLife(state: GameState, player: PlayerId, n: number, emit = t
   }
 }
 
-/** is this unit protected from being moved by enemy spells and abilities?
- *  (its own `immovable`, or a nearby Old Salt Anchorman ally) */
-export function moveProtected(state: GameState, unit: UnitState): boolean {
+/** Can't player `by` move this unit by force? "Can't be moved by force" (`immovable`: Iron Man Talus,
+ *  Talamh Dreig) stops ANY forced movement — its controller's own Blink, push or ride included; a nearby
+ *  Old Salt Anchorman ally stops only ENEMY spells and abilities. Neither stops a unit's own step
+ *  (takeOwnStep: lures, "take a step"). */
+export function moveProtected(state: GameState, unit: UnitState, by: PlayerId): boolean {
   if (getScript(unit.name)?.immovable && !unit.silenced) return true
+  if (by === unit.controller) return false
   for (const o of Object.values(state.units)) {
     if (o.silenced || o.controller !== unit.controller) continue
     const f = getScript(o.name)?.protectsAlliesFromMoves
@@ -1814,9 +1817,20 @@ export function moveProtected(state: GameState, unit: UnitState): boolean {
 }
 
 /** central submerge: honors submerge-protection (Driftwood Marrows) and drowns
- *  units that can't exist underwater. Returns true if the unit went under. */
-export function trySubmerge(state: GameState, unit: UnitState): boolean {
+ *  units that can't exist underwater. Returns true if the unit went under. Being forced under is forced
+ *  movement (surface to underwater is another location), so `by`'s effect can't submerge a unit it
+ *  can't move by force (moveProtected). */
+export function trySubmerge(state: GameState, unit: UnitState, by: PlayerId): boolean {
   if (unit.isAvatar || unit.region === 'underwater') return false
+  if (moveProtected(state, unit, by)) {
+    pushLog(state, unit.controller, `${unit.name} holds its ground — it can't be dragged under.`)
+    return false
+  }
+  // Cage of Sidrak: only a teleport takes a locked minion out — being dragged under is not one
+  if ((state.flow?.cagedUnits ?? []).some((c: { unitId: string }) => c.unitId === unit.id)) {
+    pushLog(state, unit.controller, `${unit.name} is locked in the Cage of Sidrak — force alone can't free it.`)
+    return false
+  }
   // An oversized unit is submerged only if its WHOLE footprint is water (rulebook: a
   // forced submerge of an oversized unit fails unless it occupies a single terrain).
   // It does NOT drown here — the effect simply fails to move a unit straddling land.
@@ -2668,7 +2682,7 @@ registerCont('core:teleportPlace', (state, ctx: { unitId: string; region?: Regio
 
 /** a unit changed square/region. `via` distinguishes a BASIC move action ('move' — the unit's own
  *  Move / Move-and-Attack) from any other relocation ('forced' — teleport, pull, blown by a site…). */
-export function emitUnitMoved(state: GameState, unit: UnitState, from: { x: number; y: number; region: Region }, via: 'move' | 'forced' = 'forced', final = true): void {
+export function emitUnitMoved(state: GameState, unit: UnitState, from: { x: number; y: number; region: Region }, via: 'move' | 'step' | 'forced' = 'forced', final = true): void {
   if (unit.x === from.x && unit.y === from.y && unit.region === from.region) return
   // an Enchantress "aura minion" drags its aura's AREA along as it moves, so the
   // enchantment's effect follows the creature (its footprint is the aura's area).
@@ -3821,8 +3835,8 @@ export function makeCtx(
       state.flow!.cagedUnits = (state.flow!.cagedUnits as { unitId: string }[]).filter((c) => c.unitId !== unitId)
       if (u.counters) delete u.counters.caged
     }
-    // forced-move protection: enemy effects can't relocate protected units
-    if (u.controller !== controller && moveProtected(state, u)) {
+    // forced-move protection: "can't be moved by force" stops every forced move; an Anchorman, enemy ones
+    if (moveProtected(state, u, controller)) {
       pushLog(state, u.controller, `${u.name} holds its ground — it can't be moved by force.`)
       return
     }
@@ -4054,8 +4068,14 @@ export function makeCtx(
       const then: ThenRef | undefined = opts?.then
         ? { card: meta?.name ?? routeCardName, key: opts.then.key, ctx: opts.then.ctx ?? {}, sourceId, controller, targets, at, extra, meta }
         : undefined
-      if (teleportBody(unitId, x, y, region, opts) === 'paused') parkThen(state, unitId, then)
+      const before = state.units[unitId]
+      const from = before ? { x: before.x, y: before.y, region: before.region } : null
+      const paused = teleportBody(unitId, x, y, region, opts) === 'paused'
+      if (paused) parkThen(state, unitId, then)
       else runThen(state, then)
+      // did it leave where it was? (refused, blocked at the first step, or killed on the way: no)
+      const u = state.units[unitId]
+      return paused || (!!u && !!from && (u.x !== from.x || u.y !== from.y || u.region !== from.region))
     },
     tap: (unitId) => {
       const u = state.units[unitId]

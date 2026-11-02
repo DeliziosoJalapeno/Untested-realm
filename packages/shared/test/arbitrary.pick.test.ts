@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { newGame, keepBoth, summonCard, placeSite, answer } from './helpers'
+import { newGame, keepBoth, summonCard, placeSite, answer, fillSites } from './helpers'
 import { makeCtx } from '../src/engine/effects'
 import { selfStepsCloser } from '../src/engine/movement'
 import { getScript } from '../src/cards/scripts/registry'
@@ -52,6 +52,7 @@ describe('Persecutor: choose the step-toward square', () => {
     // a unit can only step onto a square that holds a site — lay benign sites on the origin
     // and both candidate step squares (Active Volcano = vanilla, no entry filter)
     for (const [x, y] of [[0, 0], [1, 0], [0, 1]] as const) placeSite(g, 0, 'Active Volcano', x, y)
+    fillSites(g) // "closest" counts the Persecutor's own steps (Codex, Closest): the Evil must be reachable
     const evil = summonCard(g, 1, 'Escyllion Cyclops', 2, 2); evil.enteredTurn = 0 // Monster = Evil, diagonally away
     expect(selfStepsCloser(g, av, evil).length, 'two legal steps close the gap').toBe(2)
     const zeal = getScript('Persecutor')!.abilities!.find((a) => a.key === 'zeal')!

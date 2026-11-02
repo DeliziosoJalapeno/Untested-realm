@@ -103,7 +103,9 @@ export interface EffectAPI {
   // `then`: one of the calling script's own `conts`, run once the move is over (`ctx` is its contCtx) —
   // for what a card does "when it arrives". It runs at once, or, if a multi-step drag stopped at a step
   // whose trigger asked something, when the resumed drag is done (Storyline).
-  teleport(unitId: string, x: number, y: number, region?: Region, opts?: TeleportOpts): void
+  // Returns whether the unit left its location — false when the move was refused (can't be moved by
+  // force, can't enter there…) or a drag was blocked at its first step — for what happens "if it does".
+  teleport(unitId: string, x: number, y: number, region?: Region, opts?: TeleportOpts): boolean
   tap(unitId: string): void
   untap(unitId: string): void
   /** `by` overrides who is credited with the destruction (Vindictive Nation, ward checks);
@@ -681,7 +683,7 @@ export interface CardScript {
    * A unit entered a new square (movement step, teleport, defend move).
    * `self` is the listening card in play (site or unit script).
    */
-  onUnitEntersSquare?: (ctx: EffectAPI, moved: UnitState, from: { x: number; y: number; region: Region }, via?: 'move' | 'forced', final?: boolean) => void
+  onUnitEntersSquare?: (ctx: EffectAPI, moved: UnitState, from: { x: number; y: number; region: Region }, via?: 'move' | 'step' | 'forced', final?: boolean) => void
   /**
    * Replaces the Spellcaster requirement: who may cast this spell
    * (e.g. "May be cast by an allied Beast or Dragon"). Return an error
