@@ -29,7 +29,7 @@ describe('Precon mode', () => {
     const fns = renderHome()
     fireEvent.click(document.querySelector('[data-precon-mode]')!) // the 🃏 button in the vs Computer panel
     const mine = document.querySelector('[data-precon-pick]') as HTMLSelectElement
-    expect(mine.querySelectorAll('option').length, 'all 12 precons offered').toBe(12)
+    expect(mine.querySelectorAll('option').length, 'all 14 precons offered (12 + the 2 Frost Mage vs Lavamancer WIP lists)').toBe(14)
     fireEvent.change(mine, { target: { value: 'precon:gothic-necromancer' } })
     fireEvent.change(document.querySelector('[data-precon-pick-b]')!, { target: { value: 'precon:beta-fire' } })
     fireEvent.click(screen.getByText('Start game vs Computer'))

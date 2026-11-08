@@ -28,6 +28,9 @@ describe('Sister Stefánia — region-bound silence', () => {
 
 describe('Grim Guisarme — a ranged strike is a strike', () => {
   function enemyAvatarLifeDrop(g: GameState, setup: (shooter: any, avatar: any) => void): number {
+    // sites under the shooter and the target: a projectile stops at a void square
+    placeSite(g, 0, 'Rustic Village', 2, 2)
+    placeSite(g, 1, 'Rustic Village', 3, 2)
     const shooter = summonCard(g, 0, 'Stygian Archers', 2, 2) // Ranged, Attack 3
     shooter.enteredTurn = -5
     const ea = avatarOf(g, 1); ea.x = 3; ea.y = 2; ea.region = 'surface'

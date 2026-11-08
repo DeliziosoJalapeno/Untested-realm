@@ -58,7 +58,8 @@ describe("DOM: Wizard's Den raid offers only spells, discards a spell by id", ()
 
     // p1 damages the Den successfully → onSiteDamaged fires the raid, pushing
     // the chooseCards prompt for p0 (the site's controller).
-    dealDamage(g, { site: denId(g) }, 1, 1)
+    // (an undefended attack strike: only a SUCCESSFUL attack raids the Den, not any damage)
+    dealDamage(g, { site: denId(g) }, 1, 1, { player: 1, kind: 'strike', attackerId: 'raider', undefended: true } as any)
     h.rerender()
 
     const panel = must(h.container, '[data-promptbox="chooseCards"]', 'raid panel')

@@ -257,6 +257,7 @@ describe('Silver Bullet: cast an Exceptional spell from your collection', () => 
   it('CASTS the fetched spell for real via the bearer — no token parked in hand', () => {
     const g = board()
     const bearer = summonToken(g, 'Foot Soldier', 0, 2, 0)!
+    bearer.enteredTurn = -1 // not summoning sick: its Tap cost needs a bearer that can tap
     const undead = summonCard(g, 0, 'Noxious Corpse', 3, 0) // nearby allied Undead — Necropotence's target
     giveArtifact(g, bearer, 'Silver Bullet')
     g.players[0].collection = { Necropotence: 1 }
@@ -284,6 +285,7 @@ describe('Silver Bullet: cast an Exceptional spell from your collection', () => 
   it("won't offer a spell you can't pay for", () => {
     const g = board()
     const bearer = summonToken(g, 'Foot Soldier', 0, 2, 0)!
+    bearer.enteredTurn = -1 // not summoning sick: its Tap cost needs a bearer that can tap
     giveArtifact(g, bearer, 'Silver Bullet')
     g.players[0].collection = { Necropotence: 1 }
     g.players[0].mana = 0 // can't afford the (1) cost
@@ -453,7 +455,7 @@ describe('Bedrock: "can\'t be modified" (flood / silence)', () => {
     return { g, bed }
   }
 
-  it('cannot be flooded; the wave still taps a non-submerge minion atop it', () => {
+  it('cannot be flooded, and a plain flood does nothing else (only Waveshaper taps, by its own text)', () => {
     const { g, bed } = bedrockBoard()
     summonToken(g, 'Bluecap Knockers', 0, 2, 0) // land dwarf, no submerge
     const dwarf = unitsAt(g, 2, 0, 'surface').find((u) => !u.isAvatar)!
@@ -461,7 +463,7 @@ describe('Bedrock: "can\'t be modified" (flood / silence)', () => {
     expect(siteCantBeModified(g, bed)).toBe(true)
     expect(applyFlood(g, bed, 1)).toBe(false) // opponent's flood washes off
     expect(bed.flooded).toBeFalsy()
-    expect(dwarf.tapped).toBe(true) // knocked over by the wave (FAQ)
+    expect(dwarf.tapped).toBe(false) // Tide Naiads / Flood only flood; the Waveshaper FAQ tap is its own text
   })
 
   it('a normal site still floods (control)', () => {
@@ -1259,13 +1261,13 @@ describe('Belly, carrying, ward-loss, and the Rolling Boulder', () => {
     expect(g.units[u.id].ward).toBeFalsy()
   })
 
-  it('a warded minion loses its ward when it becomes silenced', () => {
+  it('a warded minion KEEPS its ward when it becomes silenced (Codex, Silenced: "it will retain the mark!")', () => {
     const g = board()
     const u = summonCard(g, 0, 'Foot Soldier', 2, 0)
     wardUnit(g, u)
     g.units[u.id].silenced = true
     checkStateBased(g)
-    expect(g.units[u.id].ward).toBeFalsy()
+    expect(g.units[u.id].ward).toBe(true)
   })
 
   it('a warded site loses its ward when it is rubbled', () => {
@@ -1372,9 +1374,9 @@ describe('Corpse Catapult: the player chooses BOTH the ally and the corpse (eith
     // 2) pick the corpse — BOTH cemeteries are offered
     expect(g.prompts[0]?.kind).toBe('chooseCards')
     const names = (g.prompts[0] as any).data.cards as string[]
-    expect(names).toContain('Bosk Troll')
-    expect(names).toContain('Guile Sirens')
-    answer(g, [names.indexOf('Guile Sirens')]) // fling the opponent's corpse (power 3)
+    expect(names, 'each says whose cemetery it lies in').toContain('Bosk Troll (your cemetery)')
+    expect(names).toContain("Guile Sirens (opponent's cemetery)")
+    answer(g, [names.indexOf("Guile Sirens (opponent's cemetery)")]) // fling the opponent's corpse (power 3)
 
     expect(bearer.tapped).toBe(true)
     expect(g.units[ally2.id].tapped).toBe(true)
@@ -2533,7 +2535,7 @@ describe('FAQ: Lord of Fear', () => {
     helper.enteredTurn = 0
     act(g, 0, { t: 'moveAttack', unitId: attacker.id, path: [], attack: { unit: target.id } })
     answer(g, [helper.id])                                               // add one defender…
-    answer(g, true)                                                      // …and the target stays → not alone
+    // …and the target must stay (taking it out would leave the helper alone), so no stay-in-fight question
     answer(g, { strikerId: attacker.id, allocation: { [target.id]: 1 } }) // attacker's lone blow lands on target
     // both defenders struck the 1/1 attacker (2 damage) → it dies; the target took the blow, helper lives
     expect(g.units[attacker.id]).toBeUndefined()
@@ -2750,6 +2752,8 @@ describe('Sites with printed Ward (Blessed Well)', () => {
 // ============================================================================
 
 describe("Wizard's Den: 'Discard a spell' when first attacked — never a site", () => {
+  // a successful attack: an undefended strike on the Den (other damage doesn't raid it)
+  const raid = { player: 1 as const, kind: 'strike' as const, attackerId: 'raider', undefended: true }
   // RED→GREEN proof (documented): revert m38.ts so onSiteDamaged asks with the
   // whole hand + resolves the choice as a hand index, and this test goes red on
   // two counts — the candidate list contains the site names, and answering [0]
@@ -2770,7 +2774,7 @@ describe("Wizard's Den: 'Discard a spell' when first attacked — never a site",
 
   it('offers ONLY the two spells; discards the chosen spell by id; sites stay in hand', () => {
     const { g, den, fireball, drown, flood, rustic } = setup()
-    getScript("Wizard's Den")!.onSiteDamaged!(makeCtx(g, den.id, 0, []), den, 1, 1)
+    getScript("Wizard's Den")!.onSiteDamaged!(makeCtx(g, den.id, 0, []), den, 1, 1, raid)
     const prompt = g.prompts[0] as any
     expect(prompt?.kind).toBe('chooseCards')
     // candidates = spell names only (no site names)
@@ -2794,7 +2798,7 @@ describe("Wizard's Den: 'Discard a spell' when first attacked — never a site",
     injectToHand(g, 0, 'Rustic Village')
     const cemBefore = p.cemetery.length
     const den = placeSite(g, 0, "Wizard's Den", 1, 0)
-    getScript("Wizard's Den")!.onSiteDamaged!(makeCtx(g, den.id, 0, []), den, 1, 1)
+    getScript("Wizard's Den")!.onSiteDamaged!(makeCtx(g, den.id, 0, []), den, 1, 1, raid)
     expect(g.prompts.length).toBe(0) // no spell → nothing to ask
     expect(p.cemetery.length).toBe(cemBefore) // no site discarded
     expect(p.hand.length).toBe(2) // both sites remain
@@ -2802,10 +2806,10 @@ describe("Wizard's Den: 'Discard a spell' when first attacked — never a site",
 
   it('only raids once (denRaided latch preserved)', () => {
     const { g, den } = setup()
-    getScript("Wizard's Den")!.onSiteDamaged!(makeCtx(g, den.id, 0, []), den, 1, 1)
+    getScript("Wizard's Den")!.onSiteDamaged!(makeCtx(g, den.id, 0, []), den, 1, 1, raid)
     expect(g.prompts.length).toBe(1)
     answer(g, [0])
-    getScript("Wizard's Den")!.onSiteDamaged!(makeCtx(g, den.id, 0, []), den, 1, 1)
+    getScript("Wizard's Den")!.onSiteDamaged!(makeCtx(g, den.id, 0, []), den, 1, 1, raid)
     expect(g.prompts.length).toBe(0) // second attack does not re-trigger
   })
 })
@@ -3341,7 +3345,8 @@ describe('Stealth is a spendable token (rulebook: lost after the minion interact
 
 describe('Projectile hit selection (rulebook: shooter chooses among multiple)', () => {
   function ranger(g: GameState) {
-    // a Ranged 2 shooter at (0,1) firing east down row y=1
+    // a Ranged 2 shooter at (0,1) firing east down row y=1 (over sites: a shot stops at a void)
+    placeSite(g, 0, 'Rustic Village', 0, 1); placeSite(g, 1, 'Rustic Village', 1, 1)
     const u = summonCard(g, 0, 'Belmotte Longbowmen', 0, 1)
     u.enteredTurn = 0
     return u

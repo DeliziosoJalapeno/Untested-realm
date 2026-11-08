@@ -13,6 +13,7 @@ describe('Vindictive Nation punishes an enemy who shatters a nearby allied City 
     const g: GameState = newGame(); keepBoth(g); g.turn = 3
     const city = placeSite(g, 0, 'City of Glass', 2, 2)   // your City of Glass
     placeSite(g, 0, 'Vindictive Nation', 2, 3)            // your Vindictive Nation, adjacent
+    placeSite(g, 0, 'Wuthering Heights', 0, 0)            // Air threshold: the City's (A) clause is on
     const foeLife0 = avatarOf(g, 1).life!
     const myLife0 = avatarOf(g, 0).life!
 
@@ -33,6 +34,7 @@ describe('Vindictive Nation punishes an enemy who shatters a nearby allied City 
     const g: GameState = newGame(); keepBoth(g); g.turn = 3
     const city = placeSite(g, 0, 'City of Glass', 2, 2)
     placeSite(g, 0, 'Vindictive Nation', 2, 3)
+    placeSite(g, 0, 'Wuthering Heights', 0, 0)
     const myLife0 = avatarOf(g, 0).life!
 
     // player 0 damages their OWN City → it shatters, but Vindictive only bills opponents

@@ -45,3 +45,28 @@ describe('home-territory eval (seat 0)', () => {
     expect(terms(g).homePremature ?? 0).not.toBeLessThan(0) // no penalty — home is effectively full
   })
 })
+
+describe('home-territory eval: a home that is full, or that I can\'t reach, doesn\'t make expanding premature', () => {
+  it('home full of sites, some of them the enemy\'s: no penalty for building elsewhere', () => {
+    const g = newGame(); keepBoth(g)
+    for (const [x, y] of [[2, 0], [3, 0], [2, 1]] as const) applyJudge(g, 0, { k: 'placeSite', name: 'Accursed Tower', player: 0, x, y })
+    for (const [x, y] of [[1, 0], [1, 1], [3, 1]] as const) applyJudge(g, 1, { k: 'placeSite', name: 'Accursed Tower', player: 1, x, y })
+    applyJudge(g, 0, { k: 'placeSite', name: 'Accursed Tower', player: 0, x: 4, y: 0 }) // outside home
+    expect(terms(g).homePremature ?? 0).not.toBeLessThan(0)
+  })
+
+  it('a home void I can\'t play a site on (bordering none of my sites) doesn\'t count', () => {
+    const g = newGame(); keepBoth(g)
+    // my sites: c1, d1, d2 (home) and e1 (outside). b1, b2 and c2 belong to the enemy, except b2: a void
+    // that borders only the enemy's b1/c2 — no site of mine — so I can't play there
+    for (const [x, y] of [[2, 0], [3, 0], [3, 1], [4, 0]] as const) applyJudge(g, 0, { k: 'placeSite', name: 'Accursed Tower', player: 0, x, y })
+    for (const [x, y] of [[1, 0], [2, 1], [0, 1], [1, 2]] as const) applyJudge(g, 1, { k: 'placeSite', name: 'Accursed Tower', player: 1, x, y })
+    expect(terms(g).homePremature ?? 0).not.toBeLessThan(0)
+  })
+
+  it('a home void I CAN play on still makes expanding premature', () => {
+    const g = newGame(); keepBoth(g)
+    for (const [x, y] of [[2, 0], [3, 0], [4, 0]] as const) applyJudge(g, 0, { k: 'placeSite', name: 'Accursed Tower', player: 0, x, y })
+    expect(terms(g).homePremature).toBeLessThan(0) // c2, d2 border my sites
+  })
+})

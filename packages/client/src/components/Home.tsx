@@ -186,7 +186,7 @@ export default function Home({
   const deck = preconMode ? myPrecon : userDeck
   const deck2 = preconMode ? (PRECONS.find((p) => p.id === preconBId) ?? PRECONS[1]) : (decks.find((d) => d.id === deckBId) ?? decks[0])
   // a precon <select>'s options, grouped by set
-  const preconOptions = (['Alpha', 'Beta', 'Gothic'] as const).map((set) => (
+  const preconOptions = (['Alpha', 'Beta', 'Gothic', 'Frost Mage vs Lavamancer'] as const).map((set) => (
     <optgroup key={set} label={set}>
       {PRECONS.filter((p) => p.set === set).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
     </optgroup>
@@ -291,7 +291,7 @@ export default function Home({
                 <input type="checkbox" checked={makePublic} onChange={(e) => setMakePublic(e.target.checked)} /> <span className="opt-name">public</span>
                 <span className="opt-desc">listed in the lobby for anyone to join or spectate</span>
               </label>
-              <label title="Precon: both players pick one of the 12 official preconstructed decks (Alpha, Beta, Gothic), unedited.">
+              <label title="Precon: both players pick one of the official preconstructed decks (Alpha, Beta, Gothic, and Frost Mage vs Lavamancer as work in progress), unedited.">
                 <input type="checkbox" data-precon-room checked={preconMode} onChange={(e) => { setPreconMode(e.target.checked); if (e.target.checked) setSealedMode(false) }} /> <span className="opt-name">🃏 precon</span>
                 <span className="opt-desc">precon vs precon — each player picks an official precon</span>
               </label>
@@ -624,7 +624,7 @@ export default function Home({
           data-precon-mode
           className={preconMode ? 'selected' : ''}
           aria-pressed={preconMode}
-          title="Precon mode: play only the 12 official preconstructed decks (Alpha, Beta, Gothic) — vs the Computer, hotseat, and in precon rooms online."
+          title="Precon mode: play only the official preconstructed decks (Alpha, Beta, Gothic, and Frost Mage vs Lavamancer as work in progress) — vs the Computer, hotseat, and in precon rooms online."
           onClick={() => { setPreconMode(!preconMode); if (!preconMode) setSealedMode(false) }}
         >
           🃏 Precon mode: {preconMode ? 'on' : 'off'}

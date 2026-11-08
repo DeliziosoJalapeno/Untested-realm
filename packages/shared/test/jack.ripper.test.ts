@@ -14,7 +14,7 @@ function ripperGenesis(g: any, jackId: string) {
   getScript('Jack the Ripper')!.genesis!(makeCtx(g, jackId, jack.controller, [], { x: jack.x, y: jack.y, region: jack.region }))
 }
 
-describe('Jack the Ripper — Stealth breaks only when HE is silenced/disabled on entry', () => {
+describe('Jack the Ripper — Stealth breaks only when HE is disabled on entry', () => {
   it('cast to a plain Mortal: the Mortal dies and Jack KEEPS his Stealth', () => {
     const g: any = newGame(); keepBoth(g)
     const prey = summonCard(g, 1, 'Common Cottagers', 2, 1) // a vanilla Mortal
@@ -25,9 +25,9 @@ describe('Jack the Ripper — Stealth breaks only when HE is silenced/disabled o
     expect(g.units[jack.id]?.stealth, 'Stealth is NOT broken (card text)').toBe(true)
   })
 
-  it('cast to Sister Stefánia (who silences him): she dies, and Jack is REVEALED', () => {
+  it('cast to Sister Stefánia (who silences him): she dies, and Jack KEEPS his Stealth', () => {
     // Sister Stefánia is a Mortal AND "other nearby minions are silenced" — she is Jack's
-    // own silencer. He kills her, but was silenced the instant he entered → Stealth broken.
+    // own silencer. A silenced minion keeps its Stealth mark (Codex, Silenced), so he stays hidden.
     const g: any = newGame(); keepBoth(g)
     const stef = summonCard(g, 1, 'Sister Stefánia', 2, 1)
     const jack = summonCard(g, 0, 'Jack the Ripper', 2, 1)
@@ -35,7 +35,7 @@ describe('Jack the Ripper — Stealth breaks only when HE is silenced/disabled o
     ripperGenesis(g, jack.id)
     expect(g.units[stef.id], 'Sister Stefánia was slain').toBeFalsy()
     expect(g.units[jack.id], 'Jack survived').toBeTruthy()
-    expect(g.units[jack.id]?.stealth, 'silenced on entry → Stealth broken').toBe(false)
+    expect(g.units[jack.id]?.stealth, 'silenced on entry → still Stealthed').toBe(true)
   })
 
   it('cast to a Mortal while a Stone-gaze Gorgons disables him: NO ONE dies, Jack is revealed', () => {
@@ -49,13 +49,13 @@ describe('Jack the Ripper — Stealth breaks only when HE is silenced/disabled o
     expect(g.units[jack.id]?.stealth, 'disabled on entry → Stealth broken').toBe(false)
   })
 
-  it('general rule: any Stealth minion silenced by a persistent source loses its Stealth token', () => {
+  it('general rule: a Stealth minion silenced by a persistent source KEEPS its Stealth mark (Codex)', () => {
     const g: any = newGame(); keepBoth(g)
     summonCard(g, 1, 'Sisters of Silence', 3, 1) // silences nearby minions
     const jack = summonCard(g, 0, 'Jack the Ripper', 2, 1) // adjacent, no Mortal here → no kill
     jack.stealth = true
     checkStateBased(g)
     expect(g.units[jack.id]?.silenced, 'hushed by Sisters of Silence').toBe(true)
-    expect(g.units[jack.id]?.stealth, 'silenced → Stealth token removed').toBe(false)
+    expect(g.units[jack.id]?.stealth, 'silenced → Stealth mark kept').toBe(true)
   })
 })

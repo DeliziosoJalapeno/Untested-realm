@@ -47,6 +47,8 @@ describe('Locusts of Illyria — at most one spread per turn across all Locusts'
     placeSite(g, 1, 'Rustic Village', 2, 1) // the only nearby site is enemy-controlled
     summonCard(g, 0, 'Locusts of Illyria', 2, 2).enteredTurn = -5
     act(g, 0, { t: 'endTurn' })
+    const p = g.prompts.find((q: any) => q.kind === 'chooseSquare') // its own square or the enemy site
+    act(g, 0, { t: 'prompt', promptId: p!.id, choice: { x: 2, y: 1 } })
     driveLocustPrompts(g)
     const onEnemy = Object.values(g.units).find((u: any) => u.name === 'Locusts of Illyria' && u.x === 2 && u.y === 1)
     expect(onEnemy, 'a copy spread onto the nearby enemy site').toBeTruthy()

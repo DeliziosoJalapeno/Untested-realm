@@ -33,6 +33,7 @@ import {
   reachableLocations,
   loopRoutes,
   siteSilenced,
+  siteFlooded,
   artifactSilenced,
   enumeratePaths,
   legalStepsFrom,
@@ -40,8 +41,11 @@ import {
   maxSteps,
   spellMorphName,
   validateSummonAt,
-  validateTarget,
-  legalTargetOptions,
+  legalTargetsFor,
+  specIndexForPick,
+  effectiveCost,
+  targetRefId,
+  type TargetPick,
   printingsFor,
   abilityAnchor,
   resolveCaster,
@@ -75,6 +79,8 @@ import {
   type JudgeOp,
   artifactController,
   type ArtifactState,
+  subsurfaceAttackable,
+  attackForbidden,
 } from '@sorcery/shared'
 import { loadDecks, type Session } from '../App'
 import CardImg, { CardHover, CardBack } from './CardImg'
@@ -84,6 +90,7 @@ import { CHAT_PHRASES } from '../chatPhrases'
 import { sfx, preloadSfx, type SfxKey } from '../sfx'
 import { getSetting, subscribeSettings } from '../settings'
 import { fmtCoord as squareLabel, relabelCoords } from '../coords'
+import { auraStackLayout } from '../auraStack'
 import {
   presentViews,
   viewLabel,
@@ -135,7 +142,9 @@ type Mode =
   // the prompt with the chosen index; Avatar of Air etc.).
   | { m: 'teleportPlace'; placements: TeleportPlacement[]; idx: number; cardId?: string; casterId?: string; picked?: string[]; promptId?: string }
   | { m: 'siteOrSpell'; cardId: string; morph: string; casterId: string }
-  | { m: 'genesisTargets'; cardId: string; casterId: string; at: { x: number; y: number; region?: Region }; picked: string[] }
+  | { m: 'genesisTargets'; cardId: string; casterId: string; at: { x: number; y: number; region?: Region }; picked: string[]; extra?: any }
+  // minions sacrificed as part of a summon's cost (Gnarled Wendigo): toggle any of `cands`, then cast
+  | { m: 'castSacrifice'; cardId: string; casterId: string; at: { x: number; y: number; region?: Region }; cands: string[]; picked: string[] }
   | { m: 'shoot'; unitId: string; casterId?: string }
   // move/attack disambiguation when the destination holds enemies and/or an enemy site. A `pick` choice
   // aggregates several same-named co-located enemies — selecting it opens the pickTargetUnit follow-up.
@@ -622,7 +631,10 @@ function GameInner({
       const vw = vv?.width ?? window.innerWidth
       const vh = vv?.height ?? window.innerHeight
       const scale = vh / DESKTOP_DESIGN_H // fill height exactly (uniform) → also fills width via designW
-      const canvasW = vw / scale // logical width that fills the viewport horizontally
+      // logical width that fills the viewport horizontally — but never wider than DESKTOP_MAX_ASPECT×
+      // the height: on an ultra-wide screen the outer parts are cropped (the centred canvas leaves the
+      // page background at the sides) instead of stretching the table across the whole monitor
+      const canvasW = Math.min(vw / scale, DESKTOP_DESIGN_H * DESKTOP_MAX_ASPECT)
       setUiScale(scale)
       setDesignW(canvasW)
       // The board gets all the vertical space not taken by the topbar/bars/hand, and all the
@@ -1665,30 +1677,38 @@ function GameInner({
       const [x, y] = id.slice(3).split(',')
       return { square: { x: Number(x), y: Number(y) } }
     }
-    return view.units[id] ? { unit: id } : view.sites[id] ? { site: id } : view.artifacts[id] ? { artifact: id } : null
+    return view.units[id] ? { unit: id } : view.sites[id] ? { site: id } : view.artifacts[id] ? { artifact: id } : view.auras?.[id] ? { aura: id } : null
   }
-  // For a magic OR ability pick that declares an engine-authoritative legal set (Minor/Major
-  // Explosion & Mortality/Exorcism/… step range, Incinerate's caster-or-Dragon reach, Meteor Shower's
-  // no-shared-border rule, Midland Army / Corpse Catapult bombardment range), the refs the player may
-  // click for THIS pick — null when the card imposes no such restriction (the normal validateTarget
-  // path applies). Clicks outside the set are swallowed, so an illegal location/site can't be submitted.
-  const currentTargetOptions = (): TargetRef[] | null => {
-    const pickedRefs = (m: { picked: string[] }) => m.picked.map(refOfId).filter(Boolean) as TargetRef[]
+  // The pick in progress — a cast from hand (anchored on the CHOSEN caster: a unit, an Omphalos artifact,
+  // a spellcaster site) or an ability's targets (anchored on its SOURCE via the shared abilityAnchor) —
+  // and the picks made so far, which a `whereOf` spec (Blink's square nearby the chosen ally) and a card's
+  // targetOptions are measured from.
+  const currentPick = (): { pick: TargetPick; picked: TargetRef[] } | null => {
+    const picked = (mode.m === 'magic' || mode.m === 'abilityTargets' ? mode.picked : []).map(refOfId).filter(Boolean) as TargetRef[]
     if (mode.m === 'magic') {
       const script = getScript(view.cards[mode.cardId]?.name ?? '')
-      if (!script?.targetOptions) return null
-      const caster = (resolveCaster(st, mode.casterId, me) ?? avatar) as UnitState // unit / Omphalos artifact / spellcaster site
-      return legalTargetOptions(st, script, caster, pickedRefs(mode), mode.picked.length)
+      if (!script) return null
+      const caster = (resolveCaster(st, mode.casterId, me) ?? avatar) as UnitState
+      return { pick: { script, specs: script.targets ?? [], caster, player: me, magic: true, source: view.cards[mode.cardId]?.name }, picked }
     }
     if (mode.m === 'abilityTargets') {
       const srcName = view.units[mode.sourceId]?.name ?? view.artifacts[mode.sourceId]?.name ?? view.sites[mode.sourceId]?.name ?? ''
-      const script = getScript(srcName)
-      if (!script?.targetOptions) return null
-      const caster = abilityAnchor(st, mode.sourceId, me) as UnitState
-      return legalTargetOptions(st, script, caster, pickedRefs(mode), mode.picked.length)
+      return { pick: { script: getScript(srcName), specs: mode.specs, caster: abilityAnchor(st, mode.sourceId, me) as UnitState, player: me, source: srcName }, picked }
     }
     return null
   }
+  // Every legal ref for that pick — the engine's legalTargetsFor, the same list effect casts and both bots
+  // offer and the test castSpell / activation apply — so the board lights exactly what will be accepted.
+  const legalNow = useMemo((): TargetRef[] | null => {
+    const c = currentPick()
+    if (!c) return null
+    try { return legalTargetsFor(st, c.pick, c.picked) } catch { return null }
+  }, [mode, st, me, view]) // eslint-disable-line react-hooks/exhaustive-deps
+  // For a pick whose card declares an engine-authoritative set (Minor/Major Explosion & Mortality/Exorcism
+  // step range, Incinerate's reach, Meteor Shower's no-shared-border rule, Midland Army / Corpse Catapult
+  // bombardment range, Blink's real locations), the refs the player may click — clicks outside it are
+  // swallowed, so an illegal location/site can't be submitted. null when the card declares none.
+  const currentTargetOptions = (): TargetRef[] | null => (currentPick()?.pick.script?.targetOptions ? legalNow ?? [] : null)
   // units you can click right now — chooseTargets candidates, or (when conjuring
   // an artifact) the units you may hand it to. Highlighted on the board.
   const targetIds: Set<string> | null = (() => {
@@ -1716,66 +1736,12 @@ function GameInner({
     // so the player can see what is clickable. We ask the engine validator per candidate
     // so we never duplicate target-constraint logic in the client.
     if (mode.m === 'magic' || mode.m === 'abilityTargets') {
-      const spec = mode.m === 'magic'
-        ? (() => { const n = view.cards[mode.cardId]?.name; const s = n ? getScript(n) : null; return (s?.targets ?? [])[mode.picked.length] ?? null })()
-        : (mode.specs[mode.picked.length] ?? null)
+      const spec = currentSpec()
       if (!spec || spec.what === 'square') return null // squares highlighted separately
-      try {
-        // abilityTargets: the engine anchors range/region/filter on the SOURCE
-        // (unit, a carried artifact's bearer, or a positional pseudo-caster at a
-        // site/ground-artifact). Mirror it exactly via the shared abilityAnchor so
-        // the highlight set matches what the engine will accept. magic: anchor on the
-        // CHOSEN caster (not always the avatar) — a submerged Spellcaster casting a
-        // targeted spell reaches submerged targets; Kiss of Death's 'here' highlights
-        // the caster's own square, exactly as castSpell validates it.
-        const caster = (mode.m === 'abilityTargets'
-          ? abilityAnchor(st, mode.sourceId, me)
-          : (resolveCaster(st, mode.casterId, me) ?? avatar)) as UnitState
-        // engine-authoritative legal set when the magic declares one (Meteor Shower narrows the
-        // clickable sites as you pick, excluding any that border an already-chosen impact): consume
-        // it directly instead of re-deriving legality per candidate.
-        if (mode.m === 'magic') {
-          const magicScript = getScript(view.cards[mode.cardId]?.name ?? '')
-          const pickedRefs = mode.picked.map(refOfId).filter(Boolean) as TargetRef[]
-          const opts = legalTargetOptions(st, magicScript, caster, pickedRefs, mode.picked.length)
-          if (opts) {
-            const set2 = new Set<string>()
-            for (const o of opts) {
-              if ('site' in o) set2.add(o.site)
-              else if ('unit' in o) set2.add(o.unit)
-              else if ('artifact' in o) set2.add(o.artifact)
-              // square options are highlighted by the board-square block, not here
-            }
-            return set2.size > 0 ? set2 : null
-          }
-        }
-        const ids = new Set<string>()
-        // units are candidates for unit/minion/avatar/minionOrArtifact, and for 'artifact' too
-        // (Automatons are minion-artifacts). validateTarget rejects the wrong type per candidate.
-        if (spec.what !== 'site') {
-          for (const u of Object.values(view.units) as UnitState[]) {
-            if (!validateTarget(st, spec, { unit: u.id }, caster, me)) ids.add(u.id)
-          }
-        }
-        if (spec.what === 'artifact' || spec.what === 'minionOrArtifact' || spec.what === 'minionArtifactOrAura') {
-          for (const a of Object.values(view.artifacts ?? {}) as any[]) {
-            if (!validateTarget(st, spec, { artifact: a.id }, caster, me)) ids.add(a.id)
-          }
-        }
-        if (spec.what === 'minionArtifactOrAura') {
-          for (const r of Object.values(view.auras ?? {}) as any[]) {
-            if (!validateTarget(st, spec, { aura: r.id } as any, caster, me)) ids.add(r.id)
-          }
-        }
-        if (spec.what === 'site') {
-          for (const s of Object.values(view.sites) as any[]) {
-            if (!validateTarget(st, spec, { site: s.id }, caster, me)) ids.add(s.id)
-          }
-        }
-        return ids.size > 0 ? ids : null
-      } catch {
-        return null
-      }
+      // the engine's legal set for this pick (legalTargetsFor) — units, artifacts, auras or sites
+      const ids = new Set<string>()
+      for (const r of legalNow ?? []) if (!('square' in r)) ids.add(targetRefId(r))
+      return ids.size > 0 ? ids : null
     }
     return null
   })()
@@ -2013,71 +1979,25 @@ function GameInner({
         else for (let x = 0; x < GRID_W; x++) for (let y = 0; y < GRID_H; y++) set.set(`${x},${y}`, 'hl-place')
       }
       if (mode.m === 'abilityTargets') {
-        const spec = mode.specs[mode.picked.length]
-        // Anchor range/region on the ability SOURCE (unit, carried-artifact bearer,
-        // or positional pseudo-caster for a site/ground artifact) via the shared
-        // abilityAnchor, then let the engine validator decide what is legal — so the
-        // board highlight is exactly the engine's accepted set (adjacent-only for
-        // Floodplain's Overflow, nearby for Sinkhole's Collapse, etc.).
-        const abilityCaster = abilityAnchor(st, mode.sourceId, me)
-        // engine-authoritative set when the ability declares one (Midland Army's bombard, Corpse
-        // Catapult's fling — "up to three steps away"): highlight EXACTLY it, like the magic path.
-        const opts = currentTargetOptions()
-        if (opts) {
-          for (const o of opts) {
-            if ('square' in o) set.set(`${o.square.x},${o.square.y}`, 'hl-place')
-            else if ('site' in o) { const s = view.sites[o.site]; if (s) set.set(`${s.x},${s.y}`, 'hl-move') }
-          }
-        } else if (spec?.what === 'site') {
-          // site-sourced abilities that target a site (Floodplain's Overflow, etc.):
-          // highlight only the sites the engine would accept so the player can't misclick.
-          for (const s of Object.values(view.sites) as any[]) {
-            try {
-              if (!validateTarget(st, spec, { site: s.id }, abilityCaster, me)) set.set(`${s.x},${s.y}`, 'hl-move')
-            } catch { /* ignore */ }
-          }
-        } else if (spec?.what === 'square') {
-          // square-targeting abilities: highlight every square the engine would accept.
-          for (let x = 0; x < GRID_W; x++) {
-            for (let y = 0; y < GRID_H; y++) {
-              try {
-                if (!validateTarget(st, spec, { square: { x, y } }, abilityCaster, me))
-                  set.set(`${x},${y}`, 'hl-place')
-              } catch { /* ignore */ }
-            }
-          }
+        // the engine's legal set for this pick (legalTargetsFor, anchored on the ability SOURCE): the
+        // squares and sites the activation accepts — adjacent-only for Floodplain's Overflow, nearby for
+        // Sinkhole's Collapse, Midland Army's "up to three steps away"…
+        for (const r of legalNow ?? []) {
+          if ('square' in r) set.set(`${r.square.x},${r.square.y}`, 'hl-place')
+          else if ('site' in r) { const s = view.sites[r.site]; if (s) set.set(`${s.x},${s.y}`, 'hl-move') }
         }
       }
-      // magic mode: highlight squares when the current target spec is 'square'.
-      // We call the engine's validateTarget per square so no range logic is duplicated.
+      // magic mode: highlight squares when the current target spec is 'square' — the engine's legal set
+      // for this pick (legalTargetsFor: a `whereOf` square is measured from the chosen ally, a step-range
+      // card's targetOptions bound it), so no range logic is duplicated here.
       if (mode.m === 'magic') {
-        const magicName = view.cards[mode.cardId]?.name
-        const magicScript = magicName ? getScript(magicName) : null
-        const magicSpec = (magicScript?.targets ?? [])[mode.picked.length]
+        const magicSpec = currentSpec()
         const anchoring = anchorUnit()
         if (magicSpec?.what === 'square' && anchoring && !mode.anchorPart) {
           // step 1 for an oversized ally: pick which of its squares anchors the teleport
           for (const s of occupiedSquares(anchoring)) set.set(`${s.x},${s.y}`, 'hl-place')
         } else if (magicSpec?.what === 'square') {
-          const magicCaster = (resolveCaster(st, mode.casterId, me) ?? avatar) as UnitState // unit / Omphalos artifact / spellcaster site
-          // the already-picked targets, so a `whereOf` square (Blink: nearby the chosen ally) is measured
-          // from the right anchor instead of the caster.
-          const pickedRefs = mode.picked.map(refOfId).filter(Boolean) as any[]
-          // engine-authoritative set when the card declares one (Minor/Major Explosion's step range):
-          // highlight EXACTLY those squares, so a too-far location is never clickable.
-          const opts = legalTargetOptions(st, magicScript, magicCaster, pickedRefs, mode.picked.length)
-          if (opts) {
-            for (const o of opts) if ('square' in o && nearAnchor(o.square.x, o.square.y)) set.set(`${o.square.x},${o.square.y}`, 'hl-place')
-          } else {
-            for (let x = 0; x < GRID_W; x++) {
-              for (let y = 0; y < GRID_H; y++) {
-                try {
-                  if (nearAnchor(x, y) && !validateTarget(st, magicSpec, { square: { x, y } }, magicCaster, me, pickedRefs))
-                    set.set(`${x},${y}`, 'hl-place')
-                } catch { /* ignore */ }
-              }
-            }
-          }
+          for (const r of legalNow ?? []) if ('square' in r && nearAnchor(r.square.x, r.square.y)) set.set(`${r.square.x},${r.square.y}`, 'hl-place')
         }
       }
       // oversized-teleport placement picker: glow the currently-selected orientation's whole footprint
@@ -2107,7 +2027,7 @@ function GameInner({
       // highlight computation must never crash the UI
     }
     return set
-  }, [mode, st, me, view, prompt])
+  }, [mode, st, me, view, prompt, legalNow])
 
   // ---- click handling ----
 
@@ -2490,10 +2410,15 @@ function GameInner({
     const targetUnits: UnitState[] = []
     const siteChoices: { label: string; attack: { site: string } }[] = []
     for (const cell of footprintAt(attacker, anchor)) {
-      for (const u of unitsAt(st, cell.x, cell.y, region)) {
+      // Putrid Presence: a surface attacker may also reach the subsurface below it
+      const here = region === 'surface'
+        ? unitsAt(st, cell.x, cell.y).filter((u) => u.region === 'surface' || (u.region !== 'void' && subsurfaceAttackable(st, { ...attacker, x: cell.x, y: cell.y, region }, u)))
+        : unitsAt(st, cell.x, cell.y, region)
+      for (const u of here) {
         if (u.controller === me || seenU.has(u.id)) continue
         if (carriedInside(st, u)) continue // swallowed cargo is out of reach; on-top passengers are attackable
         if (u.stealth && !truesight) continue
+        if (attackForbidden(st, attacker, u)) continue // Earl of the Ivory Towers vs the Ordinary
         if (effKeywords(st, u).airborne && !akw.airborne && u.region === 'surface') continue
         seenU.add(u.id)
         targetUnits.push(u)
@@ -2612,6 +2537,14 @@ function GameInner({
     // has no hover, reads it). Works for spectators / off-turn too.
     if (faqView) { showHover(u.name); return }
     if (isSpectator) return
+    // a Genesis target pick: any unit chip — the surface ones AND the subsurface / void strips (Lacuna Entity
+    // drags a burrowed minion from an adjacent site)
+    if (clickUnitForGenesis(u)) return
+    // a summon's sacrifice cost (Gnarled Wendigo): clicking one of your minions there toggles it
+    if (mode.m === 'castSacrifice') {
+      if (mode.cands.includes(u.id)) setMode({ ...mode, picked: mode.picked.includes(u.id) ? mode.picked.filter((id) => id !== u.id) : [...mode.picked, u.id] })
+      return
+    }
     // manual stepping: a chip covers its square, so clicking the mover (drawn at the cursor)
     // takes an in-place region step (burrow/submerge/surface); clicking a unit on a highlighted
     // neighbour steps there. Delegates to the same square-stepping the board uses.
@@ -2806,12 +2739,14 @@ function GameInner({
       }
     }
     // genesis site targets (Sinterfee) — cast the minion with the chosen site
-    if (mode.m === 'genesisTargets') {
+    if (mode.m === 'genesisTargets' && genesisSpec()?.what === 'site') {
       ev.stopPropagation()
-      send({ t: 'castSpell', cardId: mode.cardId, casterId: mode.casterId, at: mode.at, targets: [...mode.picked, siteObj.id] })
+      send({ t: 'castSpell', cardId: mode.cardId, casterId: mode.casterId, at: mode.at, targets: [...mode.picked, siteObj.id], extra: mode.extra })
       setMode({ m: 'idle' })
       return
     }
+    // a unit-picking Genesis: a click on the site itself is no pick (the units are their own chips)
+    if (mode.m === 'genesisTargets' && genesisSpec()?.what !== 'square') { ev.stopPropagation(); return }
     // Editor open: a plain click selects ANY site for editing (either player's, any turn),
     // mirroring unit selection — the panel's Modify tab then shows this site's tools. NOT while
     // placing (judgePlace): a create-on-board click must fall through to clickSquare's placement.
@@ -2876,10 +2811,12 @@ function GameInner({
         return
       }
     }
-    // select one of your own sites to reveal its activated abilities (Floodplain, etc.)
+    // select one of your own sites to reveal its activated abilities (Floodplain, etc.) — or, for a
+    // face-down trap of yours, its spring (the disguise is a basic site with no abilities of its own)
     if (myTurn && siteObj.controller === me && (mode.m === 'idle' || mode.m === 'site')) {
       const abilities = getScript(siteObj.name)?.abilities ?? []
-      if (abilities.length) {
+      const trapReal = (siteObj as any).trap?.realName as string | undefined
+      if (abilities.length || (trapReal && getScript(trapReal)?.siteTrapAbility)) {
         ev.stopPropagation()
         setMode(mode.m === 'site' && mode.siteId === siteObj.id ? { m: 'idle' } : { m: 'site', siteId: siteObj.id })
         return
@@ -2980,13 +2917,13 @@ function GameInner({
     return nearbySquaresW(st, a.x, a.y).some((s) => s.x === x && s.y === y)
   }
 
+  /** the spec the next pick fills — picks fill the specs in order, `count` each (specIndexForPick), exactly
+   *  as the engine assigns the submitted targets */
   function currentSpec() {
-    if (mode.m === 'abilityTargets') return mode.specs[mode.picked.length] ?? null
+    if (mode.m === 'abilityTargets') return mode.specs[specIndexForPick(mode.specs, mode.picked.length)] ?? null
     if (mode.m !== 'magic') return null
-    const name = view.cards[mode.cardId]?.name
-    const script = name ? getScript(name) : null
-    const specs = script?.targets ?? []
-    return specs[mode.picked.length] ?? null
+    const specs = getScript(view.cards[mode.cardId]?.name ?? '')?.targets ?? []
+    return specs[specIndexForPick(specs, mode.picked.length)] ?? null
   }
 
   function pickTarget(ref: string) {
@@ -3034,18 +2971,24 @@ function GameInner({
 
 
 
-  function castWithTargets(cardId: string, casterId: string, at: { x: number; y: number; region?: Region }) {
+  function castWithTargets(cardId: string, casterId: string, at: { x: number; y: number; region?: Region }, extra?: any) {
     const name = view.cards[cardId]?.name
     const script = name ? getScript(name) : null
+    // a cost paid by sacrificing minions there (Gnarled Wendigo): the player picks which, first
+    const sacCands = me !== null && extra?.sacrifice === undefined ? script?.castSacrificeCandidates?.(st, me, at) ?? [] : []
+    if (sacCands.length) {
+      setMode({ m: 'castSacrifice', cardId, casterId, at, cands: sacCands, picked: [] })
+      return
+    }
     const gt = script?.genesisTargets ?? []
     if (gt.length === 0) {
-      send({ t: 'castSpell', cardId, casterId, at })
+      send(extra ? { t: 'castSpell', cardId, casterId, at, extra } : { t: 'castSpell', cardId, casterId, at })
       setMode({ m: 'idle' })
       return
     }
     // optional single genesis target: cast immediately without it via the skip button,
     // or click a unit right after — v1 keeps it simple and asks via window.confirm-free UI:
-    setMode({ m: 'genesisTargets', cardId, casterId, at, picked: [] })
+    setMode({ m: 'genesisTargets', cardId, casterId, at, picked: [], extra })
   }
 
   function clickHandCard(cardId: string) {
@@ -3218,11 +3161,17 @@ function GameInner({
     return { name: thief.name }
   }
 
+  // the Genesis pick in progress (genesisTargets mode)
+  function genesisSpec() {
+    if (mode.m !== 'genesisTargets') return null
+    const specs = getScript(view.cards[mode.cardId]?.name ?? '')?.genesisTargets ?? []
+    return specs[specIndexForPick(specs, mode.picked.length)] ?? null
+  }
   // genesis target flow: click a unit while in genesisTargets mode
   function clickUnitForGenesis(u: UnitState) {
     if (mode.m !== 'genesisTargets') return false
     const picked = [...mode.picked, u.id]
-    send({ t: 'castSpell', cardId: mode.cardId, casterId: mode.casterId, at: mode.at, targets: picked })
+    send({ t: 'castSpell', cardId: mode.cardId, casterId: mode.casterId, at: mode.at, targets: picked, extra: mode.extra })
     setMode({ m: 'idle' })
     return true
   }
@@ -3956,7 +3905,7 @@ function GameInner({
                         </span>
                       ))}
                       {site && (
-                        <div className={`sitecard ${hasFaq(site.name) ? 'has-faq' : ''} ${stView && siteMatchesView(site.name, stKey) ? 'st-match' : ''}`} data-site={site.id} data-sitename={site.name} data-target={targetIds?.has(site.id) ? '1' : undefined} data-picked={(mode.m === 'magic' && mode.picked.includes(site.id)) || (mode.m === 'promptTargets' && mode.picked.includes(site.id)) ? '1' : undefined} onClick={(e) => clickSite(site, e)} onMouseEnter={() => showHover(site.name, false, view.cards[site.cardId]?.art)}>
+                        <div className={`sitecard ${hasFaq(site.name) ? 'has-faq' : ''} ${stView && siteMatchesView(site.name, stKey) ? 'st-match' : ''}`} data-site={site.id} data-sitename={site.name} data-target={targetIds?.has(site.id) ? '1' : undefined} data-picked={(mode.m === 'magic' && mode.picked.includes(site.id)) || (mode.m === 'promptTargets' && mode.picked.includes(site.id)) ? '1' : undefined} onClick={(e) => clickSite(site, e)} onMouseEnter={() => showHover((site as any).trap?.realName ?? site.name, false, view.cards[site.cardId]?.art)}>
                           <CardImg name={site.name} art={view.cards[site.cardId]?.art} className={`siteimg owner${site.controller}${site.controller != null && site.controller !== me ? ' site-theirs' : ''}`} />
                           {/* ownership strip — a real element ON TOP of the art (an inset box-shadow
                               on the <img> is painted over by the image, so it was invisible) */}
@@ -3966,8 +3915,8 @@ function GameInner({
                           {site.ward && <WardGlow />}
                           {site.ward && <span className="kw siteward" title="Warded">🛡</span>}
                           {siteSilenced(st, site) && <span className={`kw sitesilenced${Object.values(view.auras).some((r) => r.squares.some((s) => s.x === x && s.y === y)) ? ' aura-shift' : ''}`} title="Silenced — its abilities are removed">🤐</span>}
-                          {site.flooded && <span className="kw siteflood" title="Flooded">🌊</span>}
-                          {(site as any).trap && <span className="kw sitetrap" title={(site as any).trap.realName ? `Your hidden trap: ${(site as any).trap.realName}` : 'A hidden trap lurks here'}>🪤</span>}
+                          {siteFlooded(st, site) && <span className="kw siteflood" title="Flooded">🌊</span>}
+                          {(site as any).trap && <span className="kw sitetrap" title={(site as any).trap.realName ? `Your hidden trap: ${(site as any).trap.realName}. Click the site on your turn to spring it.` : 'A hidden trap lurks here'}>🪤</span>}
                           {scorchedSquares.has(`${x},${y}`) && <span className="kw sitescorched" title="Scorched — a roaming Wildfire has burned here">🔥</span>}
                           {flameVisitedSquares.has(`${x},${y}`) && <span className="kw siteflamevisited" title="Kindled — the Flame of the First Ones has already burned at this site">🔥</span>}
                         </div>
@@ -3980,13 +3929,10 @@ function GameInner({
                       >
                         {mainUnits.map(({ u, ghost }) => (
                           (u as any)._anim ? <AnimGhost key={`${(u as any)._gid}-anim`} u={u as unknown as AnimUnit} /> :
-                          <UnitChip key={ghost ? `${u.id}-g` : u.id} u={u} ghost={ghost} anim={movingUnitIds.has(u.id) ? 'move' : undefined} bodyActive={!u.size && (u.extraSquares?.length ?? 0) > 0 && ((mode.m === 'unit' && mode.unitId === u.id) || bodyHover === u.id)} st={st} me={me} matchKey={stView ? stKey : undefined} casterGlow={areaFx && areaFx.casterId === u.id ? areaFx.id : undefined} glow={unitGlow(u.id)} selected={(mode.m === 'unit' && mode.unitId === u.id) || (mode.m === 'promptTargets' && mode.picked.includes(u.id))}
+                          <UnitChip key={ghost ? `${u.id}-g` : u.id} u={u} ghost={ghost} anim={movingUnitIds.has(u.id) ? 'move' : undefined} bodyActive={!u.size && (u.extraSquares?.length ?? 0) > 0 && ((mode.m === 'unit' && mode.unitId === u.id) || bodyHover === u.id)} st={st} me={me} matchKey={stView ? stKey : undefined} casterGlow={areaFx && areaFx.casterId === u.id ? areaFx.id : undefined} glow={unitGlow(u.id)} selected={(mode.m === 'unit' && mode.unitId === u.id) || ((mode.m === 'promptTargets' || mode.m === 'castSacrifice') && mode.picked.includes(u.id))}
                             picked={(mode.m === 'promptTargets' || mode.m === 'magic') && mode.picked.includes(u.id)}
                             target={!!targetIds?.has(u.id)}
-                            onClick={(ev) => {
-                              if (clickUnitForGenesis(u)) return
-                              clickUnit(u, ev)
-                            }}
+                            onClick={(ev) => clickUnit(u, ev)}
                             onHover={(n, f, art) => { showHover(n, f, art); setBodyHover(!u.size && (u.extraSquares?.length ?? 0) > 0 ? u.id : null) }} onArtClick={clickCarriedArtifact} artTargets={targetIds ?? undefined} />
                         ))}
                       </div>
@@ -3994,7 +3940,7 @@ function GameInner({
                         <div className="subsurface">
                           {stripUnits.map(({ u, ghost }) => (
                             (u as any)._anim ? <AnimGhost key={`${(u as any)._gid}-anim`} u={u as unknown as AnimUnit} /> :
-                            <UnitChip key={ghost ? `${u.id}-g` : u.id} u={u} ghost={ghost} bodyActive={!u.size && (u.extraSquares?.length ?? 0) > 0 && ((mode.m === 'unit' && mode.unitId === u.id) || bodyHover === u.id)} st={st} me={me} matchKey={stView ? stKey : undefined} casterGlow={areaFx && areaFx.casterId === u.id ? areaFx.id : undefined} glow={unitGlow(u.id)} small selected={(mode.m === 'unit' && mode.unitId === u.id) || (mode.m === 'promptTargets' && mode.picked.includes(u.id))}
+                            <UnitChip key={ghost ? `${u.id}-g` : u.id} u={u} ghost={ghost} bodyActive={!u.size && (u.extraSquares?.length ?? 0) > 0 && ((mode.m === 'unit' && mode.unitId === u.id) || bodyHover === u.id)} st={st} me={me} matchKey={stView ? stKey : undefined} casterGlow={areaFx && areaFx.casterId === u.id ? areaFx.id : undefined} glow={unitGlow(u.id)} small selected={(mode.m === 'unit' && mode.unitId === u.id) || ((mode.m === 'promptTargets' || mode.m === 'castSacrifice') && mode.picked.includes(u.id))}
                               picked={(mode.m === 'promptTargets' || mode.m === 'magic') && mode.picked.includes(u.id)}
                               target={!!targetIds?.has(u.id)}
                               onClick={(ev) => clickUnit(u, ev)} onHover={(n, f, art) => { showHover(n, f, art); setBodyHover(!u.size && (u.extraSquares?.length ?? 0) > 0 ? u.id : null) }} onArtClick={clickCarriedArtifact} artTargets={targetIds ?? undefined} />
@@ -4005,7 +3951,7 @@ function GameInner({
                         <div className="voidunits">
                           {voidStrip.map(({ u, ghost }) => (
                             (u as any)._anim ? <AnimGhost key={`${(u as any)._gid}-anim`} u={u as unknown as AnimUnit} /> :
-                            <UnitChip key={ghost ? `${u.id}-g` : u.id} u={u} ghost={ghost} bodyActive={!u.size && (u.extraSquares?.length ?? 0) > 0 && ((mode.m === 'unit' && mode.unitId === u.id) || bodyHover === u.id)} st={st} me={me} matchKey={stView ? stKey : undefined} casterGlow={areaFx && areaFx.casterId === u.id ? areaFx.id : undefined} glow={unitGlow(u.id)} small selected={(mode.m === 'unit' && mode.unitId === u.id) || (mode.m === 'promptTargets' && mode.picked.includes(u.id))}
+                            <UnitChip key={ghost ? `${u.id}-g` : u.id} u={u} ghost={ghost} bodyActive={!u.size && (u.extraSquares?.length ?? 0) > 0 && ((mode.m === 'unit' && mode.unitId === u.id) || bodyHover === u.id)} st={st} me={me} matchKey={stView ? stKey : undefined} casterGlow={areaFx && areaFx.casterId === u.id ? areaFx.id : undefined} glow={unitGlow(u.id)} small selected={(mode.m === 'unit' && mode.unitId === u.id) || ((mode.m === 'promptTargets' || mode.m === 'castSacrifice') && mode.picked.includes(u.id))}
                               picked={(mode.m === 'promptTargets' || mode.m === 'magic') && mode.picked.includes(u.id)}
                               target={!!targetIds?.has(u.id)}
                               onClick={(ev) => clickUnit(u, ev)} onHover={(n, f, art) => { showHover(n, f, art); setBodyHover(!u.size && (u.extraSquares?.length ?? 0) > 0 ? u.id : null) }} onArtClick={clickCarriedArtifact} artTargets={targetIds ?? undefined} />
@@ -4079,7 +4025,7 @@ function GameInner({
               const rect = overlayRect([{ x: u.x, y: u.y }, { x: u.x + 1, y: u.y }, { x: u.x, y: u.y + 1 }, { x: u.x + 1, y: u.y + 1 }], flip)
               return (
                 <div key={u.id} className="overlay-item" style={rect}>
-                  <UnitChip u={u} st={st} me={me} matchKey={stView ? stKey : undefined} casterGlow={areaFx && areaFx.casterId === u.id ? areaFx.id : undefined} glow={unitGlow(u.id)} big selected={(mode.m === 'unit' && mode.unitId === u.id) || (mode.m === 'promptTargets' && mode.picked.includes(u.id))}
+                  <UnitChip u={u} st={st} me={me} matchKey={stView ? stKey : undefined} casterGlow={areaFx && areaFx.casterId === u.id ? areaFx.id : undefined} glow={unitGlow(u.id)} big selected={(mode.m === 'unit' && mode.unitId === u.id) || ((mode.m === 'promptTargets' || mode.m === 'castSacrifice') && mode.picked.includes(u.id))}
                     picked={(mode.m === 'promptTargets' || mode.m === 'magic') && mode.picked.includes(u.id)}
                     target={!!targetIds?.has(u.id)}
                     onClick={(ev) => clickUnit(u, ev)} onHover={showHover} onArtClick={clickCarriedArtifact} artTargets={targetIds ?? undefined} />
@@ -4107,9 +4053,9 @@ function GameInner({
               board (graphic only; unchanged by count; vanishes when the last one leaves). */}
           {yogImg && <div className="yog-overlay" style={{ backgroundImage: `url(${yogImg})` }} aria-hidden="true" />}
           {(() => {
-            // Pre-pass: when several area auras share the same image square, fan their
-            // card images out (stagger by stack index) so a newly cast aura does NOT
-            // cover an aura already there — each stays identifiable/hoverable.
+            // Pre-pass: when several auras would draw their card at the SAME spot (2x2 auras on one
+            // intersection, walls on one border), the group shares it — each card shrinks and they
+            // sit side by side (auraStackLayout) so a newly cast aura never covers one already there.
             const auraList = Object.values(view.auras) as any[]
             // aura-target selection (Enchantress) + Editor board-selection context is hoisted to the
             // component scope (shared with the single-square per-square render). See auraSelect above.
@@ -4124,18 +4070,32 @@ function GameInner({
               const anchorCluster = a.anchor ? clusters.find((cl) => cl.some((s) => s.x === a.anchor.x && s.y === a.anchor.y)) : undefined
               return { clusters, imgCluster: anchorCluster ?? [...clusters].sort((p, q) => q.length - p.length)[0] }
             }
-            const stackKey = (cl: { x: number; y: number }[]) => {
-              const r = overlayRect(cl, flip)
-              return `${r.left},${r.top}`
+            // only nudge the card off the intersection when a 2×2 minion actually sits on this block
+            const isCovered = (a: any, imgCluster: { x: number; y: number }[]) =>
+              big2x2Anchors.has(`${a.anchor?.x ?? Math.min(...imgCluster.map((s) => s.x))},${a.anchor?.y ?? Math.min(...imgCluster.map((s) => s.y))}`)
+            // group by where the card is DRAWN: a wall's border bar, else the card's centre on its
+            // image cluster (its top-left corner when nudged by a covering 2×2 minion)
+            const stackKey = (a: any) => {
+              if (a.edge) {
+                const r = wallRect(a.edge, flip)
+                return `w:${r.left},${r.top},${r.width}`
+              }
+              const { imgCluster } = imgClusterOf(a)
+              const r = overlayRect(imgCluster, flip) as { left: number; top: number; width: number; height: number }
+              return isCovered(a, imgCluster) ? `tl:${r.left},${r.top}` : `c:${r.left + r.width / 2},${r.top + r.height / 2}`
             }
-            const seen = new Map<string, number>()
-            const stackIndex = new Map<string, number>()
+            const groupSize = new Map<string, number>()
+            const stackIndex = new Map<string, { idx: number; key: string }>()
             for (const a of auraList) {
-              if (a.edge || a.squares?.length === 1) continue // single-SQUARE auras render in the artifact space
-              const key = stackKey(imgClusterOf(a).imgCluster)
-              const n = seen.get(key) ?? 0
-              stackIndex.set(a.id, n)
-              seen.set(key, n + 1)
+              if (!a.edge && a.squares?.length === 1) continue // single-SQUARE auras render in the artifact space
+              const key = stackKey(a)
+              const n = groupSize.get(key) ?? 0
+              stackIndex.set(a.id, { idx: n, key })
+              groupSize.set(key, n + 1)
+            }
+            const stackSlot = (a: any, cardW: number, cardH: number, align: 'center' | 'start' = 'center') => {
+              const s = stackIndex.get(a.id)
+              return auraStackLayout(s?.idx ?? 0, s ? groupSize.get(s.key)! : 1, cardW, cardH, align)
             }
             return auraList.map((a: any) => {
               // A WALL is an EDGE aura (a 2x1 aura spanning the border between two squares — that
@@ -4150,6 +4110,11 @@ function GameInner({
                 // a wall is also a live TARGET when a spell/ability targets a minion/artifact/aura
                 // (Displace): clicking its card picks it, exactly like a 2x2 or single-site aura.
                 const magicPick = auraMagicPick(a.id)
+                // several walls on one border share it: cards laid out ALONG the bar (a vertical
+                // bar stacks them top-to-bottom, so lay out transposed and swap the offsets)
+                const vertical = a.edge.a.y === a.edge.b.y
+                const slot = vertical ? stackSlot(a, WALL_CARD.h, WALL_CARD.w) : stackSlot(a, WALL_CARD.w, WALL_CARD.h)
+                const [wdx, wdy] = vertical ? [slot.dy, slot.dx] : [slot.dx, slot.dy]
                 return (
                   <div
                     key={a.id}
@@ -4172,6 +4137,7 @@ function GameInner({
                     <span
                       data-aura-hit={sel || magicPick || auraEdit ? a.id : undefined}
                       className={`${a.controller === me ? 'aura-mine' : a.controller != null ? 'aura-theirs' : ''}${sel || magicPick || auraEdit ? ' aura-edit-hit' : ''}`}
+                      style={slot.scale !== 1 ? { display: 'inline-block', transform: `translate(${wdx}px, ${wdy}px) scale(${slot.scale})` } : undefined}
                       onClick={sel ? (e) => { e.stopPropagation(); selectAura(a.id) } : magicPick ? (e) => { e.stopPropagation(); pickTarget(a.id) } : auraEdit ? (e) => { e.stopPropagation(); selectAuraEdit(a.id) } : undefined}
                     >
                       <CardImg name={a.name} className="wallimg" />
@@ -4193,16 +4159,15 @@ function GameInner({
               // one box per contiguous cluster (a Magellan-Globe-wrapped aura has two);
               // the card image sits in the cluster holding the anchor, else the largest
               const { clusters, imgCluster } = imgClusterOf(a)
-              const idx = stackIndex.get(a.id) ?? 0
-              // fan overlapping images down-right so earlier auras stay visible top-left
-              const fan = idx ? { transform: `translate(${idx * 16}px, ${idx * 16}px)`, zIndex: 2 + idx } : undefined
               const sel = auraCands.has(a.id)
               const editing = auraEdit && mode.m === 'editAura' && mode.auraId === a.id
               const magicPick = auraMagicPick(a.id)
-              // only nudge the card off the intersection when a 2×2 minion actually sits on this block
-              const iax = a.anchor?.x ?? Math.min(...imgCluster.map((s: any) => s.x))
-              const iay = a.anchor?.y ?? Math.min(...imgCluster.map((s: any) => s.y))
-              const covered = big2x2Anchors.has(`${iax},${iay}`)
+              const covered = isCovered(a, imgCluster)
+              // auras sharing this card spot shrink and sit side by side (a lone aura: scale 1, no shift)
+              const slot = stackSlot(a, AURA_CARD.w, AURA_CARD.h, covered ? 'start' : 'center')
+              const fan = slot.scale !== 1
+                ? { transform: `translate(${slot.dx}px, ${slot.dy}px) scale(${slot.scale})`, ...(covered ? { transformOrigin: 'top left' } : {}) }
+                : undefined
               return clusters.map((cl, i) => (
                 <div
                   key={`${a.id}-${i}`}
@@ -4915,6 +4880,29 @@ function GameInner({
         </div>
       )}
 
+      {/* a summon's sacrifice cost: pick which of your minions there to sacrifice (each lowers the cost) */}
+      {mode.m === 'castSacrifice' && me !== null && (() => {
+        const name = view.cards[mode.cardId]?.name ?? ''
+        const caster = (resolveCaster(st, mode.casterId, me) ?? avatar) as UnitState
+        let cost: number | null = null
+        try { cost = effectiveCost(st, me, name, caster, mode.at, mode.cardId, { sacrifice: mode.picked }) } catch { /* shown without a cost */ }
+        return (
+          <div className="promptbanner" data-modebanner="castSacrifice">
+            {name}: sacrifice which minions here?{' '}
+            {mode.cands.map((id) => (
+              <button key={id} data-sac={id} className={mode.picked.includes(id) ? 'selected' : undefined}
+                onClick={() => setMode({ ...mode, picked: mode.picked.includes(id) ? mode.picked.filter((x) => x !== id) : [...mode.picked, id] })}>
+                {mode.picked.includes(id) ? '☠ ' : ''}{view.units[id]?.name ?? id}
+              </button>
+            ))}{' '}
+            <button data-confirm="1" onClick={() => castWithTargets(mode.cardId, mode.casterId, mode.at, { sacrifice: mode.picked })}>
+              Cast{cost !== null ? ` (${cost})` : ''}
+            </button>
+            <button data-cancel="1" onClick={() => setMode({ m: 'idle' })}>cancel</button>
+          </div>
+        )
+      })()}
+
       {/* genesis target skip */}
       {mode.m === 'genesisTargets' && (
         <div className="promptbanner" data-modebanner="genesisTargets">
@@ -4922,11 +4910,11 @@ function GameInner({
           {/* the minion doesn't exist yet, so it can't be clicked: offer "itself" when its Genesis may
               target it (Town Priest under a Corruptor — Evil, and adjacent to its own square) */}
           {me !== null && genesisSelfTargetOk(st, me, view.cards[mode.cardId]?.name ?? '', mode.at, mode.picked.length, mode.picked.map((id) => ({ unit: id }))) && (
-            <button data-self="1" onClick={() => { send({ t: 'castSpell', cardId: mode.cardId, casterId: mode.casterId, at: mode.at, targets: [...mode.picked, SELF_TARGET] }); setMode({ m: 'idle' }) }}>
+            <button data-self="1" onClick={() => { send({ t: 'castSpell', cardId: mode.cardId, casterId: mode.casterId, at: mode.at, targets: [...mode.picked, SELF_TARGET], extra: mode.extra }); setMode({ m: 'idle' }) }}>
               itself
             </button>
           )}{' '}
-          <button data-skip="1" onClick={() => { send({ t: 'castSpell', cardId: mode.cardId, casterId: mode.casterId, at: mode.at, targets: [] }); setMode({ m: 'idle' }) }}>
+          <button data-skip="1" onClick={() => { send({ t: 'castSpell', cardId: mode.cardId, casterId: mode.casterId, at: mode.at, targets: [], extra: mode.extra }); setMode({ m: 'idle' }) }}>
             skip
           </button>
           <button data-cancel="1" onClick={() => setMode({ m: 'idle' })}>cancel</button>
@@ -5294,6 +5282,10 @@ function PlayerInfoPopup({ view, pid, me, onZone, onClose }: {
 const SQ_W = 211
 const SQ_H = 151
 const GAP = 4
+// unscaled footprint (px) of an aura card on the board — .auraimg (46px wide + 3px margin) and
+// .wallimg (34px wide), portrait 63:88 plus border — used to lay out auras sharing one spot
+const AURA_CARD = { w: 52, h: 74 }
+const WALL_CARD = { w: 38, h: 52 }
 const DWELL = 500 // ms a walking unit dwells per square (also how long the battle popup waits for a walk)
 // Fixed mobile "design" canvas: the whole game is laid out at this size then uniformly
 // scaled to the device's visible viewport (see uiScale). Matches the phone-frame
@@ -5305,6 +5297,8 @@ const MOBILE_DESIGN_H = 400
 // (bigger/smaller, never reflowed). Keep in sync with `.game.scaled` in styles.css.
 const DESKTOP_DESIGN_W = 1600
 const DESKTOP_DESIGN_H = 900
+/** the desktop canvas is never wider than this × its height: a wider screen crops the outer parts */
+const DESKTOP_MAX_ASPECT = 2.2
 // Left action rail (square icon+label tiles, like the mobile left menu) and the right sidebar
 // (card preview + log). Both are kept compact so the central board gets the most room. A column
 // gap separates the rail from the board (and the board from the sidebar).
@@ -6337,6 +6331,8 @@ function PromptBox({ view, prompt, send, me, flip, onHover, onGoBack, interceptA
           </div>
           <button
             data-confirm="1"
+            // a forced pick (a cost like Craterize's discard) can't be confirmed short
+            disabled={prompt.data.upTo === false && sel.length < Math.min(max, cards.length)}
             onClick={() => {
               answer(sel.map((s) => Number(s)))
               setSel([])
@@ -7116,13 +7112,13 @@ function siteActions(st: any, view: PlayerView, me: PlayerId, mode: Mode, setMod
   }
   return (
     <div className="unitactions">
-      <b>{site.name}</b>
+      <b>{trapReal ? `🪤 ${trapReal} (looks like ${site.name})` : site.name}</b>
       {abilities.map((a: any) => {
         const reason = (() => { try { return canActivate(st, me, site.id, a.key) } catch { return null } })()
         return (
           <button key={a.key} data-ability={a.key} data-source={site.id} onClick={() => activate(a)}
             disabled={reason !== null} title={reason ?? undefined}>
-            {a.label}
+            {a.key === 'trap:spring' ? `🪤 Spring (${a.cost?.mana ?? 0}): ${a.label}` : a.label}
           </button>
         )
       })}

@@ -1,8 +1,9 @@
 // Rift Valley: 'You may pull apart a partial row or column to make a void in which to play this.'
 //
-// The seam is allowed to sit at the run's own edge, so a WHOLE run of sites slides outward and the
-// rift opens behind it. Insisting that a site stay behind made the card dead on the most ordinary
-// board there is: one road down, nothing to "pull apart", nowhere to play.
+// FAQ: "Can you 'pull apart' a row with a single site? No." — "Choose a row or column with two adjacent
+// sites and at least one void. … one site stays in its current square, and the other site (along with
+// all other contiguous sites in its row or column) shifts one square." So the seam sits between two
+// sites: the one behind it stays, the run from the seam onward slides.
 import { describe, it, expect } from 'vitest'
 import { newGame, keepBoth, act, injectToHand, placeSite, summonCard, answer } from './helpers'
 import { riftShifts } from '../src/cards/scripts/multi-card-utils/rift-entry'
@@ -22,26 +23,24 @@ function playRift(g: GameState, x: number, y: number, want?: string): void {
   answer(g, want ? options.find((o) => o.includes(want)) : options[0])
 }
 
-describe('Rift Valley pulls apart a line of any length', () => {
-  it('opens a rift under a lone site by sliding it one square', () => {
+describe('Rift Valley pulls apart two adjacent sites (FAQ)', () => {
+  it("can't pull apart a lone site", () => {
     const g = newGame() as GameState; keepBoth(g)
     placeSite(g, 0, 'Imperial Road', 2, 2)
-    expect(riftShifts(g, 2, 2).length, 'a single site is still a line that can be pulled apart').toBeGreaterThan(0)
-
-    playRift(g, 2, 2, 'east')
-    expect(siteAtXY(g, 3, 2)?.name, 'the road slid east').toBe('Imperial Road')
-    expect(siteAtXY(g, 2, 2)?.name, 'Rift Valley landed in the void it opened').toBe('Rift Valley')
+    expect(riftShifts(g, 2, 2), 'a single site is not something to pull apart').toEqual([])
   })
 
-  it('slides the whole run, not just part of it', () => {
+  it('one site stays; the other and every site beyond it in the line slides', () => {
     const g = newGame() as GameState; keepBoth(g)
-    placeSite(g, 0, 'Imperial Road', 1, 2)
+    placeSite(g, 0, 'Imperial Road', 0, 2)
+    placeSite(g, 0, 'Rustic Village', 1, 2)
     placeSite(g, 0, 'Rustic Village', 2, 2)
 
     playRift(g, 1, 2, 'east')
-    expect(siteAtXY(g, 2, 2)?.name, 'the road moved up the row').toBe('Imperial Road')
-    expect(siteAtXY(g, 3, 2)?.name, 'and pushed its neighbour along with it').toBe('Rustic Village')
-    expect(siteAtXY(g, 1, 2)?.name, 'the rift opened behind them').toBe('Rift Valley')
+    expect(siteAtXY(g, 0, 2)?.name, 'the site behind the seam stayed').toBe('Imperial Road')
+    expect(siteAtXY(g, 1, 2)?.name, 'the rift opened at the seam').toBe('Rift Valley')
+    expect(siteAtXY(g, 2, 2)?.name, 'the run moved up the row').toBe('Rustic Village')
+    expect(siteAtXY(g, 3, 2)?.name, 'all of it').toBe('Rustic Village')
   })
 
   it('carries the units standing on the sliding sites', () => {
@@ -50,8 +49,15 @@ describe('Rift Valley pulls apart a line of any length', () => {
     placeSite(g, 0, 'Rustic Village', 2, 2)
     const rider = summonCard(g, 0, 'Ogre Goons', 2, 2)
 
-    playRift(g, 1, 2, 'east')
+    playRift(g, 2, 2, 'east')
     expect([rider.x, rider.y], 'the unit travelled with the ground under it').toEqual([3, 2])
+  })
+
+  it("a site that can't be moved (Bedrock) blocks the pull", () => {
+    const g = newGame() as GameState; keepBoth(g)
+    placeSite(g, 0, 'Imperial Road', 1, 2)
+    placeSite(g, 0, 'Bedrock', 2, 2)
+    expect(riftShifts(g, 2, 2).filter((s) => s.axis === 'row'), 'Bedrock would have to slide').toEqual([])
   })
 
   it('offers nothing along a line that is already full, and never pushes off the board', () => {

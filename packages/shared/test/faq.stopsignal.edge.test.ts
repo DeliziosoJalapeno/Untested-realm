@@ -3,7 +3,7 @@
 //  * Mountain Giant may straddle the top/bottom edge with Magellan Globe (FAQ3), and falls to one
 //    side if the Globe leaves (FAQ4).
 import { describe, it, expect } from 'vitest'
-import { newGame, keepBoth, placeSite } from './helpers'
+import { newGame, keepBoth, placeSite, answer } from './helpers'
 import { resolveMovement, isLegalStep } from '../src/engine/movement'
 import { checkStateBased } from '../src/engine/effects'
 import type { GameState, UnitState } from '../src'
@@ -77,6 +77,11 @@ describe('Mountain Giant edge-wrap (Magellan Globe)', () => {
     delete g.artifacts['mg'] // Globe leaves
     checkStateBased(g)
     expect(g.units[giant.id], 'it does not die — it falls to one side').toBeDefined()
+    // rows 2-3 and rows 0-1 are equally close across the old edge: the controller's choice (FAQ)
+    const p = g.prompts[0]
+    expect(p?.cont).toBe('core:oversizedFall')
+    expect(p?.data.squares).toEqual(expect.arrayContaining([{ x: 1, y: 0 }, { x: 1, y: 2 }]))
+    answer(g, { x: 1, y: 2 })
     expect(g.units[giant.id].y, 'settled wholly in-bounds (anchor at row 2 = rows 2,3)').toBe(2)
   })
 })

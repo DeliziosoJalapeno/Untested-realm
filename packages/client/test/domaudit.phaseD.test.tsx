@@ -488,13 +488,9 @@ describe('D.10 Corpse Catapult fling', () => {
     const sq = must(h.container, '[data-sq="2,2"][data-clickable="1"]', 'target square') as HTMLElement
     h.click(sq)
     h.rerender()
-    // one ally here → helper auto-picked → a chooseCards "which corpse?" prompt appears
-    const box = must(h.container, '[data-promptbox="chooseCards"]', 'corpse chooser')
-    const tile = must(box, '[data-choice]', 'the lone corpse tile') as HTMLElement
-    h.click(tile)
-    h.rerender()
-    const confirm = box.querySelector('[data-confirm="1"]') as HTMLButtonElement | null
-    if (confirm) { h.click(confirm); h.rerender() }
+    // one ally here → helper auto-picked; one corpse → taken without a "which corpse?" prompt
+    // (single-option prompts auto-resolve)
+    expect(h.container.querySelector('[data-promptbox="chooseCards"]'), 'no chooser for the lone corpse').toBeNull()
     // POST-STATE: the corpse left the cemetery for the banished pile; bearer + helper tapped;
     // the target square took the fling damage.
     expect(g.players[0].cemetery.includes(deadCard), 'the corpse left the cemetery').toBe(false)

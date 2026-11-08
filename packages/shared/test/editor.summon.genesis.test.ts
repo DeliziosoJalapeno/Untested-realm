@@ -20,15 +20,17 @@ describe('editor summon fires the unit Genesis', () => {
     expect(occupies(yog, 3, 1, 'surface'), 'occupies a far non-head square').toBe(true)
   })
 
-  it('noGenesis opts out — Yog lands as a bare head only', () => {
+  it('noGenesis skips the Genesis, but Yog still occupies everything (a characteristic)', () => {
     const g: GameState = newGame(); keepBoth(g); g.turn = 4
     for (let x = 0; x < GRID_W; x++) for (let y = 0; y < GRID_H; y++) if (y !== 3) placeSite(g, 0, 'Spire', x, y)
 
     expect(applyJudge(g, 0, { k: 'summonUnit', name: 'Yog-Sothoth', player: 1, x: 0, y: 0, region: 'surface', noGenesis: true } as any)).toBeNull()
     const yog = Object.values(g.units).find((u) => u.name === 'Yog-Sothoth')!
     expect(yog, 'Yog exists').toBeTruthy()
-    expect(occupiedSquares(yog).length, 'occupies only its head square').toBe(1)
-    expect(occupies(yog, 3, 1, 'surface'), 'does NOT occupy a far square').toBe(false)
+    // its every-location footprint is a CHARACTERISTIC (FAQ), not a Genesis effect — skipping the Genesis
+    // doesn't shrink it
+    expect(occupiedSquares(yog).length, 'still occupies every square').toBe(GRID_W * GRID_H)
+    expect(occupies(yog, 3, 1, 'surface')).toBe(true)
   })
 
   it('a plain minion editor-summon still just lands (no crash)', () => {

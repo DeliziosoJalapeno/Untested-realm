@@ -248,15 +248,16 @@ makeBatch('V-Z/Ä', 'VWXYZÄä')  // ~79 cards
 
 // Cards the avatar can now cast on the bare generic board (so they escape board-dependence):
 //   • caster-EXPANSION spells (Burning Hands, Firebreathing) — "May be cast by X" lets the avatar cast.
-//   • "an ally does X" spells (Spin Attack, Leap Attack, Whirling Blades, Blaze, Blaze of Glory, Duel,
-//     Joust!, Raze, Shatter Strike) — since "ally" INCLUDES the Avatar, the avatar is a legal target,
+//   • "an ally does X" spells (Spin Attack, Leap Attack, Whirling Blades, Blaze, Blaze of Glory,
+//     Raze, Shatter Strike) — since "ally" INCLUDES the Avatar, the avatar is a legal target,
 //     so the generic-board avatar can cast them directly (no board minion needed). Consecrate ("an ally
 //     Wards its site") and Dream-Quest ("an allied Spellcaster" — the Avatar is a legal target per the FAQ,
 //     it just can't be disabled) belong here too. (Harpyon Urge / Trial by Water also accept the Avatar as
-//     the ally but still need a target MINION, so they stay board-dependent.)
+//     the ally but still need a target MINION, so they stay board-dependent. Duel / Joust! need an enemy
+//     ADJACENT to the chosen ally, so they stay board-dependent too.)
 const AVATAR_CASTABLE_EXPANSION = [
-  'Blaze', 'Blaze of Glory', 'Burning Hands', 'Consecrate', 'Dream-Quest', 'Duel', 'Firebreathing',
-  'Joust!', 'Leap Attack', 'Raze', 'Shatter Strike', 'Spin Attack', 'Whirling Blades',
+  'Blaze', 'Blaze of Glory', 'Burning Hands', 'Consecrate', 'Dream-Quest', 'Firebreathing',
+  'Leap Attack', 'Raze', 'Shatter Strike', 'Spin Attack', 'Whirling Blades',
 ]
 
 // The passive-buff Gifts ("Give an allied minion X … Draw a spell") don't TARGET and merely modify

@@ -59,8 +59,8 @@ describe('Enchantress — the aura minion footprint mirrors the aura area', () =
   })
 })
 
-describe('Enchantress — an aura minion dies over a void, sending its aura to the cemetery', () => {
-  it('when a square it occupies becomes void, it DIES and its aura card goes to the cemetery', () => {
+describe('Enchantress — an aura minion over the void is banished; killed, its aura card goes to the cemetery', () => {
+  it('when a square it occupies becomes void, it is BANISHED with its aura (Keyword: Void — minions there are banished)', () => {
     const g = newGame(); keepBoth(g); g.turn = 5
     const site = placeSite(g, 0, 'Spire', 2, 2)
     const r = injectAura(g, 'Wildfire', { squares: [{ x: 2, y: 2 }], enteredTurn: 3 })
@@ -71,10 +71,10 @@ describe('Enchantress — an aura minion dies over a void, sending its aura to t
     delete (g.sites as any)[site.id] // the site vanishes → the square is now void
     checkStateBased(g)
 
-    expect(g.units[u.id], 'the aura minion died').toBeUndefined()
+    expect(g.units[u.id], 'the aura minion is gone').toBeUndefined()
     expect(g.auras[r], 'the aura is gone from the realm').toBeUndefined()
-    expect(g.players[0].cemetery, 'its card went to the cemetery').toContain(auraCard)
-    expect(g.players[0].banished).not.toContain(auraCard) // NOT banished
+    expect(g.players[0].banished, 'banished, like any minion left in the void').toContain(auraCard)
+    expect(g.players[0].cemetery).not.toContain(auraCard)
   })
 
   it('when the aura minion is killed (combat), the aura card goes to the cemetery too', () => {

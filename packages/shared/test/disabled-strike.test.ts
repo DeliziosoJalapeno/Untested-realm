@@ -77,7 +77,7 @@ describe('other actions a disabled ally cannot take', () => {
   it('Trial by Water: a disabled ally submerges no one', () => {
     for (const asleep of [true, false]) {
       const g = newGame() as GameState; keepBoth(g); waiveThreshold(g, 0)
-      placeSite(g, 0, 'Rustic Village', 2, 2)
+      placeSite(g, 0, 'Stream', 2, 2) // water: a forced submerge fails on land
       const ally = summonCard(g, 0, 'Slumbering Giantess', 2, 2); ally.enteredTurn = -1
       const victim = summonCard(g, 1, 'Wild Boars', 2, 2); victim.enteredTurn = -1
       if (asleep) ally.disabled = true
