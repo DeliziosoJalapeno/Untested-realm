@@ -1951,6 +1951,20 @@ function strikerInteracted(state: GameState, striker: UnitState): void {
   }
 }
 
+/** The unbroken Lances a unit carries: each adds +1 to its next strike against units, then breaks. */
+function heldLances(state: GameState, unit: UnitState): string[] {
+  return unit.carrying.filter((id) => state.artifacts[id]?.name === 'Lance' && !state.artifacts[id].counters?.broken)
+}
+
+function breakLances(state: GameState, unit: UnitState, lances: string[]): void {
+  if (!lances.length) return
+  for (const lanceId of lances) {
+    unit.carrying = unit.carrying.filter((id) => id !== lanceId)
+    delete state.artifacts[lanceId]
+  }
+  pushLog(state, unit.controller, `${unit.name}'s lance${lances.length > 1 ? 's' : ''} shatter${lances.length > 1 ? '' : 's'} after the blow.`)
+}
+
 /** Strike each of `targetIds` with the striker SIMULTANEOUSLY (rulebook/FAQ: a "strike
  *  each enemy" effect deals all its strikes at once — Whirling Blades, Falling Star, …).
  *  So: fire each "when this strikes" hook, apply ALL the damage, THEN resolve deaths
@@ -1963,7 +1977,9 @@ export function strikeAllSimultaneous(state: GameState, strikerId: string, targe
   const targets = [...new Set(targetIds)].filter((id) => id !== strikerId && state.units[id]).map((id) => state.units[id]!)
   if (!targets.length) return
   const kw = effKeywords(state, striker)
-  const power = effAttack(state, striker)
+  // a Lance adds +1 to each of these strikes against units, then breaks
+  const lances = heldLances(state, striker)
+  const power = effAttack(state, striker) + lances.length
   const lethalVs = !striker.silenced ? getScript(striker.name)?.lethalVs : undefined
   const strikeHook = !striker.silenced ? getScript(striker.name)?.onStrike : undefined
   // 1. "whenever this strikes" fires for each target (a strike is an action, even at 0 power)
@@ -1980,6 +1996,7 @@ export function strikeAllSimultaneous(state: GameState, strikerId: string, targe
       })
     }
   }
+  breakLances(state, striker, lances)
   checkStateBased(state) // simultaneous deaths
   // 3. per target: "when struck" (survivors) or kill triggers (the fallen)
   for (const snap of snaps) {
@@ -2791,9 +2808,26 @@ export function summonBlockedAt(state: GameState, at: { x: number; y: number; re
   return false
 }
 
+/** A minion entering already silenced (by its own state or a silencing static: Bower of Bliss, Sisters
+ *  of Silence) gets no Stealth, Ward or Lance: since Oct 2026 those are entry triggers like Genesis. */
+export function entersSilenced(state: GameState, unit: UnitState): boolean {
+  if (unit.isAvatar) return false
+  return !!unit.silenced || (hushedByStatic(state, unit) && !silenceImmune(state, unit))
+}
+
+/** Clears the Stealth and Ward marks a minion entering silenced would otherwise get. */
+export function dropSilencedEntryMarks(state: GameState, unit: UnitState): boolean {
+  if (!entersSilenced(state, unit)) return false
+  unit.ward = undefined
+  unit.stealth = undefined
+  return true
+}
+
 /** Lance: a minion enters play carrying a Lance artifact token — one per printed Lance (Thankless
- *  Squire's "Lance, Lance, Lance" brings three). Every way of entering gets them, cast or effect-summoned. */
+ *  Squire's "Lance, Lance, Lance" brings three). Every way of entering gets them, cast or effect-summoned.
+ *  A minion entering silenced gets no Lance, and loses the Stealth and Ward marks it would enter with. */
 export function giveEntryLances(state: GameState, unit: UnitState): void {
+  if (dropSilencedEntryMarks(state, unit)) return
   const kw = getKeywords(unit.name)
   for (let n = kw.lance ? kw.lanceCount ?? 1 : 0; n > 0; n--) {
     const lanceCardId = newId(state, 'c')
@@ -4410,6 +4444,8 @@ export function makeCtx(
       }
       const tu = state.units[target.unit]
       if (!tu) return
+      // a Lance: the bearer's next strike against a unit deals +1, then the Lance breaks
+      const lances = heldLances(state, attacker)
       // "whenever this unit strikes" — fires even at 0 power (a strike still happened)
       // the striker's OWN triggers run for its controller, whoever's effect made it strike (Backstab on an
       // enemy minion: "kill an enemy" is judged from that minion's side)
@@ -4424,13 +4460,14 @@ export function makeCtx(
       }
       const snapshot = { ...tu } // pre-death snapshot for kill hooks (position intact)
       const wasAvatar = tu.isAvatar
-      if (power > 0 && state.units[tu.id]) {
+      if (power + lances.length > 0 && state.units[tu.id]) {
         const lethalVs = !attacker.silenced ? getScript(attacker.name)?.lethalVs : undefined
-        dealDamageToUnit(state, tu, power, controller, {
+        dealDamageToUnit(state, tu, power + lances.length, controller, {
           lethal: (kw.lethal || !!lethalVs?.(state, attacker, tu)) && !tu.isAvatar,
           source: { player: controller, kind: 'strike', attackerId: attacker.id, name: attacker.name },
         })
       }
+      breakLances(state, attacker, lances)
       // "whenever an ally strikes an enemy Avatar" (Interrogator) — a strike, damage or not
       if (wasAvatar) emitEvent(state, 'onAllyStrikesAvatar', attacker, snapshot)
       checkStateBased(state)
