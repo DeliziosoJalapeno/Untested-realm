@@ -3295,14 +3295,28 @@ describe('Evil Twin copying a printed-Ward minion', () => {
 })
 
 describe('Stealth is a spendable token (rulebook: lost after the minion interacts)', () => {
-  it('a Ranged unit shooting loses Stealth', () => {
+  it('a Ranged unit whose shot hits nothing keeps Stealth', () => {
     const g = newGame(7)
     keepBoth(g)
     placeSite(g, 0, 'Rustic Village', 2, 1)
     const archer = summonCard(g, 0, 'Belmotte Longbowmen', 2, 1)
     archer.stealth = true
     act(g, 0, { t: 'activate', sourceId: archer.id, ability: 'ranged', extra: { direction: 'e' } })
-    expect(archer.stealth).toBe(false) // the shot IS an interaction — token spent
+    expect(archer.stealth).toBe(true) // the shot hit nothing (no damage dealt) — token kept
+    expect(archer.interactedTurn).toBe(g.turn) // but it still interacted: no Drop this turn
+  })
+
+  it('a Ranged unit whose shot hits a unit loses Stealth', () => {
+    const g = newGame(7)
+    keepBoth(g)
+    placeSite(g, 0, 'Rustic Village', 2, 1)
+    placeSite(g, 0, 'Rustic Village', 3, 1)
+    const archer = summonCard(g, 0, 'Belmotte Longbowmen', 2, 1)
+    archer.stealth = true
+    const foe = summonCard(g, 1, 'Nimbus Jinn', 3, 1)
+    foe.enteredTurn = -1
+    act(g, 0, { t: 'activate', sourceId: archer.id, ability: 'ranged', extra: { direction: 'e' } })
+    expect(archer.stealth).toBe(false) // the shot struck a unit — token spent
   })
 
   it('printed Stealth does NOT come back: the second attack is defendable', () => {

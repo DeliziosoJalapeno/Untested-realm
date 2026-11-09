@@ -36,14 +36,14 @@ describe('Mudslide vs the void', () => {
     expect(g.units[av.id].x, 'with a site to slide onto, the Avatar moves normally').toBe(0)
   })
 
-  it('slides an ordinary non-voidwalk unit into the void — where it is banished', () => {
+  it('will NOT slide an ordinary unit into the void either (a forced step is to an adjacent location)', () => {
     const g: any = newGame(); keepBoth(g)
     const ms = mudslide(g, 1, 0)
     placeSite(g, 0, 'Active Volcano', 1, 2)
     const foe = summonCard(g, 1, 'Escyllion Cyclops', 1, 2); foe.enteredTurn = 0
-    // column x=0 empty → (0,2) is the void; Mudslide pushes the non-Avatar in, and it is banished
+    // column x=0 empty → (0,2) is the void: the minion holds its ground
     slide(g, ms.id, 'left')
-    expect(g.units[foe.id], 'a non-voidwalk minion shoved into the void is banished').toBeUndefined()
-    expect(g.players[1].banished).toContain(foe.cardId)
+    expect(g.units[foe.id]?.x, 'a minion is not shoved into the void').toBe(1)
+    expect(g.players[1].banished).not.toContain(foe.cardId)
   })
 })
