@@ -87,8 +87,11 @@ export function CardHover({ name, flipped, art }: { name: string; flipped?: bool
   // on the cramped mobile panel, collapse the blank lines between abilities (card text uses "\n\n")
   // so the whole effect fits without a wall of empty space
   const faceText = mobile ? raw.replace(/\n{2,}/g, '\n') : raw
+  // sites are LANDSCAPE cards: flag them so the in-game panel can widen for them (see styles.css) —
+  // at the portrait slot's width a site renders ~half the height of a spell and its text is unreadable
+  const landscape = def.type === 'Site'
   return (
-    <div className="hovercard">
+    <div className={`hovercard${landscape ? ' landscape' : ''}`}>
       <CardImg name={name} flipped={flipped} art={art} className="hoverimg" />
       <div className="hoverinfo">
         <b>{name}</b>
