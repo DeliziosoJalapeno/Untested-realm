@@ -754,6 +754,20 @@ h1, h2, h3 { font-weight: 600; }
 .table { display: flex; flex-direction: column; padding: 6px 0; overflow-x: hidden; overflow-y: auto; }
 .sidebar { border-left: 1px solid #303752; display: flex; flex-direction: column; overflow: hidden; }
 .preview { flex: 0 0 auto; padding: 8px; min-height: 480px; }
+/* LANDSCAPE (site) cards in the desktop detail panel. The panel is sized for portrait cards, so a
+   site squeezed into the same width came out ~half as tall with unreadable text. Give sites more
+   room instead: the panel grows leftwards (--pop) across the empty gutter beside the board —
+   stopping at the board edge, so nothing on the table is covered — up to a portrait card's scale
+   (490px ≙ the 350px portrait cap). On a wide sidebar there is room already, so --pop falls to 0.
+   It never takes pointer events, so whatever sits underneath stays hoverable/clickable. */
+.game.scaled > .sidebar { overflow: visible; }
+.game.scaled .preview .hovercard.landscape {
+  --pop: clamp(0px, calc(504px - 100%), 72px);
+  position: relative; z-index: 30; margin-left: calc(-1 * var(--pop)); padding: 6px;
+  pointer-events: none; box-shadow: -6px 6px 18px rgba(0, 0, 0, .55);
+}
+.game.scaled .preview .hovercard.landscape .hoverimg { max-width: 490px; }
+.game.scaled .preview .hovercard.landscape .hoverinfo { padding: 0 4px 4px; }
 .log { flex: 1; overflow-y: auto; padding: 8px; font-size: 12px; color: #b9c0d8; border-top: 1px solid #303752; }
 .logline { padding: 1px 0; border-bottom: 1px dotted #262b41; }
 
