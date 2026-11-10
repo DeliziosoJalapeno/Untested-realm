@@ -3,7 +3,7 @@ import {
   applyAction,
   applyAchievements,
   createGame,
-  starterDecks,
+  featuredDecks,
   viewFor,
   actingSeatFor,
   settleClock,
@@ -129,10 +129,10 @@ function isCardPlay(a: Action): boolean {
 /** every deck carries a stable id; starters get a deterministic one */
 function ensureDeckId(d: DeckList): DeckList {
   if (d.id) return d
-  return { ...d, id: starterDecks.some((s) => s.name === d.name) ? `starter:${d.name}` : newDeckId() }
+  return { ...d, id: featuredDecks.some((s) => s.name === d.name) ? `starter:${d.name}` : newDeckId() }
 }
 function isStarter(d: DeckList): boolean {
-  return starterDecks.some((s) => s.name === d.name)
+  return featuredDecks.some((s) => s.name === d.name)
 }
 function localCustomDecks(): DeckList[] {
   try { return (JSON.parse(localStorage.getItem('sorcery-decks') ?? '[]') as DeckList[]) } catch { return [] }
@@ -156,7 +156,7 @@ export function loadDecks(): DeckList[] {
   })
   if (changed) writeCustom(custom)
   const names = new Set(custom.map((d) => d.name))
-  const starters = starterDecks.filter((d) => !names.has(d.name)).map(ensureDeckId)
+  const starters = featuredDecks.filter((d) => !names.has(d.name)).map(ensureDeckId)
   // pickers show YOUR decks first (alphabetical), then the built-in default decks (alphabetical)
   const byName = (a: DeckList, b: DeckList) => a.name.localeCompare(b.name)
   return [...custom.slice().sort(byName), ...starters.slice().sort(byName)]
