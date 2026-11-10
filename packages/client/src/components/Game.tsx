@@ -448,6 +448,7 @@ function GameInner({
   const [showSymbols, setShowSymbols] = useState(false) // GUI symbol legend (Q / ❔ button)
   // report-a-bug modal: a message + a snapshot (replay-so-far + scenario) captured by onReportBug
   const [bugOpen, setBugOpen] = useState(false)
+  const [flagState, setFlagState] = useState<'idle' | 'saved' | 'failed'>('idle') // the rail's Flag-for-review button
   const [scenOpen, setScenOpen] = useState(false) // 💾 save this board as a scenario (online games, replays)
   const [bugText, setBugText] = useState('')
   const [bugState, setBugState] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
@@ -3363,6 +3364,20 @@ function GameInner({
           {!isSpectator && session.onReportBug && (
             <button className={`railbtn ${bugOpen ? 'selected' : ''}`} title="Report a bug — saves your message + this game's replay & board for the admins" onClick={() => { setBugState('idle'); setBugOpen(true) }}>
               <span className="ri">🐛</span><span className="rl">Report bug</span>
+            </button>
+          )}
+          {!isSpectator && session.onFlagForReview && (
+            <button
+              className={`railbtn ${flagState === 'saved' ? 'selected' : ''}`}
+              title="Flag this moment for review — add a note about what went wrong (a bot misplay, a rules error). The game is saved to match-replays/review on this machine."
+              onClick={async () => {
+                const note = window.prompt('Flag this moment for review.\nWhat went wrong? (for example: "bot stole my minion and never attacked with it")')
+                if (note === null) return
+                try { await session.onFlagForReview!(note); setFlagState('saved') } catch { setFlagState('failed') }
+                window.setTimeout(() => setFlagState('idle'), 2500)
+              }}
+            >
+              <span className="ri">🚩</span><span className="rl">{flagState === 'saved' ? 'Flagged ✓' : flagState === 'failed' ? 'Not saved' : 'Flag'}</span>
             </button>
           )}
           {session.sendChat && (

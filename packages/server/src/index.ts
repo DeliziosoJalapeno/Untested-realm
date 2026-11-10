@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync, existsSync, statSync } from 'node:fs'
 import { join, extname, resolve } from 'node:path'
 import { WebSocketServer, WebSocket } from 'ws'
+import { saveLocalReplay, isLoopback } from './localReplays'
 import { users, sessions, decks as deckStore, collections as collectionStore, scenarios as scenarioStore, replays as replayStore, achievements as achievementStore, bugs as bugStore, type UserRow } from './db'
 import {
   hashPassword, verifyPassword, newSessionToken, sha256,
@@ -1331,6 +1332,12 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, path: string
   const method = req.method ?? 'GET'
   if (method === 'OPTIONS') { sendJson(res, 204, {}); return }
   try {
+    // --- local match archive: a game played on this machine is written to <repo>/match-replays ---
+    if (path === '/api/local-replay' && method === 'POST') {
+      if (!isLoopback(req)) return sendJson(res, 403, { error: 'Local only.' })
+      const out = saveLocalReplay(await readJsonBody(req, 4 * 1024 * 1024))
+      return sendJson(res, out.status, out.body)
+    }
     // --- register / login (rate-limited per IP) ---
     if (path === '/api/register' && method === 'POST') {
       const ipKey = `reg:${clientIp(req)}`

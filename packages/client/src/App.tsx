@@ -56,6 +56,9 @@ export interface Session {
   onSaveReplay?: (name: string, isPublic: boolean) => Promise<void>
   /** report a bug mid-game: captures the replay-so-far + a scenario snapshot (online = server-side) */
   onReportBug?: (msg: string) => Promise<void> | void
+  /** local games on your own machine: mark this moment for review (with a note) and write the game to
+   *  the match archive now. Resolves to the saved file's name. */
+  onFlagForReview?: (note: string) => Promise<string>
   /** online creator, before an opponent joins: change your deck and/or the room clock */
   updateRoom?: (deck: DeckList, clock: ClockConfig | null) => void
   /** online: has the opponent granted this seat editor access? (always true offline) */
@@ -328,6 +331,11 @@ export default function App() {
   const localRef = useRef<GameState | null>(null)
   // live replay recording for the current LOCAL game (hotseat / vs-computer); null online or when off
   const recordingRef = useRef<ReplayRecord | null>(null)
+  // local match archive (see archiveLocalGame): moments flagged for review, the bot difficulty, and
+  // whether the finished game has been written yet
+  const reviewFlagsRef = useRef<{ at: number; turn: number; note: string }[]>([])
+  const archiveDifficultyRef = useRef<string | null>(null)
+  const archivedEndRef = useRef(false)
   const savedReplayIdRef = useRef<string | null>(null) // reused across re-saves so one game = one DB entry
   // ONLINE replays are recorded server-side and handed to both seated players at game-over (rides in
   // synced state). We hold the received record + a stable save id (one online game = one DB entry).
@@ -415,6 +423,7 @@ export default function App() {
       if (!res2.ok) { applyAction(local, 1, { t: 'concede' }); applied = { t: 'concede' } }
     }
     recordingRef.current?.actions.push({ seat: 1, action: applied }) // for replay
+    archiveIfOver(local)
     // if this main action didn't move the bot's score, BAN it from the bot's search for the rest of
     // the turn (so it isn't re-picked in a loop). endTurn clears the ban set for the next turn.
     if (action.t === 'endTurn') botBannedRef.current.clear()
@@ -458,6 +467,7 @@ export default function App() {
     }
     if (!session?.noAchv) { try { applyAchievements(JSON.parse(snapshot), local, actor, action) } catch { /* cosmetic */ } }
     recordingRef.current?.actions.push({ seat: actor, action }) // for replay
+    archiveIfOver(local)
     pushLocalHistory0(snapshot)
     bumpSession()
     return true
@@ -536,6 +546,7 @@ export default function App() {
   function beginHotseatState(state: GameState, noAchv = false) {
     localHistory.current = []
     recordingRef.current = null // scenarios (which reuse this) don't record; startHotseat sets it after
+    reviewFlagsRef.current = []; archiveDifficultyRef.current = null; archivedEndRef.current = false
     savedReplayIdRef.current = null
     localClockTick.current = Date.now()
     const sess: Session = {
@@ -547,6 +558,7 @@ export default function App() {
       requestUndo: localUndo, // both players share the screen: undo is by consent
       onSaveReplay: saveReplay,
       onReportBug: reportBugLocal,
+      onFlagForReview: flagForReview,
       send: (action: Action) => {
         // in hotseat the acting player is whoever the UI says is acting
         armGoBack(action)
@@ -620,6 +632,48 @@ export default function App() {
     if (localHistory.current.length > 80) localHistory.current.shift()
   }
 
+  /** Write the current local game to the match archive on this machine (the dev server saves it under
+   *  match-replays/ in the repo; see packages/server/src/localReplays.ts). Called automatically when a
+   *  recorded game ends and whenever a moment is flagged. Quietly does nothing where the archive is off
+   *  (the hosted site), so play is never interrupted. */
+  async function archiveLocalGame(): Promise<string> {
+    const r = recordingRef.current
+    const local = localRef.current
+    if (!r || !local) throw new Error('This game is not being recorded.')
+    const finished = local.phase === 'over'
+    const res = await fetch('/api/local-replay', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        replay: { ...r, winner: finished ? local.winner : undefined },
+        finished,
+        turn: local.turn,
+        botDifficulty: archiveDifficultyRef.current,
+        flags: reviewFlagsRef.current.filter((f) => f.at <= r.actions.length),
+      }),
+    })
+    const body = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(body?.error ?? 'Could not save the game.')
+    return String(body.file ?? '')
+  }
+  function archiveIfOver(local: GameState) {
+    if (local.phase !== 'over' || archivedEndRef.current || !recordingRef.current) return
+    archivedEndRef.current = true
+    void archiveLocalGame().catch(() => { /* archive off or unreachable: nothing to do */ })
+  }
+  /** flag the current moment of a local game for review, with a note, and save the game now */
+  async function flagForReview(note: string): Promise<string> {
+    const r = recordingRef.current
+    const local = localRef.current
+    if (!r || !local) throw new Error('This game is not being recorded.')
+    const flag = { at: r.actions.length, turn: local.turn, note: note.trim() }
+    reviewFlagsRef.current.push(flag)
+    try { return await archiveLocalGame() } catch (e) {
+      reviewFlagsRef.current = reviewFlagsRef.current.filter((f) => f !== flag)
+      throw e
+    }
+  }
+
   /** save a replay of the current local game to your account (public or private). */
   async function saveReplay(name: string, isPublic: boolean): Promise<void> {
     const r = recordingRef.current
@@ -672,6 +726,7 @@ export default function App() {
       requestUndo: localUndo, // the computer is a gracious opponent
       onSaveReplay: saveReplay,
       onReportBug: reportBugLocal,
+      onFlagForReview: flagForReview,
       send: (action: Action) => {
         armGoBack(action)
         runLocal(0, action)
@@ -681,6 +736,7 @@ export default function App() {
     setSession(sess)
     setPage('game')
     recordingRef.current = startReplay('bot', decks, ['You', 'Computer'], seed, first, clock, secondSeer)
+    reviewFlagsRef.current = []; archiveDifficultyRef.current = difficulty; archivedEndRef.current = false
   }
 
   // apply exactly ONE bot action (seat 1). Shared by the auto-timer and the
