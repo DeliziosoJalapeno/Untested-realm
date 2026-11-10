@@ -134,7 +134,7 @@ export function viewFor(state: GameState, player: PlayerId | null, opts?: { reve
     artifacts: state.artifacts,
     auras: state.auras,
     prompts: prompts as any,
-    log: state.log.slice(-200),
+    log: state.log.slice(-500), // enough of the match for the client's log search to reach back
     winner: state.winner,
     draw: state.draw,
     nextId: 0,

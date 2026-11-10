@@ -770,6 +770,15 @@ h1, h2, h3 { font-weight: 600; }
 .game.scaled .preview .hovercard.landscape .hoverinfo { padding: 0 4px 4px; }
 .log { flex: 1; overflow-y: auto; padding: 8px; font-size: 12px; color: #b9c0d8; border-top: 1px solid #303752; }
 .logline { padding: 1px 0; border-bottom: 1px dotted #262b41; }
+.logwrap { flex: 1; min-height: 0; display: flex; flex-direction: column; border-top: 1px solid #303752; }
+.logwrap .log { border-top: none; min-height: 0; }
+.logsearch { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; padding: 6px 8px 0; }
+.logsearch input { flex: 1; min-width: 0; padding: 3px 6px; font-size: 12px; color: #dfe4f5; background: #141828; border: 1px solid #303752; border-radius: 4px; }
+.logsearch input:focus { outline: none; border-color: #6f7fc0; }
+.logsearch button { padding: 1px 6px; font-size: 11px; }
+.logcount { flex: 0 0 auto; font-size: 11px; color: #8a92b0; white-space: nowrap; }
+.logturn { display: inline-block; min-width: 20px; margin-right: 2px; font-size: 10px; color: #7a829f; }
+.logempty { padding: 6px 0; color: #8a92b0; font-style: italic; }
 
 /* card names inside the log (and anywhere .cardref is used): coloured by element,
    clickable/hoverable to show the card in the lateral detail panel */
@@ -1040,6 +1049,7 @@ button.autobattle:hover:not(:disabled) { background: #4a5cc0; }
   background: #0f111a; z-index: 15;
 }
 .game.mobile .sidebar .log { display: none; }
+.game.mobile .sidebar .logwrap { display: none; }
 .game.mobile .preview { min-height: 0; flex: 1; overflow: auto; }
 
 /* HAND: bottom overlay over the board, toggled by the floating centre-bottom 🂠 button */
@@ -1067,6 +1077,8 @@ button.autobattle:hover:not(:disabled) { background: #4a5cc0; }
 }
 .game.mobile .m-logs-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
 .game.mobile .m-logs .log { display: block; flex: 1; overflow-y: auto; font-size: 12px; color: #b9c0d8; }
+.game.mobile .m-logs .logwrap { border-top: none; }
+.game.mobile .m-logs .logsearch { padding: 0 0 6px; }
 
 /* EDITOR (judge tools) must stay inside the frame — fill the board area, scrollable */
 .game.mobile .judgepanel {

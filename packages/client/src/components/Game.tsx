@@ -3444,9 +3444,7 @@ function GameInner({
       {mobile && logsOpen && (
         <div className="m-logs">
           <div className="m-logs-head"><b>Log</b><button onClick={() => setLogsOpen(false)}>✕</button></div>
-          <div className="log">
-            {view.log.slice(-60).map((e, i) => (<div key={i} className="logline"><LogLine msg={e.msg} onPick={setHover} /></div>))}
-          </div>
+          <GameLog log={view.log} tail={60} onPick={setHover} />
         </div>
       )}
 
@@ -4614,13 +4612,7 @@ function GameInner({
             ? <FaqPanel name={hover} />
             : (hover ?? oppPlay) && <CardHover name={(hover ?? oppPlay)!} flipped={hover ? hoverFlip : false} art={hover ? hoverArt : undefined} />}
         </div>
-        <div className="log">
-          {view.log.slice(-40).map((e, i) => (
-            <div key={i} className="logline">
-              <LogLine msg={e.msg} onPick={setHover} />
-            </div>
-          ))}
-        </div>
+        <GameLog log={view.log} tail={40} onPick={setHover} />
       </aside>
 
       {/* mulligan */}
@@ -5492,6 +5484,44 @@ function auraWallBg(name: string): string {
 }
 /** a log line with every card name turned into a coloured, clickable reference
  *  (click / hover → show it in the lateral detail panel). */
+/** The game log with a search box. Empty box: the latest `tail` lines, as before. With a query: every
+ *  line of the log the client holds that contains it (case-insensitive, matched against the text as
+ *  displayed), each prefixed with its turn so an old line can be placed. Esc or ✕ clears. */
+function GameLog({ log, tail, onPick }: { log: { turn: number; msg: string }[]; tail: number; onPick: (name: string) => void }) {
+  const [query, setQuery] = useState('')
+  const needle = query.trim().toLowerCase()
+  const lines = useMemo(
+    () => (needle ? log.filter((e) => relabelCoords(e.msg).toLowerCase().includes(needle)) : log.slice(-tail)),
+    [log, needle, tail],
+  )
+  return (
+    <div className="logwrap">
+      <div className="logsearch">
+        <input
+          type="text"
+          value={query}
+          placeholder="Search log…"
+          aria-label="Search the game log"
+          spellCheck={false}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Escape') { setQuery(''); e.currentTarget.blur() } }}
+        />
+        {needle && <span className="logcount">{lines.length} of {log.length}</span>}
+        {query && <button type="button" title="Clear search" aria-label="Clear search" onClick={() => setQuery('')}>✕</button>}
+      </div>
+      <div className="log">
+        {needle && lines.length === 0 && <div className="logempty">No log lines match.</div>}
+        {lines.map((e, i) => (
+          <div key={i} className="logline">
+            {needle && <span className="logturn">T{e.turn}</span>}
+            <LogLine msg={e.msg} onPick={onPick} />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function LogLine({ msg, onPick }: { msg: string; onPick: (name: string) => void }) {
   msg = relabelCoords(msg) // show square names (a1…) in the player's chosen coordinate system
   const re = cardNameRegex()
