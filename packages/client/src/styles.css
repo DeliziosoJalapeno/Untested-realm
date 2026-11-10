@@ -1336,6 +1336,17 @@ button.autobattle:hover:not(:disabled) { background: #4a5cc0; }
 /* ── spell-cast reveal (BOTH players): golden caster + spell name, plus a numbered damage
    grid OR red-glowing affected sites. Full brightness for 2s, then fades over the next 3s. ── */
 .castfx-fade { animation: castfxfade 5s ease-out forwards; }
+/* arrows from the caster to what its spell / ability touched */
+.castfx-arrows { position: absolute; left: 0; top: 0; z-index: 15; pointer-events: none; overflow: visible; }
+.castfx-arrow-edge { stroke: #0b0d16; stroke-width: 11; stroke-linecap: round; opacity: .85; }
+.castfx-arrow { stroke-width: 6; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 1; animation: castarrowdraw .35s ease-out forwards; filter: drop-shadow(0 0 6px rgba(0, 0, 0, .8)); }
+@keyframes castarrowdraw { to { stroke-dashoffset: 0; } }
+/* cast panel (in the card preview): the card just cast / ability just used, and what it did */
+.castpanel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; font-size: 12px; font-weight: 700; color: #ffd98a; }
+.castpanel-head button { padding: 0 6px; font-size: 11px; }
+.castpanel-lines { margin-top: 6px; padding-top: 6px; border-top: 1px solid #303752; font-size: 12px; color: #c9d0e6; }
+.castpanel-sub { margin-bottom: 2px; font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: #8a92b0; }
+.castpanel-line { padding: 1px 0; }
 @keyframes castfxfade { 0%, 40% { opacity: 1; } 100% { opacity: 0; } }
 /* the caster UNIT chip glows gold (rendered inside UnitChip, not a square tile) */
 .castfx-unitglow {

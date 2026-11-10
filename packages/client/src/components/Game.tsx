@@ -825,6 +825,8 @@ function GameInner({
     | { cells: { x: number; y: number; dmg: number }[]; redSites: { x: number; y: number }[]; element: string; name: string; casterId: string; caster: { x: number; y: number } | null; id: number }
     | null
   >(null)
+  // the cast panel that goes with it: the card, who played it, and the log lines it produced
+  const [castInfo, setCastInfo] = useState<{ card: string; caption: string; byMe: boolean | null; lines: string[]; id: number } | null>(null)
   const areaFxSeen = useRef<number>(-1)
   const areaSeq = (view as any).flow?.areaReveal?.seq
   useEffect(() => {
@@ -847,6 +849,14 @@ function GameInner({
     // OR ANY magic cast / activated ability (the golden caster + writing always animate, even if
     // nothing was affected — an ability always lights its own caster site, see sealAbilityReveal)
     if (cells.length < 2 && redSites.length < 1 && !((rev.spell || rev.ability) && caster)) { setAreaFx(null); return }
+    // cast panel: the card + what it did. Only for a real card (the avatar's "plays a site" reveal has
+    // a sentence for a name, not a card).
+    const cardName = revealCardName(rev)
+    if (cardName) {
+      const owner = cu ? (cu as any).controller : null
+      setCastInfo({ card: cardName, caption: rev.name && rev.name !== cardName ? rev.name : '', byMe: owner === 0 || owner === 1 ? owner === me : null, lines: (rev.lines ?? []) as string[], id: rev.seq })
+      setBigPops((prev) => prev.filter((bp) => bp.name !== cardName)) // the panel shows the same card
+    } else setCastInfo(null) // never leave an older card beside a newer reveal
     setAreaFx({ cells, redSites, element: rev.element ?? 'none', name: rev.name ?? '', casterId: rev.casterId ?? '', caster, id: rev.seq })
     const t = setTimeout(() => setAreaFx((cur) => (cur && cur.id === rev.seq ? null : cur)), 5000)
     return () => clearTimeout(t)
@@ -4443,6 +4453,7 @@ function GameInner({
             return (
               <>
                 {/* the caster UNIT glows gold via its UnitChip (castfx-unitglow), not a square tile */}
+                <CastArrows key={`cf-arrows${areaFx.id}`} from={areaFx.caster} to={[...areaFx.redSites, ...areaFx.cells]} rgb={rgb} flip={flip} />
                 {areaFx.redSites.map((s) => (
                   <div key={`cf-red${areaFx.id}:${s.x},${s.y}`} className="castfx-red castfx-fade" style={overlayRect([s], flip)} aria-hidden="true" />
                 ))}
@@ -4625,7 +4636,13 @@ function GameInner({
         <div className="preview">
           {faqView
             ? <FaqPanel name={hover} />
-            : (hover ?? oppPlay) && <CardHover name={(hover ?? oppPlay)!} flipped={hover ? hoverFlip : false} art={hover ? hoverArt : undefined} />}
+            : hover
+              ? <CardHover name={hover} flipped={hoverFlip} art={hoverArt} />
+              // nothing hovered: the last spell cast / ability used (by either player) with what it did,
+              // else the last card the opponent played
+              : castInfo
+                ? <CastPanel info={castInfo} onClose={() => setCastInfo(null)} />
+                : oppPlay && <CardHover name={oppPlay} />}
         </div>
         <GameLog log={view.log} tail={40} onPick={setHover} />
       </aside>
@@ -5621,6 +5638,91 @@ function EvilIcon({ className }: { className?: string }) {
  * continue button dismisses it immediately. The parent keys this by the play
  * counter, so each fresh play remounts it with a fresh timer.
  */
+/** a card by name, or null when the name is not a card (a caption, a token the client lacks…) */
+function cardDefOrNull(name: string): ReturnType<typeof getCard> | null {
+  try { return getCard(name) } catch { return null }
+}
+
+/** the card behind a cast reveal: the engine's `card`, else recovered from its caption
+ *  ("<card>'s ability", "<card> shoots!", "<avatar> plays <site>") */
+function revealCardName(rev: any): string {
+  const candidates = [rev?.card, ...[/^(.+)'s ability$/, /^(.+) shoots!$/, / plays (.+)$/].map((re) => String(rev?.name ?? '').match(re)?.[1])]
+  return candidates.find((c): c is string => typeof c === 'string' && !!c && !!cardDefOrNull(c)) ?? ''
+}
+
+/**
+ * Arrows from the caster's square to every square its spell or ability touched, drawn in the board's
+ * overlay coordinates (same layout maths as overlayRect). Each arrow stops short of the target's centre
+ * so it points AT the card rather than covering it, draws itself in, then fades with the rest of the
+ * cast reveal. Wide area spells would be a fan of arrows over a grid that already numbers each square,
+ * so past a handful of targets the arrows are skipped.
+ */
+function CastArrows({ from, to, rgb, flip }: { from: { x: number; y: number } | null; to: { x: number; y: number }[]; rgb: string; flip: boolean }) {
+  if (!from) return null
+  const centre = (s: { x: number; y: number }) => {
+    const col = flip ? GRID_W - 1 - s.x : s.x
+    const row = flip ? s.y : GRID_H - 1 - s.y
+    return { cx: col * (SQ_W + GAP) + SQ_W / 2, cy: row * (SQ_H + GAP) + SQ_H / 2 }
+  }
+  const seen = new Set<string>([`${from.x},${from.y}`])
+  const targets = to.filter((t) => { const k = `${t.x},${t.y}`; if (seen.has(k)) return false; seen.add(k); return true })
+  if (!targets.length || targets.length > 8) return null
+  const a = centre(from)
+  const W = GRID_W * (SQ_W + GAP) - GAP
+  const H = GRID_H * (SQ_H + GAP) - GAP
+  const id = `castarrow-${rgb.replace(/,/g, '-')}`
+  return (
+    <svg className="castfx-arrows castfx-fade" width={W} height={H} viewBox={`0 0 ${W} ${H}`} aria-hidden="true">
+      <defs>
+        <marker id={id} viewBox="0 0 10 10" refX="7" refY="5" markerWidth="4.2" markerHeight="4.2" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill={`rgb(${rgb})`} stroke="#0b0d16" strokeWidth="1.2" strokeLinejoin="round" />
+        </marker>
+      </defs>
+      {targets.map((t) => {
+        const b = centre(t)
+        const dx = b.cx - a.cx, dy = b.cy - a.cy
+        const len = Math.hypot(dx, dy) || 1
+        const ux = dx / len, uy = dy / len
+        const x1 = a.cx + ux * 46, y1 = a.cy + uy * 46 // leave the caster's art visible
+        const x2 = b.cx - ux * 52, y2 = b.cy - uy * 52 // stop short of the target's centre
+        return (
+          <g key={`${t.x},${t.y}`}>
+            <line x1={x1} y1={y1} x2={x2} y2={y2} className="castfx-arrow-edge" />
+            <line x1={x1} y1={y1} x2={x2} y2={y2} className="castfx-arrow" stroke={`rgb(${rgb})`} markerEnd={`url(#${id})`} pathLength={1} />
+          </g>
+        )
+      })}
+    </svg>
+  )
+}
+
+/**
+ * The cast panel: after a spell is cast or an ability used — by either player — the card preview shows
+ * that card (art and rules text) with who played it and the log lines it produced. It stays until the
+ * next cast, a hover (which shows the hovered card instead, then returns), or ✕.
+ */
+function CastPanel({ info, onClose }: { info: { card: string; caption: string; byMe: boolean | null; lines: string[] }; onClose: () => void }) {
+  const who = info.byMe === null ? '' : info.byMe ? 'You' : 'Opponent'
+  const type = cardDefOrNull(info.card)?.type
+  const verb = type === 'Magic' ? 'cast' : type === 'Site' && / plays /.test(info.caption) ? 'played' : 'used'
+  const caption = verb === 'played' ? '' : info.caption
+  return (
+    <div className="castpanel">
+      <div className="castpanel-head">
+        <span>{who ? `${who} ${verb}` : verb[0].toUpperCase() + verb.slice(1)}{caption ? ` — ${caption}` : ''}</span>
+        <button type="button" title="Dismiss" aria-label="Dismiss" onClick={onClose}>✕</button>
+      </div>
+      <CardHover name={info.card} />
+      {info.lines.length > 0 && (
+        <div className="castpanel-lines">
+          <div className="castpanel-sub">What happened</div>
+          {info.lines.map((l, i) => (<div key={i} className="castpanel-line">{relabelCoords(l)}</div>))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function OppPlayPopup({ name, onClose }: { name: string; onClose: () => void }) {
   const [paused, setPaused] = useState(false)
   const closeRef = useRef(onClose)

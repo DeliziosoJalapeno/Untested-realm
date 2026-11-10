@@ -35,7 +35,15 @@ export function beginAreaReveal(state: GameState, element?: string, name?: strin
   state.flow.areaReveal = {
     cells: [], redSites: [], element: element ?? 'none',
     name: name ?? '', casterId: casterId ?? '', spell: !!spell, ability: false, shoots: false, seq: prev?.seq ?? 0, open: true,
+    // for the client's cast panel: the card behind the reveal (`name` may later become a caption such
+    // as "<card> shoots!") and the log lines written while it resolved ("what happened")
+    card: name ?? '', logStart: state.log.length, lines: [],
   }
+}
+/** copy the log lines written since the reveal opened into it (called whenever its seq is bumped) */
+function syncRevealLines(state: GameState, rev: any): void {
+  if (typeof rev.logStart !== 'number') return
+  rev.lines = state.log.slice(rev.logStart, rev.logStart + 8).map((e) => e.msg)
 }
 /** Mark the open reveal as a projectile "shot" (fired by fireVolley/firePerSquare/firstProjectileImpact
  *  or the built-in Ranged). Only changes the ABILITY caption ("<card> shoots!"); ignored for spells. */
@@ -50,6 +58,7 @@ export function recordAreaReveal(state: GameState, cells: { x: number; y: number
   if (!rev || !rev.open || !cells.length) return
   for (const c of cells) rev.cells.push({ x: c.x, y: c.y, dmg: c.dmg })
   if (element && rev.element === 'none') rev.element = element
+  syncRevealLines(state, rev)
   rev.seq++
 }
 /** Record the sites a single-target spell AFFECTS (a targeted unit's/artifact's site, or a
@@ -60,6 +69,7 @@ export function recordAffectedSites(state: GameState, sites: { x: number; y: num
   const rev = state.flow?.areaReveal
   if (!rev || !rev.open || !sites.length) return
   for (const s of sites) if (!rev.redSites.some((r: { x: number; y: number }) => r.x === s.x && r.y === s.y)) rev.redSites.push({ x: s.x, y: s.y })
+  syncRevealLines(state, rev)
   rev.seq++
 }
 /** A unit's/artifact's mutable "was I affected?" signature: position, region, tapped, damage,
@@ -115,7 +125,7 @@ export function turnFingerprint(state: GameState): string {
  *  name show even when the spell touched no unit/site/artifact (a card draw, a mana spell…). */
 export function sealSpellReveal(state: GameState): void {
   const rev = state.flow?.areaReveal
-  if (rev && rev.open && rev.spell) rev.seq++
+  if (rev && rev.open && rev.spell) { syncRevealLines(state, rev); rev.seq++ }
 }
 /** Seal the already-open reveal for an ACTIVATED ability so it animates like a spell cast: golden
  *  caster + the given writing + a site glow. Preserves any damage grid / affected sites the effect
@@ -129,6 +139,7 @@ export function sealAbilityReveal(state: GameState, name?: string): void {
     const src = state.units[rev.casterId] ?? state.artifacts[rev.casterId] ?? state.sites[rev.casterId]
     if (src && typeof src.x === 'number') rev.redSites.push({ x: src.x, y: src.y })
   }
+  syncRevealLines(state, rev)
   rev.seq++
 }
 /** Open + seal a one-shot ability reveal in a single call (for actions with no pre-opened capture,
@@ -141,7 +152,7 @@ export function revealAbility(state: GameState, casterId: string, text: string, 
   const src = state.units[casterId] ?? state.artifacts[casterId] ?? state.sites[casterId]
   const at = site ?? (src && typeof src.x === 'number' ? { x: src.x, y: src.y } : null)
   if (at) recordAffectedSites(state, [at])
-  else rev.seq++
+  else { syncRevealLines(state, rev); rev.seq++ }
 }
 
 // ---- battle reveal (a two-sided panel shown to BOTH players after a battle resolves, then
