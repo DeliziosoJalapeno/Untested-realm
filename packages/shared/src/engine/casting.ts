@@ -445,6 +445,8 @@ export function canCast(state: GameState, player: PlayerId, cardId: string, cast
         return { ok: false, reason: `Only ${lockedUnit.name} may cast that.` }
       if (lockedUnit.controller !== player || isDisabled(state, lockedUnit))
         return { ok: false, reason: `Only ${lockedUnit.name} may cast that.` }
+      // a silenced card can't cast spells (Silence, Oct 2026), even one it was granted
+      if (lockedUnit.silenced) return { ok: false, reason: `${lockedUnit.name} is silenced and can't cast spells.` }
       if (!lock.grantsCasting && !lockedUnit.isAvatar && !effKeywords(state, lockedUnit).spellcaster)
         return { ok: false, reason: `${lockedUnit.name} has no way to cast that right now.` }
     }
@@ -472,6 +474,7 @@ export function canCast(state: GameState, player: PlayerId, cardId: string, cast
   if (!lock) {
     if (!caster || caster.controller !== player) return { ok: false, reason: 'Invalid spellcaster.' }
     if (state.units[caster.id] && isDisabled(state, caster)) return { ok: false, reason: `${caster.name} is disabled.` }
+    if (state.units[caster.id]?.silenced) return { ok: false, reason: `${caster.name} is silenced and can't cast spells.` }
     const kw = effKeywords(state, caster)
     // A caster is legal iff the NORMAL Spellcaster path passes, OR the spell's
     // casterFilter EXPANDS the caster set to include it ("May be cast by an allied

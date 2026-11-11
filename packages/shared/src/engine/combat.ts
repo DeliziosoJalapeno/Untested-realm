@@ -467,9 +467,9 @@ function endStealthGrace(unit: UnitState | undefined): void {
 
 export function breakStealth(state: GameState, unit: UnitState): void {
   // breakStealth is called at the unit's realm-interaction moments (declaring an attack,
-  // firing a Ranged shot, or a triggered projectile like Colicky Dragonettes' end-of-turn
-  // hiccup) — record the interaction so the Drop basic ability is disallowed this turn, then
-  // spend the Stealth token if present.
+  // or a shot of its own — Ranged or a triggered projectile like Colicky Dragonettes'
+  // end-of-turn hiccup — that HITS a unit) — record the interaction so the Drop basic ability
+  // is disallowed this turn, then spend the Stealth token if present.
   unit.interactedTurn = state.turn
   if (unit.stealth) {
     unit.stealth = false
@@ -1396,6 +1396,8 @@ function resolveProjectileHit(state: GameState, shooterId: string, targetId: str
   const target = state.units[targetId]
   if (!shooter || !target) return
   pushLog(state, shooter.controller, `${shooter.name} shoots ${target.name}.`)
+  // the shot struck a unit: that reveals the shooter (a miss keeps its Stealth, so an Infiltrated minion stays put)
+  breakStealth(state, shooter)
   const snapshot = { ...target }
   const kw = effKeywords(state, shooter)
   // a ranged strike IS a strike: it uses strike power (a carried Lance's +1, a Grim Guisarme ×2 — the
@@ -1460,7 +1462,9 @@ export function shootProjectile(state: GameState, player: PlayerId, unitId: stri
     if (!canTap(state, unit)) return unit.tapped ? `${unit.name} is already tapped.` : `${unit.name} has summoning sickness.`
     tapUnit(state, unit)
   }
-  breakStealth(state, unit)
+  // firing interacts with the realm (no Drop this turn); the Stealth token is only spent if the
+  // shot hits a unit (resolveProjectileHit) — a shot that hits nothing deals no damage and stays hidden.
+  unit.interactedTurn = state.turn
   // both-player reveal: golden shooter + "<card> shoots!" over its (glowing) site (like a cast).
   beginAreaReveal(state, undefined, unit.name, unitId, false)
   markRevealShoots(state)
@@ -1647,6 +1651,8 @@ export interface VolleyProjectileSpec {
   /** the caster / bearer, never hit by its own shot */
   excludeId?: string
   srcName: string
+  /** a unit shooting its own projectile (Colicky Dragonettes): it loses Stealth only when a shot hits a unit */
+  shooterId?: string
 }
 
 /** Fire `volleys` damage projectiles from (ox,oy), one at a time. Each strikes the
@@ -1683,10 +1689,30 @@ export function fireVolleyProjectiles(state: GameState, spec: VolleyProjectileSp
   if (spec.volleys > 1) fireVolleyProjectiles(state, { ...spec, volleys: spec.volleys - 1 })
 }
 
+/** Does the shooter's choice of direction change what a volley projectile hits? Not when every
+ *  direction ends the same way: an enemy on the shooter's own square is struck first whichever way
+ *  it flies, and a board with nothing in reach is missed in every direction. Reads only, no reveal. */
+export function volleyDirectionMatters(state: GameState, spec: Omit<VolleyProjectileSpec, 'dir'>): boolean {
+  const range = spec.maxRange ?? Infinity
+  const filter = spec.filter ?? 'canHit'
+  const srcMagic = projSrcIsMagic(spec.srcName)
+  const outcome = (dir: string): string => {
+    for (const sq of projectilePath(state, spec.region, spec.ox, spec.oy, dir, range, spec.player)) {
+      if (srcMagic && magicBlockedAt(state, sq, spec.region, spec.player, spec.excludeId)) return `blocked@${sq.x},${sq.y}`
+      const here = projCandidates(state, sq, spec.region, spec.player, filter, spec.excludeId)
+      if (here.length) return [...here].sort().join(',')
+    }
+    return 'miss'
+  }
+  return new Set(['n', 's', 'e', 'w'].map(outcome)).size > 1
+}
+
 function applyVolleyHit(state: GameState, spec: VolleyProjectileSpec, targetId: string): void {
   const u = state.units[targetId]
   // a magic-protected body (Failed Mutation) absorbs it: no damage, this projectile is spent
   if (u && !absorbsMagicShot(state, spec.srcName, u)) {
+    const shooter = spec.shooterId ? state.units[spec.shooterId] : undefined
+    if (shooter) breakStealth(state, shooter)
     recordAreaReveal(state, [{ x: u.x, y: u.y, dmg: spec.damage }]) // both-player grid reveal
     dealDamageToUnit(state, u, spec.damage, spec.player, {
       lethal: projectileShotIsLethal(state, spec.excludeId, spec.srcName, u),
