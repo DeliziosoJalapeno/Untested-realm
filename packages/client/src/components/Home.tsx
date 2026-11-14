@@ -226,7 +226,7 @@ export default function Home({
   }
 
   return (
-    <div className={`home ${quality === 'low' ? 'lq' : quality === 'high' ? 'aq' : 'hq'}`}>
+    <div className={`home ${quality === 'low' ? 'lq' : 'hq'}`}>
       {/* desktop-only decorative card-art showcase in the empty side margins (4 columns, 2 per side) — the classic ("boring") page only */}
       {!mobile && quality === 'boring' && (
         <>
@@ -246,19 +246,13 @@ export default function Home({
           </aside>
         </>
       )}
-      {quality === 'low' ? (
-        <div className="home-titlewrap">
-          <img className="home-title" src="/titolosorcery.png" alt="Untested Realm" />
-        </div>
-      ) : (
-        <h1>Untested Realm</h1>
+      <h1>Realmforge</h1>
+      {quality !== 'low' && (
+        <span className="art-credit" title="Background: Survivors of Serava (Sorcery: Contested Realm, Gothic)">
+          background: Survivors of Serava — art © Quinton Hoover
+        </span>
       )}
-      {quality === 'high' && (
-        <a className="art-credit" href="https://www.instagram.com/elispeedart/" target="_blank" rel="noreferrer noopener" title="Cover art by elispeedart (Instagram)">
-          art by @elispeedart (wip)
-        </a>
-      )}
-      <p className="byline">by Jalapeno</p>
+      <p className="byline">built on Untested Realm by Jalapeno</p>
       <p className="subtitle">
         100% automated, 99%* verified!
         <br />
@@ -385,7 +379,7 @@ export default function Home({
       )}
       <div className="disclaimer">
         <p>
-          Untested Realm is an unofficial, non-commercial fan project. It is not affiliated
+          Realmforge is an unofficial, non-commercial fan project. It is not affiliated
           with, endorsed by, sponsored by, or associated with Erik's Curiosa Ltd, Curiosa, or
           Sorcery: Contested Realm.
         </p>

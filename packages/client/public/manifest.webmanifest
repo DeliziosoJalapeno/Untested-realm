@@ -1,7 +1,7 @@
 {
-  "name": "Untested Realm",
-  "short_name": "Untested Realm",
-  "description": "Untested Realm — an unofficial fan-made simulator for the Sorcery: Contested Realm TCG",
+  "name": "Realmforge",
+  "short_name": "Realmforge",
+  "description": "Realmforge — an unofficial fan-made simulator for the Sorcery: Contested Realm TCG",
   "start_url": "/",
   "display": "standalone",
   "orientation": "landscape",

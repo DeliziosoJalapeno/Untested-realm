@@ -73,13 +73,15 @@ h1, h2, h3 { font-weight: 600; }
 
 /* ---------- home ---------- */
 .home { position: relative; max-width: 640px; margin: 0 auto; padding: 48px 20px 40px; }
-/* HIGH quality (default): the classic One-shot Wizard hero art, zoomed + darkened for legibility */
+/* HIGH quality (default): Quinton Hoover's Survivors of Serava (the card's art window, cropped to
+   /home-bg.webp), filling the page and darkened for legibility */
 .home.hq::before {
   content: '';
   position: fixed; inset: 0; z-index: -1;
-  background: url('/cards/006-one_shot_wizard-b-s.webp') no-repeat center 22%;
-  background-size: 230%;
-  filter: brightness(0.4) saturate(1.1);
+  /* wider than the viewport and pushed left, so the rider sits beside the centre column, not behind it */
+  background: #1a2233 url('/home-bg.webp') no-repeat 100% 30%;
+  background-size: 135% auto;
+  filter: brightness(0.55) saturate(1.05);
 }
 /* LOW quality: the hand-drawn "meme" cover, stretched to fill (aspect ratio NOT preserved) */
 .home.lq::before {
@@ -97,12 +99,12 @@ h1, h2, h3 { font-weight: 600; }
     radial-gradient(ellipse at 50% 28%, rgba(20,22,31,0) 0%, rgba(20,22,31,0.22) 60%, rgba(20,22,31,0.55) 100%),
     linear-gradient(to bottom, rgba(20,22,31,0.12), rgba(20,22,31,0.42) 55%, rgba(20,22,31,0.82) 100%);
 }
-/* LOW: the One-shot Wizard as a super-faint ghost behind the meme cover */
+/* LOW: the same art as a super-faint ghost behind the meme cover */
 .home.lq::after {
   content: '';
   position: fixed; inset: 0; z-index: -1;
-  background: url('/cards/006-one_shot_wizard-b-s.webp') no-repeat center 18%;
-  background-size: 230%;
+  background: url('/home-bg.webp') no-repeat 100% 30%;
+  background-size: 135% auto;
   opacity: 0.07;
   pointer-events: none;
 }
@@ -216,11 +218,10 @@ h1, h2, h3 { font-weight: 600; }
 /* cursive author byline, right-aligned so it signs off under "Realm" (the title's last word) */
 .byline {
   font-family: 'Great Vibes', cursive;
-  text-align: right;
-  font-size: 16px;
-  line-height: 1;
-  margin: -6px 0 14px;
-  padding-right: 44px;
+  text-align: center;
+  font-size: 19px;
+  line-height: 1.1;
+  margin: 2px 0 12px;
   color: #d8b45c;
   letter-spacing: 1px;
   text-shadow: 0 2px 8px rgba(0,0,0,0.8);
@@ -238,7 +239,7 @@ h1, h2, h3 { font-weight: 600; }
 .subtitle {
   font-family: 'Cormorant Garamond', serif;
   font-style: italic; font-size: 23px; text-align: center;
-  color: #c9cee0; margin: -24px 0 14px;
+  color: #c9cee0; margin: 0 0 14px;
   text-shadow: 0 1px 6px rgba(0,0,0,0.8);
 }
 /* mobile only: nudge the "100% automated…" line down so it clears the title/art */
@@ -2704,3 +2705,16 @@ button.autobattle:hover:not(:disabled) { background: #4a5cc0; }
 .tutcoach-hint span, .tutcoach-solution > span { display: block; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.75; font-weight: 700; margin-bottom: 2px; }
 .tutcoach-solution p:first-of-type { margin-top: 2px; }
 .tutcoach-body em { opacity: 0.85; }
+
+/* background-art credit on the home page, pinned bottom-right */
+.home.hq .art-credit {
+  position: fixed; right: 14px; bottom: 10px; z-index: 3;
+  font-family: 'Cormorant Garamond', serif; font-style: italic; font-size: 16px;
+  color: #e8e6df; opacity: 0.78; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+}
+@media (max-width: 760px) { .home.hq .art-credit { position: static; display: block; text-align: center; font-size: 13px; margin-bottom: 4px; } }
+
+/* narrow or tall screens: 135% of the width no longer covers the height — fill instead */
+@media (max-aspect-ratio: 13/10) { .home.hq::before, .home.lq::after { background-size: cover; background-position: 35% 30%; } }
+/* the longer site name must fit a phone */
+.home h1 { font-size: clamp(32px, 10vw, 56px); letter-spacing: clamp(1px, 0.5vw, 3px); }
