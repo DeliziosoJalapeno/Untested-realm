@@ -2696,3 +2696,11 @@ button.autobattle:hover:not(:disabled) { background: #4a5cc0; }
 @keyframes tut-pulse { 0%, 100% { outline-color: #5fc396; box-shadow: 0 0 0 0 rgba(95, 195, 150, 0.55); } 50% { outline-color: #c9ffe3; box-shadow: 0 0 0 7px rgba(95, 195, 150, 0); } }
 @media (prefers-reduced-motion: reduce) { .tut-spot { animation: none; } }
 @media (max-width: 760px) { .tutcoach { left: 6px; right: 6px; bottom: 6px; width: auto; max-height: 40vh; } }
+
+/* ---- puzzles ---- */
+.home-puzzles { background: #5b4a86; border-color: #8f7bc4; color: #fff; }
+.puzzle-stars { color: #ffd76a; font-size: 13px; letter-spacing: 1px; margin-left: 4px; white-space: nowrap; }
+.tutcoach-hint, .tutcoach-solution { background: rgba(143, 123, 196, 0.18); border-left: 3px solid #a995e0; padding: 7px 10px; border-radius: 0 6px 6px 0; }
+.tutcoach-hint span, .tutcoach-solution > span { display: block; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.75; font-weight: 700; margin-bottom: 2px; }
+.tutcoach-solution p:first-of-type { margin-top: 2px; }
+.tutcoach-body em { opacity: 0.85; }

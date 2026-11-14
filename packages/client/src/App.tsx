@@ -29,9 +29,11 @@ import CollectionPage from './components/CollectionPage'
 import ScenariosPage from './components/ScenariosPage'
 import TutorialPage from './components/TutorialPage'
 import TutorialCoach, { type CoachState } from './components/TutorialCoach'
-import { lessonById } from './tutorial/lessons'
+import { lessonById, LESSONS } from './tutorial/lessons'
+import { puzzleById, PUZZLES } from './puzzle/puzzles'
+import PuzzlePage from './components/PuzzlePage'
 import { gate, advance, next as tutNext, runFoe, coachToAct } from './tutorial/runner'
-import { markLessonDone } from './tutorial/progress'
+import { markLessonDone, markPuzzleSolved } from './tutorial/progress'
 import SealedDeckbuild from './components/SealedDeckbuild'
 import Game from './components/Game'
 import ReplayViewer from './components/ReplayViewer'
@@ -232,7 +234,7 @@ function fmtRestart(ms: number): string {
 }
 
 export default function App() {
-  const [page, setPage] = useState<'home' | 'decks' | 'game' | 'collection' | 'scenarios' | 'replays' | 'replay' | 'bugs' | 'tutorial'>('home')
+  const [page, setPage] = useState<'home' | 'decks' | 'game' | 'collection' | 'scenarios' | 'replays' | 'replay' | 'bugs' | 'tutorial' | 'puzzles'>('home')
   const [replayData, setReplayData] = useState<ReplayRecord | null>(null)
   // where the full-screen replay viewer returns on leave — the replay list, or the admin bugs panel
   const [replayReturn, setReplayReturn] = useState<'replays' | 'bugs'>('replays')
@@ -721,11 +723,11 @@ export default function App() {
     const c = coachRef.current
     if (!c) return
     c.i = advance(c.lesson, c.i, c.t)
-    if (c.i >= c.lesson.steps.length) markLessonDone(c.lesson.id)
+    if (c.i >= c.lesson.steps.length) (c.lesson.puzzle ? markPuzzleSolved : markLessonDone)(c.lesson.id)
   }
 
   function startLesson(lessonId: string) {
-    const lesson = lessonById(lessonId)
+    const lesson = lessonById(lessonId) ?? puzzleById(lessonId)
     if (!lesson) return
     myDeckFromCollection.current = false
     localHistory.current = []
@@ -1312,6 +1314,7 @@ export default function App() {
           onCollection={() => setPage('collection')}
           onScenarios={() => setPage('scenarios')}
           onTutorial={() => setPage('tutorial')}
+          onPuzzles={() => setPage('puzzles')}
           onWatchReplay={() => setPage('replays')}
           isAdmin={auth.isAdminUser()}
           onOpenBugs={() => setPage('bugs')}
@@ -1343,6 +1346,9 @@ export default function App() {
       {page === 'collection' && <CollectionPage onBack={() => setPage('home')} />}
       {page === 'tutorial' && (
         <TutorialPage onBack={() => setPage('home')} onStart={startLesson} />
+      )}
+      {page === 'puzzles' && (
+        <PuzzlePage onBack={() => setPage('home')} onStart={startLesson} />
       )}
       {page === 'scenarios' && (
         <ScenariosPage
@@ -1399,9 +1405,10 @@ export default function App() {
               disposeBotWorker()
               clearRoom(); clearRoomUrl()
               const wasLesson = !!session.tutorial
+              const wasPuzzle = !!coachRef.current?.lesson.puzzle
               coachRef.current = null
               setSession(null)
-              setPage(wasLesson ? 'tutorial' : 'home')
+              setPage(!wasLesson ? 'home' : wasPuzzle ? 'puzzles' : 'tutorial')
             }}
             // keep the online session alive and just switch pages, so a player waiting for an
             // opponent (created room / matchmaking) can browse the rest of the site meanwhile.
@@ -1420,9 +1427,10 @@ export default function App() {
           {session.tutorial && coachRef.current && (
             <TutorialCoach
               coach={coachRef.current}
+              series={coachRef.current.lesson.puzzle ? PUZZLES : LESSONS}
               onContinue={coachContinue}
               onRestart={() => startLesson(coachRef.current!.lesson.id)}
-              onExit={() => { coachRef.current = null; setSession(null); setPage('tutorial') }}
+              onExit={() => { const pz = !!coachRef.current?.lesson.puzzle; coachRef.current = null; setSession(null); setPage(pz ? 'puzzles' : 'tutorial') }}
               onNextLesson={(id) => startLesson(id)}
             />
           )}

@@ -208,7 +208,7 @@ function castTargetCombos(state: GameState, me: PlayerId, script: CardScript, ca
  * Every legal action for `player` right now, with the resulting state.
  * Handles the three decision contexts: an open prompt, the mulligan, and the main phase.
  */
-export function expandActions(state: GameState, player: PlayerId, opts?: { deadline?: number; boardOnly?: boolean; noSpellCasts?: boolean; minionCasters?: boolean }): Expansion[] {
+export function expandActions(state: GameState, player: PlayerId, opts?: { deadline?: number; boardOnly?: boolean; noSpellCasts?: boolean; minionCasters?: boolean; abilityTargets?: boolean }): Expansion[] {
   const out: Expansion[] = []
   const push = (a: Action) => { const next = tryAction(state, player, a); if (next) out.push({ action: a, next }) }
   // anytime generation: with a deadline set, stop between phases once time is up and return what we
@@ -347,6 +347,13 @@ export function expandActions(state: GameState, player: PlayerId, opts?: { deadl
     for (const ab of [...abilities, ...granted]) {
       if (canActivate(state, me, src.id, ab.key) !== null) continue // engine says not usable → skip
       if (banAvatarTapAbility && src.id === avatarId && ab.cost.tap) continue // develop instead (< 4 sites)
+      // an ability that declares its targets up front (Coy Nixie's beckon, the Frost Mage's Encase) is only
+      // legal WITH them. Opt-in (the puzzle solver needs every line; the search bot's tree is tuned without).
+      if (opts?.abilityTargets && unit && (ab as any).targets?.length) {
+        for (const combo of castTargetCombos(state, me, { targets: (ab as any).targets } as CardScript, unit)) {
+          if (combo.length) push({ t: 'activate', sourceId: src.id, ability: ab.key, targets: combo })
+        }
+      }
       push({ t: 'activate', sourceId: src.id, ability: ab.key }) // ability targets come via the follow-up prompt
     }
     // a face-down trap of mine (the bot only ever sees its OWN traps' real names) can be sprung

@@ -3,6 +3,8 @@
 import { applyAction, type Action, type GameState } from '@sorcery/shared'
 import { botAction, botNeedsToAct } from '../bot'
 import type { Tut } from './scene'
+import { Solver } from '../puzzle/solver'
+import { expandActions } from '@sorcery/shared'
 
 export interface TStep {
   /** what the coach says. Paragraphs are separated by a blank line; **bold** is supported. */
@@ -43,6 +45,8 @@ export interface Lesson {
   outro: string
   /** a free game: the coach plays for real (the normal computer opponent) and only comments */
   freePlay?: boolean
+  /** a "win this turn" puzzle: one open step, the defender answers with its best defence */
+  puzzle?: { stars: 1 | 2 | 3; hints: string[]; solution: string }
 }
 
 export const sayOf = (s: TStep, t: Tut): string => (typeof s.say === 'function' ? s.say(t) : s.say)
@@ -52,6 +56,7 @@ export const sayOf = (s: TStep, t: Tut): string => (typeof s.say === 'function' 
 export function gate(lesson: Lesson, i: number, a: Action, t: Tut): string | null {
   const step = lesson.steps[i]
   if (!step || lesson.freePlay) return null
+  if (lesson.puzzle) return a.t === 'endTurn' ? 'The puzzle is to win this turn — ending it gives up. Press Restart to try another line.' : null
   if (a.t === 'prompt' || a.t === 'drawChoice' || a.t === 'concede' || a.t === 'judge') return null
   if (!step.task) return 'Read the note first, then press Continue.'
   if (step.ok && !step.ok(a, t)) return step.nope ?? `Not that just yet — ${lower(step.task)}`
@@ -63,6 +68,7 @@ const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1)
 export function foeMove(lesson: Lesson, i: number, t: Tut): Action {
   const g = t.g
   if (lesson.freePlay) return botAction(g, 1)
+  if (lesson.puzzle) return puzzleDefence(g)
   const prompt = g.prompts[0]
   const step = lesson.steps[i]
   if (prompt) {
@@ -70,6 +76,16 @@ export function foeMove(lesson: Lesson, i: number, t: Tut): Action {
     return botAction(g, 1)
   }
   return step?.foe?.(t) ?? { t: 'endTurn' }
+}
+
+/** The defender's answer in a puzzle: an answer after which the attack no longer wins by force, if the
+ *  solver can find one within its budget; otherwise the first legal answer (they all lose). */
+export function puzzleDefence(g: GameState, budget = 5000): Action {
+  const prompt = g.prompts[0]
+  if (!prompt) return { t: 'endTurn' }
+  const best = new Solver(0, budget).refutation(g)
+  if (best) return best
+  return expandActions(g, prompt.player)[0]?.action ?? botAction(g, prompt.player)
 }
 
 /** apply the coach's move; a scripted move the engine rejects falls back to ending the turn */
@@ -101,7 +117,7 @@ export function next(lesson: Lesson, i: number, t: Tut): number {
 
 /** is the game waiting on the coach? The coach holds still while you are reading a note. */
 export const coachToAct = (lesson: Lesson, i: number, g: GameState): boolean =>
-  botNeedsToAct(g, 1) && (!!lesson.freePlay || !!lesson.steps[i]?.task)
+  (lesson.puzzle ? g.prompts[0]?.player === 1 : botNeedsToAct(g, 1)) && (!!lesson.freePlay || !!lesson.steps[i]?.task)
 
 /** Play a lesson start to finish from its scripted solution. Used by the lesson test; returns the
  *  step it got stuck on (with why), or null when the lesson completes. */

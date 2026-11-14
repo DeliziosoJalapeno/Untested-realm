@@ -76,6 +76,7 @@ export default function Home({
   onCollection,
   onScenarios,
   onTutorial,
+  onPuzzles,
   onWatchReplay,
   isAdmin,
   onOpenBugs,
@@ -91,6 +92,7 @@ export default function Home({
   onCollection: () => void
   onScenarios: () => void
   onTutorial: () => void
+  onPuzzles: () => void
   onWatchReplay: () => void
   isAdmin?: boolean
   onOpenBugs?: () => void
@@ -467,6 +469,7 @@ export default function Home({
           )}
         </label>
         <button className="home-tutorial" onClick={onTutorial}>🎓 Learn to play</button>
+        <button className="home-puzzles" onClick={onPuzzles}>🧩 Puzzles</button>
         <button onClick={onDecks}>Deck builder</button>
         <button onClick={onCollection}>🎴 Collection & packs</button>
         <button onClick={onScenarios}>🎬 Scenarios</button>

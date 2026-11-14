@@ -25,6 +25,14 @@ export interface Scene {
   /** your mana this turn (default: one per site you control) */
   mana?: number
   life?: [number, number]
+  /** players whose Avatar starts at Death's Door (0 life, reached on an earlier turn) */
+  door?: PlayerId[]
+  /** your Avatar has already tapped this turn (it played a site): it can still cast, but not move */
+  spent?: boolean
+  /** an artifact your Avatar carries from the start */
+  carry?: string[]
+  /** your face-down traps: [real card, x, y] — each shows as the basic site of its element */
+  traps?: [string, number, number][]
   /** cards put on top of your spellbook / atlas, first = top */
   topSpells?: string[]
   topSites?: string[]
@@ -60,6 +68,13 @@ export function scene(s: Scene): Tut {
     g.sites[id] = { id, cardId, name, owner: p, controller: p, x, y, tapped: false, isRubble: false }
     ids[`site:${x},${y}`] = id
   }
+  for (const [name, x, y] of s.traps ?? []) {
+    const el = (['earth', 'air', 'fire', 'water'] as const).find((e) => (getCard(name).thresholds as any)?.[e] > 0) ?? 'earth'
+    const basic = { earth: 'Valley', air: 'Spire', fire: 'Wasteland', water: 'Stream' }[el]
+    const realCardId = card(g, 0, name), id = newId(g, 's')
+    g.sites[id] = { id, cardId: card(g, 0, basic), name: basic, owner: 0, controller: 0, x, y, tapped: false, isRubble: false, trap: { element: el, realName: name, realCardId } }
+    ids[`site:${x},${y}`] = id
+  }
   for (const u of s.units ?? []) {
     const cardId = card(g, u.p, u.name), id = newId(g, 'u')
     const unit: UnitState = {
@@ -79,8 +94,16 @@ export function scene(s: Scene): Tut {
   for (const name of s.foeHand ?? []) g.players[1].hand.push(card(g, 1, name))
   for (const name of [...(s.topSpells ?? [])].reverse()) g.players[0].spellbook.unshift(card(g, 0, name))
   for (const name of [...(s.topSites ?? [])].reverse()) g.players[0].atlas.unshift(card(g, 0, name))
-  g.players[0].mana = s.mana ?? Object.values(g.sites).filter((x) => x.controller === 0).length
+  g.players[0].mana = s.mana ?? Object.values(g.sites).filter((x) => x.controller === 0 && !x.isRubble).length
   if (s.life) s.life.forEach((n, i) => { g.units[g.players[i].avatarUnitId].life = n })
+  for (const p of s.door ?? []) { const a = g.units[g.players[p].avatarUnitId]; a.life = 0; a.deathsDoor = true; a.doorTurn = 0 }
+  if (s.spent) g.units[ids.me].tapped = true
+  for (const name of s.carry ?? []) {
+    const cardId = card(g, 0, name), id = newId(g, 'a'), me = g.units[ids.me]
+    g.artifacts[id] = { id, cardId, name, conjuredBy: 0, x: me.x, y: me.y, region: 'surface', carriedBy: me.id, tapped: false } as ArtifactState
+    me.carrying.push(id)
+    ids[`carry:${name}`] = id
+  }
   for (const p of g.players) p.established = true
   g.log = []
   return { g, ids }
