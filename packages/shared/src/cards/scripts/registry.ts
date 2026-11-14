@@ -33,6 +33,9 @@ export interface AreaDamageParams {
   sites?: string[]
 }
 
+/** what a unit can be "Protected from" (Codex, Protected from X) */
+export type ProtectedFrom = 'sites' | 'magic'
+
 export interface TargetSpec {
   what: 'unit' | 'minion' | 'avatar' | 'site' | 'artifact' | 'minionOrArtifact' | 'minionArtifactOrAura' | 'square'
   count: number
@@ -552,6 +555,13 @@ export interface CardScript {
   protectsFromTargeting?: (state: GameState, site: { id: string; x: number; y: number; controller: PlayerId | null }, unit: UnitState) => boolean
   /** carried artifact: the bearer ignores site abilities (Key to the City) */
   bearerIgnoresSites?: boolean
+  /** on a unit: "Protected from X" (Codex) it lends OTHER units while in the realm with its abilities on
+   *  (Highgate Guide: nearby allies are Protected from sites). Read by protectionsOf (statics.ts). */
+  grantsProtection?: (state: GameState, selfId: string, unit: UnitState) => ProtectedFrom[]
+  /** "While attacking, its excess damage is dealt to its site" (Stomping Mammoth) — see runFightPass */
+  attackExcessToItsSite?: boolean
+  /** this unit's Ranged shots cross the top and bottom edges of the realm (Sissi Marksmen) */
+  rangedWrapsTopBottom?: boolean
   /** this unit silences a specific site while in the realm (Sinterfee) */
   unitSilencesSiteAt?: (state: GameState, selfId: string, site: { id: string; x: number; y: number }) => boolean
   /** this unit strips a specific site's threshold (Sinterfee) */

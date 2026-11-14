@@ -3,12 +3,14 @@
 import { describe, it, expect } from 'vitest'
 import { newGame, keepBoth, summonCard, placeSite, castMagic, answer, act, actFail, waiveThreshold, giveMana, injectToHand, fillSites, settlePrompts } from './helpers'
 import {
-  allCards, getCard, getKeywords, isDisabled, effKeywords, effAttack, legalStepsFrom, endTurn, GRID_W, GRID_H,
+  allCards, getCard, getKeywords, isDisabled, effKeywords, effAttack, legalStepsFrom, endTurn, enterSite, siteAt, siteSilenced,
+  protectedFromSites, isMagicProtected, GRID_W, GRID_H,
   type GameState, type PlayerId, type UnitState,
 } from '../src'
 import '../src/cards/scripts/index'
 
 const avatarOf = (g: GameState, p: PlayerId) => g.units[g.players[p].avatarUnitId]
+const avatarLife = (g: GameState, p: PlayerId): number => (avatarOf(g, p) as any).life ?? (g.players[p] as any).life
 
 function board(): GameState {
   const g = newGame() as GameState
@@ -252,7 +254,7 @@ describe('Dust Devil', () => {
     const g = board()
     fillSites(g)
     const devil = summonCard(g, 0, 'Dust Devil', 1, 1)
-    const foe = summonCard(g, 1, 'Escyllion Cyclops', 1, 2) // 4 power
+    const foe = summonCard(g, 1, 'Slag Slug', 1, 2) // 4 power: would kill the 2-defence Devil
     act(g, 0, { t: 'moveAttack', unitId: devil.id, path: [{ x: 1, y: 2, region: 'surface' }], attack: { unit: foe.id } })
     settlePrompts(g)
     expect(g.units[devil.id]?.damage).toBe(0)
@@ -260,9 +262,189 @@ describe('Dust Devil', () => {
     expect(getKeywords('Dust Devil').movement).toBe(1)
 
     endTurn(g); settlePrompts(g)
-    const foe2 = summonCard(g, 1, 'Slag Slug', 1, 2) // 4 power, attacks the Devil (defence 2)
-    act(g, 1, { t: 'moveAttack', unitId: foe2.id, path: [], attack: { unit: devil.id } })
+    act(g, 1, { t: 'moveAttack', unitId: foe.id, path: [], attack: { unit: devil.id } })
     settlePrompts(g)
     expect(g.units[devil.id]).toBeUndefined()
+  })
+})
+
+describe('Highgate Guide / Humming Hummocks', () => {
+  it('Highgate Guide: nearby allies are Protected from sites — not himself, not enemies, not far allies', () => {
+    const g = board()
+    fillSites(g)
+    const guide = summonCard(g, 0, 'Highgate Guide', 1, 1)
+    const near = summonCard(g, 0, 'Wild Boars', 2, 2)
+    const far = summonCard(g, 0, 'Wild Boars', 4, 3)
+    const foe = summonCard(g, 1, 'Wild Boars', 1, 1)
+    expect(protectedFromSites(g, near)).toBe(true)
+    expect(protectedFromSites(g, far)).toBe(false)
+    expect(protectedFromSites(g, foe)).toBe(false)
+    expect(protectedFromSites(g, guide)).toBe(false)
+    guide.silenced = true
+    expect(protectedFromSites(g, near)).toBe(false)
+  })
+
+  it('Humming Hummocks: until your next turn, allies nearby it are protected from sites and magic', () => {
+    const g = board()
+    fillSites(g)
+    const cardId = injectToHand(g, 0, 'Humming Hummocks')
+    for (const s of Object.values(g.sites)) if (s.x === 1 && s.y === 1) delete g.sites[s.id]
+    g.players[0].hand.splice(g.players[0].hand.indexOf(cardId), 1)
+    const hummocks = enterSite(g, 0, cardId, 1, 1)
+    settlePrompts(g)
+    const ally = summonCard(g, 0, 'Wild Boars', 2, 1)
+    const walkedIn = summonCard(g, 0, 'Wild Boars', 0, 0) // arrived after the Genesis: still covered (FAQ)
+    const away = summonCard(g, 0, 'Wild Boars', 4, 3)
+    const foe = summonCard(g, 1, 'Wild Boars', 1, 1)
+    expect(hummocks).toBeTruthy()
+    for (const u of [ally, walkedIn]) {
+      expect(protectedFromSites(g, u)).toBe(true)
+      expect(isMagicProtected(g, u)).toBe(true)
+    }
+    expect(isMagicProtected(g, away)).toBe(false)
+    expect(isMagicProtected(g, foe)).toBe(false)
+    passRound(g) // the start of its controller's next turn ends it
+    expect(isMagicProtected(g, g.units[ally.id])).toBe(false)
+  })
+})
+
+describe('Full-tilt Goliaths', () => {
+  it('silence the sites nearby when they arrive, until their controller\'s next turn', () => {
+    const g = board()
+    fillSites(g)
+    const av = avatarOf(g, 0)
+    const gol = castMinion(g, 0, 'Full-tilt Goliaths', av.x, av.y)
+    settlePrompts(g)
+    expect(getKeywords('Full-tilt Goliaths').charge).toBe(true)
+    expect(siteSilenced(g, { x: gol.x, y: gol.y })).toBe(true)
+    expect(siteSilenced(g, { x: gol.x + 1, y: gol.y + 1 })).toBe(true)
+    expect(siteSilenced(g, { x: gol.x, y: gol.y + 2 })).toBe(false)
+    passRound(g)
+    expect(siteSilenced(g, { x: gol.x, y: gol.y })).toBe(false)
+  })
+})
+
+describe('Sissi Marksmen', () => {
+  it('shoot across the top and bottom edges of the realm', () => {
+    const g = board()
+    fillSites(g)
+    const sissi = summonCard(g, 0, 'Sissi Marksmen', 3, GRID_H - 1)
+    const foe = summonCard(g, 1, 'Escyllion Cyclops', 3, 0)
+    act(g, 0, { t: 'activate', sourceId: sissi.id, ability: 'ranged', extra: { direction: 'n' } })
+    settlePrompts(g)
+    expect(g.units[foe.id].damage).toBe(2)
+  })
+})
+
+describe('Hailstriker', () => {
+  it('Genesis: each minion at a target adjacent location takes 1 damage and is disabled', () => {
+    const g = board()
+    fillSites(g)
+    const av = avatarOf(g, 0)
+    const a = summonCard(g, 1, 'Escyllion Cyclops', av.x + 1, av.y)
+    const b = summonCard(g, 1, 'Escyllion Cyclops', av.x + 1, av.y)
+    const cardId = injectToHand(g, 0, 'Hailstriker')
+    giveMana(g, 0, 20)
+    act(g, 0, { t: 'castSpell', cardId, casterId: av.id, at: { x: av.x, y: av.y }, targets: [`sq:${av.x + 1},${av.y},surface`] })
+    settlePrompts(g)
+    for (const u of [a, b]) {
+      expect(g.units[u.id].damage).toBe(1)
+      expect(isDisabled(g, g.units[u.id])).toBe(true)
+    }
+    expect(getKeywords('Hailstriker').ranged).toBe(1)
+  })
+})
+
+describe("Tusslin' Trolls", () => {
+  it('strike an adjacent minion for 1-6 at the end of their turn; alone, they strike themselves', () => {
+    const g = board()
+    fillSites(g)
+    const trolls = summonCard(g, 0, "Tusslin' Trolls", 1, 1)
+    const foe = summonCard(g, 1, 'Escyllion Cyclops', 1, 2)
+    endTurn(g)
+    expect(g.prompts[0]?.kind).toBe('chooseTargets')
+    expect((g.prompts[0] as any).data.candidates).toEqual([foe.id])
+    answer(g, [foe.id])
+    // the turn has passed; damage on a surviving minion is healed at end of turn, so read the log
+    expect(g.log.some((e) => /The Trolls roll a [1-6] and clobber Escyllion Cyclops/.test(e.msg))).toBe(true)
+
+    const g2 = board()
+    fillSites(g2)
+    const lone = summonCard(g2, 0, "Tusslin' Trolls", 1, 1)
+    endTurn(g2)
+    expect((g2.prompts[0] as any).data.candidates).toEqual([lone.id])
+    answer(g2, [lone.id])
+    expect(g2.log.some((e) => /clobber themselves/.test(e.msg))).toBe(true)
+  })
+})
+
+describe('King Krakalak', () => {
+  it('Genesis: sacrifices his site, then 5 damage there and 3 at each nearby site, to everyone but himself', () => {
+    const g = board()
+    fillSites(g)
+    const av = avatarOf(g, 0)
+    const x = av.x + 1, y = av.y + 1
+    const here = summonCard(g, 1, 'Escyllion Cyclops', x, y)
+    const beside = summonCard(g, 1, 'Escyllion Cyclops', x + 1, y + 1)
+    const far = summonCard(g, 1, 'Escyllion Cyclops', x - 1, y + 2)
+    const king = castMinion(g, 0, 'King Krakalak', x, y)
+    settlePrompts(g)
+    expect(siteAt(g, x, y)?.isRubble).toBe(true)
+    expect(g.units[here.id].damage).toBe(5)
+    expect(g.units[beside.id].damage).toBe(3)
+    expect(g.units[far.id].damage).toBe(0)
+    expect(g.units[king.id].damage).toBe(0)
+  })
+})
+
+describe('Frost Breath', () => {
+  it('a Beast may cast it; the pattern is 2 in front, 1 beyond and 1 either side, and the hit are disabled', () => {
+    const g = board()
+    fillSites(g)
+    const beast = summonCard(g, 0, 'Wild Boars', 2, 1)
+    const front = summonCard(g, 1, 'Escyllion Cyclops', 2, 2)
+    const beyond = summonCard(g, 1, 'Escyllion Cyclops', 2, 3)
+    const side = summonCard(g, 1, 'Escyllion Cyclops', 1, 2)
+    const untouched = summonCard(g, 1, 'Escyllion Cyclops', 0, 2)
+    castMagic(g, 0, 'Frost Breath', { casterId: beast.id })
+    answer(g, 'n')
+    expect(g.units[front.id].damage).toBe(2)
+    expect(g.units[beyond.id].damage).toBe(1)
+    expect(g.units[side.id].damage).toBe(1)
+    expect(g.units[untouched.id].damage).toBe(0)
+    for (const u of [front, beyond, side]) expect(isDisabled(g, g.units[u.id])).toBe(true)
+    expect(isDisabled(g, g.units[untouched.id])).toBe(false)
+  })
+})
+
+describe('Swealand Longship', () => {
+  it('once on its turn moves to an adjacent water site without tapping', () => {
+    const g = board()
+    for (const s of Object.values(g.sites)) delete g.sites[s.id]
+    placeSite(g, 0, 'Rustic Village', 1, 1)
+    placeSite(g, 0, 'Stream', 2, 1)
+    placeSite(g, 0, 'Rustic Village', 1, 2)
+    const ship = summonCard(g, 0, 'Swealand Longship', 1, 1)
+    act(g, 0, { t: 'activate', sourceId: ship.id, ability: 'sail' })
+    expect((g.prompts[0] as any).data.squares).toEqual([{ x: 2, y: 1 }])
+    answer(g, { x: 2, y: 1 })
+    settlePrompts(g)
+    expect([g.units[ship.id].x, g.units[ship.id].y]).toEqual([2, 1])
+    expect(g.units[ship.id].tapped).toBe(false)
+    expect(() => act(g, 0, { t: 'activate', sourceId: ship.id, ability: 'sail' })).toThrow()
+  })
+})
+
+describe('Stomping Mammoth', () => {
+  it("while attacking, damage beyond what kills the defender goes to the site it stands at", () => {
+    const g = board()
+    fillSites(g, 1)
+    const mammoth = summonCard(g, 0, 'Stomping Mammoth', 1, 1) // 4 power
+    const foe = summonCard(g, 1, 'Wild Boars', 1, 2) // 2 defence: 2 excess
+    const life = g.units[g.players[1].avatarUnitId].life ?? avatarLife(g, 1)
+    act(g, 0, { t: 'moveAttack', unitId: mammoth.id, path: [{ x: 1, y: 2, region: 'surface' }], attack: { unit: foe.id } })
+    settlePrompts(g)
+    expect(g.units[foe.id]).toBeUndefined()
+    expect(avatarLife(g, 1)).toBe(life - 2)
   })
 })

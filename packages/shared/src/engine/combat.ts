@@ -5,9 +5,9 @@ import { findCard } from '../cards/db'
 import { pickUpUnits, dropUnits, syncCarried, detachFromCarrier } from './carrying'
 import type { GameState, PlayerId, Region, Step, UnitState, AttackTarget } from './types'
 import { pushLog, pushPrompt, registerCont, resumeWhenSettled, dealDamageToUnit, dealDamage, checkStateBased, opponent, makeCtx, emitUnitMoved, gainLife, tapUnit, untapUnit, emitEvent, emitEventWithFallen, beginDamageEvent, endDamageEvent, deathPending, drawCards, askDrawCard, recordAreaReveal, markRevealShoots, beginAreaReveal, sealAbilityReveal, beginBattleCapture, finishBattleCapture, avatarTrappedAt, isMagicProtected, isDyingUnit, killUnit } from './effects'
-import { abilitiesOff, effAttack, effKeywords, isDisabled, canTap, projectileCanHit, attackBlockedAt, attackForbidden, interceptBlockedAt, siteSilenced as siteSilencedC, artScript, regionPresentAt, carriedInside, isBlanked, isCarriableArtifact } from './statics'
+import { abilitiesOff, effAttack, effDefence, effKeywords, isDisabled, canTap, projectileCanHit, attackBlockedAt, attackForbidden, interceptBlockedAt, siteSilenced as siteSilencedC, artScript, regionPresentAt, carriedInside, isBlanked, isCarriableArtifact } from './statics'
 import { findPath, isFreeStep, isLegalStep, maxSteps, reachableLocations, reachableWithPaths, resolveMovement, type Walk } from './movement'
-import { unitsAt, occupies, occupiedSquares, sharedLocation, inBounds, edgesConnected, GRID_W, GRID_H, squareLabel } from './grid'
+import { unitsAt, occupies, occupiedSquares, sharedLocation, inBounds, edgesConnected, realmIsFlat, GRID_W, GRID_H, squareLabel } from './grid'
 
 // ---------- entry: the Move and Attack basic ability ----------
 
@@ -1095,8 +1095,24 @@ function runFightPass(state: GameState, ctx: FightCtx): void {
 
   // all allocations known: strikes in this pass resolve simultaneously
   const blows: { striker: UnitState; target: UnitState; damage: number; lethal: boolean }[] = []
+  // damage an attacker's strike sends on to the site it stands at (Stomping Mammoth), dealt with the pass
+  const siteExcess: { striker: UnitState; amount: number }[] = []
   for (const striker of strikers) {
-    const split = ctx.allocations[striker.id]
+    let split = ctx.allocations[striker.id]
+    // "While attacking, the Mammoth's excess damage is dealt to its site." FAQ: with several defenders
+    // "you must assign the Mammoth's damage to each defending minion until they would die. Then, any
+    // remaining damage is dealt to the Mammoth's site" — so when its power covers every defender, each
+    // takes exactly what kills it and the rest goes to the site the Mammoth is at (its own, if it is).
+    if (ctx.isAttack === true && striker.id === ctx.attackerId && getScript(striker.name)?.attackExcessToItsSite && !abilitiesOff(state, striker)) {
+      const foes = Object.keys(split).map((id) => state.units[id]).filter(Boolean) as UnitState[]
+      const power = Object.values(split).reduce((a, b) => a + b, 0)
+      const lifeLeft = (u: UnitState) => Math.max(0, effDefence(state, u) - u.damage)
+      const needed = foes.reduce((a, u) => a + lifeLeft(u), 0)
+      if (foes.length && foes.every((u) => !u.isAvatar) && power > needed) {
+        split = Object.fromEntries(foes.map((u) => [u.id, lifeLeft(u)]))
+        siteExcess.push({ striker, amount: power - needed })
+      }
+    }
     const lethal = !!effKeywords(state, striker).lethal
     const lethalVs = !striker.silenced ? getScript(striker.name)?.lethalVs : undefined
     // one-shot strike flags (Critical Strike double, Gift of the Raven lifelink)
@@ -1198,6 +1214,12 @@ function runFightPass(state: GameState, ctx: FightCtx): void {
           if (state.units[survivor.id]) script.onSelfStruck(makeCtx(state, survivor.id, survivor.controller, []), blow.striker)
         }
       }
+    }
+    for (const ex of siteExcess) {
+      const site = Object.values(state.sites).find((s) => s.x === ex.striker.x && s.y === ex.striker.y)
+      if (!site || ex.striker.region === 'void') continue
+      pushLog(state, ex.striker.controller, `${ex.striker.name} tramples ${site.name} for ${ex.amount}.`)
+      dealDamage(state, { site: site.id }, ex.amount, ex.striker.controller, { player: ex.striker.controller, kind: 'strike', attackerId: ex.striker.id, name: ex.striker.name })
     }
   } finally { endDamageEvent(state) }
   delete state.flow.wardAbsorbed // the simultaneous pass is over — the shared ward-break ends here
@@ -1501,6 +1523,9 @@ export function shootProjectile(state: GameState, player: PlayerId, unitId: stri
   // projectile's raySquares — wrap the coords on leaving the board, and a `visited` guard stops the
   // ray if it circles all the way back. Without a Globe it breaks at the edge as before.
   const wrap = edgesConnected(state)
+  // "May shoot across the top and bottom edges of the realm" (Sissi Marksmen): this shooter's own wrap,
+  // north-south only; like the movement wraps it is off while the realm is flat
+  const wrapTopBottom = !!getScript(unit.name)?.rangedWrapsTopBottom && !abilitiesOff(state, unit) && !realmIsFlat(state)
   const visited = new Set<string>([`${ox},${oy}`])
   let x = ox
   let y = oy
@@ -1508,7 +1533,7 @@ export function shootProjectile(state: GameState, player: PlayerId, unitId: stri
     x += dx
     y += dy
     if (!inBounds(x, y)) {
-      if (!wrap) break
+      if (!wrap && !(wrapTopBottom && x >= 0 && x < GRID_W)) break
       x = ((x % GRID_W) + GRID_W) % GRID_W
       y = ((y % GRID_H) + GRID_H) % GRID_H
     }

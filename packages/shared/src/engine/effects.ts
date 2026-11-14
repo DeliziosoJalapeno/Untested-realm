@@ -7,7 +7,7 @@ import { cloneState } from './clone'
 import type { GameState, PlayerId, Region, UnitState, SiteState, AuraState, Prompt, DeckName } from './types'
 import { isLocation } from './action-shape'
 import { avatarOf, siteAt, unitsAt, edgesConnected, aura2x2Squares, occupiedSquares, inBounds, GRID_W, GRID_H, squareLabel, nearbySquaresW, orthAdjacentWrapped } from './grid'
-import { abilitiesOff, affinity, effAttack, effDefence, effKeywords, canExistIn, hasRegionKeyword, siteSilenced, siteDisabled, artifactSilenced, artScript, isEvilUnit, isEvilUnitIntrinsic, isDisabled, isUnmodifiable, silenceImmune, footprintAllTerrain, terrainAt, buildStaticGrantIndex, isVoidAt, protectedFromSites, artifactController, artifactActor } from './statics'
+import { abilitiesOff, protectionsOf, affinity, effAttack, effDefence, effKeywords, canExistIn, hasRegionKeyword, siteSilenced, siteDisabled, artifactSilenced, artScript, isEvilUnit, isEvilUnitIntrinsic, isDisabled, isUnmodifiable, silenceImmune, footprintAllTerrain, terrainAt, buildStaticGrantIndex, isVoidAt, protectedFromSites, artifactController, artifactActor } from './statics'
 import { siteEntryAllowed, multiSquareDestSquares, oversizedTeleportPlacements } from './movement' // runtime-only use (teleport closure); import cycle is safe
 import { awardAchievement } from './achievements.catalog' // types-only module → no cycle
 import { noteAddedToEnd, noteSeenAtEnd, carryKnownTopIntoHand } from './knowledge'
@@ -324,6 +324,7 @@ export function gainMana(state: GameState, player: PlayerId, amount: number, at?
 
 /** is this unit protected from Magic damage/targeting? (own script or carried artifact) */
 export function isMagicProtected(state: GameState, unit: UnitState): boolean {
+  if (protectionsOf(state, unit).includes('magic')) return true // lent by another card (Humming Hummocks)
   const check = (name: string, id: string): boolean => {
     const p = getScript(name)?.magicProtected
     if (p === true) return true

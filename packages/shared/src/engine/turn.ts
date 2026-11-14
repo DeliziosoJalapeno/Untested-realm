@@ -135,7 +135,7 @@ export function beginTurn(state: GameState, player: PlayerId): void {
     )
   }
   // "until your next turn" area effects expire (Babbling Brook, Bog, Leadworks)
-  for (const key of ['areaDisables', 'immobileSites', 'siteSilences', 'enduringFaith', 'shieldWall', 'courtDisables', 'encased'] as const) {
+  for (const key of ['areaDisables', 'immobileSites', 'siteSilences', 'enduringFaith', 'shieldWall', 'courtDisables', 'encased', 'hummocks'] as const) {
     if (state.flow?.[key]) {
       state.flow[key] = state.flow[key].filter(
         (e: { player: PlayerId; turn: number }) => !(e.player === player && e.turn < state.turn),
