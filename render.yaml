@@ -1,0 +1,36 @@
+# Render Blueprint for Realmforge.
+#
+# One Docker web service: the server (HTTP + WebSocket on $PORT) also serves the built client, so the
+# whole app lives behind a single URL. Deploy: Render dashboard → New → Blueprint → pick this repo.
+#
+# FREE PLAN LIMITS (fine for trying it out and for playing the computer):
+#   - the service sleeps after 15 minutes without traffic and takes about a minute to wake;
+#   - its disk is wiped on every sleep, restart and deploy — so ACCOUNTS AND SERVER-SAVED DECKS ARE
+#     LOST each time. Decks kept in the browser, the tutorial and the puzzles are unaffected.
+#
+# TO KEEP ACCOUNTS AND DECKS: change `plan` to `starter` and uncomment the `disk` block below. The
+# database is the single file $SORCERY_DB, which the Dockerfile points at /data/sorcery.db. (Untested: the
+# container runs as the non-root `node` user; if it cannot write to the mounted disk, the deploy log
+# will say so at startup.)
+services:
+  - type: web
+    name: realmforge
+    runtime: docker
+    plan: free
+    region: virginia
+    branch: main
+    autoDeploy: true
+    healthCheckPath: /
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    envVars:
+      # the admin account for the in-game bug-report panel; created (or promoted) on boot.
+      # Render generates the password once — read it under the service's Environment tab.
+      - key: SORCERY_ADMIN_USERNAME
+        value: admin
+      - key: SORCERY_ADMIN_PASSWORD
+        generateValue: true
+    # disk:
+    #   name: realmforge-data
+    #   mountPath: /data
+    #   sizeGB: 1

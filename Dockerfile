@@ -1,4 +1,4 @@
-# Untested Realm — demo image. One container serves everything: the server
+# Realmforge (built on Untested Realm) — app image. One container serves everything: the server
 # (HTTP + WebSocket on $PORT) statically serves the built client, so a single
 # tunnel hostname covers the whole app. Runs as the non-root `node` user.
 FROM node:24-alpine

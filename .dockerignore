@@ -17,6 +17,8 @@ rulebook_dump.md
 faq_dump.md
 scraped_decks.json
 *.png
+# …but the client ships a few PNGs (the alternate home-page covers): keep those in the image
+!packages/client/public/**/*.png
 *.jpeg
 *.jpg
 snap-home.md
