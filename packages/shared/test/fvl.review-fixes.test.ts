@@ -326,7 +326,7 @@ describe('Smoldering Hollow', () => {
   })
 })
 
-describe('Fireball 2', () => {
+describe('Fireball', () => {
   it("doesn't ask which unit it hit — the explosion covers the whole location", () => {
     const g = board()
     fillSites(g)
@@ -334,7 +334,7 @@ describe('Fireball 2', () => {
     const a = summonCard(g, 1, 'Escyllion Cyclops', av.x, av.y + 2)
     const b = summonCard(g, 1, 'Escyllion Cyclops', av.x, av.y + 2)
     waiveThreshold(g, 0)
-    castMagic(g, 0, 'Fireball 2', { extra: { direction: 'n' } })
+    castMagic(g, 0, 'Fireball', { extra: { direction: 'n' } })
     expect(g.prompts.length).toBe(0)
     expect([g.units[a.id]?.damage, g.units[b.id]?.damage]).toEqual([4, 4])
   })

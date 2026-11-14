@@ -617,7 +617,7 @@ export const PRECONS: PreconDeck[] = [
       "Coy Nixie": 2,
       "Fey Changeling": 2,
       "Lone Wolf": 2,
-      "Polar Bears 2": 3,
+      "Polar Bears": 3,
       "Failed Mutation": 2,
       "Frost Elemental": 2,
       "Frozen Horror": 2
@@ -661,7 +661,7 @@ export const PRECONS: PreconDeck[] = [
       "Ash of Effort": 1,
       "Blaze": 2,
       "Landmass": 3,
-      "Fireball 2": 2,
+      "Fireball": 2,
       "Ground Slam": 2,
       "Earthquake": 1,
       "Lava Flow": 2,

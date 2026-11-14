@@ -959,6 +959,9 @@ export function isDisabled(state: GameState, unit: UnitState): boolean {
   const terrain = terrainAt(state, unit.x, unit.y)
   if (kw.waterbound && terrain !== 'water') return true
   if (kw.landbound && terrain !== 'land') return true
+  // Outerbound (Codex): "disabled while not occupying at least one location on the outside of the realm,
+  // meaning a location in a square that has fewer than four other adjacent squares"
+  if (kw.outerbound && orthAdjacentWrapped(state, unit.x, unit.y).length >= 4) return true
   return false
 }
 

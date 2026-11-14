@@ -3517,24 +3517,21 @@ describe('effect-cast: Chaos Twister copy + luck on the copy chain', () => {
 })
 
 describe('Auto-pick → player-choice conversions (prompt only on a real tie)', () => {
-  it('Fireball: co-located units → the caster chooses who takes 4 (others take 2)', () => {
+  it('Fireball (Frost Mage vs Lavamancer text): it explodes over the whole location — both co-located units take 4, no choice', () => {
     const g = board()
     const av = avatarOf(g, 0)
     av.x = 0; av.y = 1
     for (const x of [1, 2, 3]) placeSite(g, 0, 'Rustic Village', x, 1)
-    // two enemies share (1,1) → the caster must choose which one eats the 4
     const a = summonCard(g, 1, 'Escyllion Cyclops', 1, 1) // defence 6 — survives 4
     const b = summonCard(g, 1, 'Escyllion Cyclops', 1, 1)
+    const beside = summonCard(g, 1, 'Escyllion Cyclops', 2, 1) // orthogonally adjacent to the impact: 2
     waiveThreshold(g, 0)
     castMagic(g, 0, 'Fireball', { extra: { direction: 'e' } })
 
-    expect(g.prompts[0]?.kind).toBe('chooseTargets')
-    const cands = (g.prompts[0] as any).data.candidates
-    expect([...cands].sort()).toEqual([a.id, b.id].sort())
-    answer(g, [a.id]) // a takes 4, b takes 2
-
+    expect(g.prompts.length).toBe(0)
     expect(g.units[a.id]?.damage).toBe(4)
-    expect(g.units[b.id]?.damage).toBe(2)
+    expect(g.units[b.id]?.damage).toBe(4)
+    expect(g.units[beside.id]?.damage).toBe(2)
   })
 
   it('Fireball: a lone unit → no prompt, it takes 4 directly', () => {

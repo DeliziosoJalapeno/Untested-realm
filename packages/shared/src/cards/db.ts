@@ -83,6 +83,16 @@ const EXAMPLE_TRAPS: CardDef[] = [
 ]
 for (const t of EXAMPLE_TRAPS) byName.set(t.name.toLowerCase(), t)
 
+// Names retired when a card they stood in for was released. Before Frost Mage vs Lavamancer came out the
+// set's reworked Fireball and Polar Bears were separate cards ("Fireball 2", "Polar Bears 2"); now they
+// ARE Fireball and Polar Bears. Decks and replays saved in between still load: the old name resolves to
+// the released card (createGame stores the card's own name, so the engine never sees the old one).
+const RETIRED_NAMES: Record<string, string> = { 'fireball 2': 'fireball', 'polar bears 2': 'polar bears' }
+for (const [old, now] of Object.entries(RETIRED_NAMES)) {
+  const c = byName.get(now)
+  if (c) byName.set(old, c)
+}
+
 export const allCards: CardDef[] = normalizedCards
 
 // getCard runs in the engine's and the evaluator's inner loops: memoize by exact spelling to skip toLowerCase()
@@ -146,6 +156,8 @@ export interface ParsedKeywords {
   ranged?: number
   waterbound?: boolean
   landbound?: boolean
+  /** Outerbound: disabled while not on the outside of the realm (A Yeti So Shy) — read by isDisabled */
+  outerbound?: boolean
 }
 
 const SIMPLE_KEYWORDS: Record<string, keyof ParsedKeywords> = {
@@ -163,6 +175,7 @@ const SIMPLE_KEYWORDS: Record<string, keyof ParsedKeywords> = {
   spellcaster: 'spellcaster',
   waterbound: 'waterbound',
   landbound: 'landbound',
+  outerbound: 'outerbound',
 }
 
 const ELEMENTS = ['air', 'earth', 'fire', 'water']

@@ -42,13 +42,15 @@ function grantAffinity(g: GameState, p: PlayerId, t: Partial<Record<'air' | 'ear
 }
 
 describe('Frost Mage vs Lavamancer — card data', () => {
-  it('every spoiled card is in the card pool; the released Fireball and Polar Bears keep their own text', () => {
-    for (const name of ['Frost Mage', 'Lavamancer', 'Frostbolt', 'Spike Trap', 'Supervolcano', 'Polar Bears 2', 'Fireball 2', "Trapper's Rest"]) {
+  it('every card of the set is in the card pool; Fireball and Polar Bears carry the set\'s new text and stats', () => {
+    for (const name of ['Frost Mage', 'Lavamancer', 'Frostbolt', 'Spike Trap', 'Supervolcano', 'Polar Bears', 'Fireball', "Trapper's Rest"]) {
       expect(getCard(name).sets).toContain('Frost Mage vs Lavamancer')
     }
-    expect(getCard('Fireball').text).toBe('Shoot a projectile. It deals 4 damage on impact, and 2 damage to each other unit at that location.')
-    expect(getCard('Polar Bears').cost).toBe(2)
-    expect(getCard('Polar Bears 2').cost).toBe(3)
+    expect(getCard('Fireball').text).toContain('explodes on impact')
+    expect(getCard('Polar Bears')).toMatchObject({ cost: 3, attack: 3 })
+    // names used while the set was only spoiled still resolve (saved decks, replays)
+    expect(getCard('Fireball 2').name).toBe('Fireball')
+    expect(getCard('Polar Bears 2').name).toBe('Polar Bears')
     expect(getKeywords('Namira Cheetah').movement).toBe(3)
     expect(getKeywords('Snapjaw Raptor')).toMatchObject({ charge: true, stealth: true })
     expect(getKeywords('The White Death')).toMatchObject({ ranged: 3, stealth: true })
@@ -127,7 +129,7 @@ describe('Frostbolt', () => {
   })
 })
 
-describe('Fireball 2', () => {
+describe('Fireball', () => {
   it('explodes in a plus: 4 to every unit at the hit location, 2 to each orthogonally adjacent location', () => {
     const g = board()
     fillSites(g)
@@ -135,7 +137,7 @@ describe('Fireball 2', () => {
     const b = summonCard(g, 1, 'Escyllion Cyclops', 2, 2)
     const side = summonCard(g, 1, 'Escyllion Cyclops', 1, 2)
     const diag = summonCard(g, 1, 'Escyllion Cyclops', 1, 3)
-    castMagic(g, 0, 'Fireball 2', { extra: { direction: 'n' } })
+    castMagic(g, 0, 'Fireball', { extra: { direction: 'n' } })
     if (g.prompts.length) answer(g, [a.id])
     expect([g.units[a.id].damage, g.units[b.id].damage, g.units[side.id].damage, g.units[diag.id].damage]).toEqual([4, 4, 2, 0])
   })
@@ -335,12 +337,12 @@ describe('Pass-plug Serpent', () => {
   })
 })
 
-describe('Polar Bears 2 / Flat Realm Society', () => {
-  it('Polar Bears 2 wraps the top and bottom edges; Flat Realm Society stops it, and Magellan Globe too', () => {
+describe('Polar Bears / Flat Realm Society', () => {
+  it('Polar Bears wraps the top and bottom edges; Flat Realm Society stops it, and Magellan Globe too', () => {
     const g = board()
     placeSite(g, 0, 'Rustic Village', 1, 0)
     placeSite(g, 0, 'Rustic Village', 1, 3)
-    const bears = summonCard(g, 0, 'Polar Bears 2', 1, 0)
+    const bears = summonCard(g, 0, 'Polar Bears', 1, 0)
     const wraps = () => legalStepsFrom(g, bears, { x: 1, y: 0, region: 'surface' }).some((s) => s.x === 1 && s.y === 3)
     expect(wraps()).toBe(true)
     const holder = summonCard(g, 1, 'Bone Jumble', 4, 3)

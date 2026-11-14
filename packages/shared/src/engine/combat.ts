@@ -1153,6 +1153,9 @@ function runFightPass(state: GameState, ctx: FightCtx): void {
   // serializable (survives a prevention-ordering prompt's cont / online sync); cleared after the pass
   state.flow = state.flow ?? {}
   state.flow.wardAbsorbed = []
+  // who is ATTACKING in this pass, for "while attacking" damage effects (Dust Devil): only a fight begun
+  // by an attack has an attacker (Codex Fight); cleared with the pass
+  if (ctx.isAttack === true) state.flow.attackPass = ctx.attackerId
   // the whole pass is ONE damage event: damage a strike causes on the side (a Flaming Sword splash) is
   // part of that strike, so whatever it kills dies with the rest after every blow has landed (Codex Fight)
   beginDamageEvent(state)
@@ -1198,6 +1201,7 @@ function runFightPass(state: GameState, ctx: FightCtx): void {
     }
   } finally { endDamageEvent(state) }
   delete state.flow.wardAbsorbed // the simultaneous pass is over — the shared ward-break ends here
+  delete state.flow.attackPass
   checkStateBased(state)
   if (state.phase === 'over') return
 
