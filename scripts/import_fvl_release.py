@@ -40,6 +40,8 @@ TEXT = {
     "King Krakalak": "Genesis → Sacrifice this site to deal damage to each other unit at affected sites: 5 at this site, and 3 at each nearby site.",
     "Frost Breath": "May be cast by a Beast or Spirit. Each unit at affected locations takes damage and is disabled until your next turn: 2 at the location in front of the caster, and 1 at the location beyond it and at the locations on either side of it.",
     "Jormungand": "Occupies all outer locations safely, and can't be modified.",
+    # the API has the set symbol as "@"; the FAQ spells it out: a Beast with the Alpha set symbol
+    "Ancient Thaw": "Genesis → Cast an Alpha Beast from your collection here, disabled until your next turn.",
 }
 # spoiled cards whose pattern is already written out in cards.json: keep that wording
 KEEP_TEXT = {"Rite of Eruption", "Southpaw Dyrodor"}
@@ -74,8 +76,12 @@ def main():
             if name in ("Fireball", "Polar Bears", "Coy Nixie", "Hamlet's Ablaze!", "Heat Ray") and cur["text"] != new_text:
                 cur["text"] = new_text
                 changed = True
-            if name == "Polar Bears":
+            if name == "Polar Bears" and (cur["cost"], cur["attack"], cur["defence"]) != (e["cost"], e["attack"], e["attack"]):
                 cur["cost"], cur["attack"], cur["defence"] = e["cost"], e["attack"], e["attack"]
+                changed = True
+            # the two errata'd reprints show their new printing, so the card image matches the rules in force
+            if name in ("Fireball", "Polar Bears") and cur.get("img") != CDN.format(slug=mine[0]["slug"]):
+                cur["img"] = CDN.format(slug=mine[0]["slug"])
                 changed = True
             if changed:
                 updated.append(name)

@@ -8496,7 +8496,7 @@
 "Beta",
 "Frost Mage vs Lavamancer"
 ],
-"img": "https://d27a44hjr9gen3.cloudfront.net/cards/002-fireball-b-s.png"
+"img": "https://d27a44hjr9gen3.cloudfront.net/cards/008-fireball-pd-s.png"
 },
 {
 "name": "Firebolts",
@@ -18152,7 +18152,7 @@
 "Beta",
 "Frost Mage vs Lavamancer"
 ],
-"img": "https://d27a44hjr9gen3.cloudfront.net/cards/002-polar_bears-b-s.png"
+"img": "https://d27a44hjr9gen3.cloudfront.net/cards/008-polar_bears-pd-s.png"
 },
 {
 "name": "Polar Explorers",
@@ -28875,7 +28875,7 @@
 "fire": 0,
 "water": 0
 },
-"text": "Genesis → Cast an @ Beast from your collection here, disabled until your next turn.",
+"text": "Genesis → Cast an Alpha Beast from your collection here, disabled until your next turn.",
 "sets": [
 "Frost Mage vs Lavamancer"
 ],

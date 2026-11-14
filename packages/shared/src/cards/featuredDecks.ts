@@ -1,4 +1,11 @@
 import type { DeckList } from '../engine/decks'
+import { PRECONS } from './precons'
+
+// The two Frost Mage vs Lavamancer preconstructed decks, as ordinary (editable) decks in the picker.
+const fvlPrecon = (id: string, name: string): DeckList => {
+  const p = PRECONS.find((d) => d.id === id)!
+  return { name, avatar: p.avatar, spellbook: { ...p.spellbook }, atlas: { ...p.atlas }, collection: { ...(p.collection ?? {}) } }
+}
 
 // The decks offered in the deck picker below a player's own: one tournament list for each of the ten
 // most-played archetypes (share of placement points, sorcerycard.io tier list, three months to Nov 2026),
@@ -733,4 +740,7 @@ export const featuredDecks: DeckList[] = [
       "Screamer": 1
     }
   },
+  // Frost Mage vs Lavamancer (Nov 2026) — the two preconstructed decks (official card list, estimated counts)
+  fvlPrecon('precon:fvl-frost', 'Frost Mage (FvL precon)'),
+  fvlPrecon('precon:fvl-lava', 'Lavamancer (FvL precon)'),
 ]

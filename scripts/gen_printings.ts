@@ -10,7 +10,7 @@
 // Only cards present in our cards.json are emitted, keyed by OUR card name. The card's default art (the
 // art-code of its cards.json `img`) is flagged so the picker can mark it.
 //
-// Run: npx tsx scripts/gen_printings.ts   (needs network)
+// Run: npx tsx scripts/gen_printings.ts [saved-api-dump.json]   (needs network without the dump)
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
@@ -41,10 +41,17 @@ async function main() {
   }
   const ourNames = new Set(cards.map((c) => c.name))
 
-  console.log('fetching api.sorcerytcg.com/api/cards …')
-  const res = await fetch('https://api.sorcerytcg.com/api/cards', { headers: { 'user-agent': 'sorcery-simulator/0.1 (gen)' } })
-  if (!res.ok) throw new Error(`api ${res.status}`)
-  const apiCards = (await res.json()) as {
+  // a saved copy of the API dump may be given instead of fetching: npx tsx scripts/gen_printings.ts <dump.json>
+  const dump = process.argv[2]
+  let raw: unknown
+  if (dump) raw = JSON.parse(readFileSync(dump, 'utf-8'))
+  else {
+    console.log('fetching api.sorcerytcg.com/api/cards …')
+    const res = await fetch('https://api.sorcerytcg.com/api/cards', { headers: { 'user-agent': 'sorcery-simulator/0.1 (gen)' } })
+    if (!res.ok) throw new Error(`api ${res.status}`)
+    raw = await res.json()
+  }
+  const apiCards = raw as {
     name: string
     printings?: { slug: string; set?: { name?: string }; meta?: { finish?: string; artist?: { name?: string } } }[]
   }[]

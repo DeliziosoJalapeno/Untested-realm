@@ -2,13 +2,16 @@
 // SorceryTCG account on sorcerytcg.com (each entry's `source`). Generated 2026-10-18 through the same
 // sorceryToDeck importer the deck-link import uses. Precon mode: each player picks one of these, unedited —
 // they are 53-card decks (avatar + 36 spells + 16 sites), so they bypass the constructed size minimums.
-// Plus the two Frost Mage vs Lavamancer decks as WIP lists (see `wip`) until the set's release (Nov 13).
+// Plus the two Frost Mage vs Lavamancer decks (released Nov 13, 2026): avatar + 60 spells + 30 sites + a
+// 10-card collection. The official list publishes every card NAME but not the copy counts, so the counts
+// are estimates (see `estimated`) — replace them with the printed deck list when one is published.
 import type { DeckList } from '../engine/decks'
 
 export type PreconSet = 'Alpha' | 'Beta' | 'Gothic' | 'Frost Mage vs Lavamancer'
-/** `wip`: a work-in-progress list (set not yet released): the official names without counts — Ordinary ×3,
- *  Exceptional ×2, Elite/Unique ×1, collection ×1 — and only the cards whose text is already known. */
-export interface PreconDeck extends DeckList { id: string; set: PreconSet; source: string; wip?: boolean }
+/** `estimated`: the card names are official but the copy counts are not published. Estimated as Ordinary ×3,
+ *  Exceptional ×2, Elite/Unique ×1, then nudged by one copy to land on 60 spells / 30 sites / 10 collection
+ *  (Frost Mage: a 4th Polar Bears, every site ×2; Lavamancer: 2 Landmass, 2 Heat Ray in the collection). */
+export interface PreconDeck extends DeckList { id: string; set: PreconSet; source: string; estimated?: boolean }
 
 export const PRECONS: PreconDeck[] = [
   {
@@ -600,39 +603,63 @@ export const PRECONS: PreconDeck[] = [
   },
   {
     "id": "precon:fvl-frost",
-    "name": "Frost Mage (previews)",
+    "name": "Frost Mage",
     "set": "Frost Mage vs Lavamancer",
     "source": "https://sorcerytcg.com/news/every-card-in-frost-mage-vs-lavamancer",
-    "wip": true,
+    "estimated": true,
     "avatar": "Frost Mage",
     "spellbook": {
+      "Man-made Ice Age": 1,
       "Toolbox": 2,
       "Shatter": 2,
+      "Slide": 2,
       "Frostbolt": 2,
       "Polar Shift": 1,
+      "Research": 3,
+      "Frost Breath": 2,
       "Snowball": 2,
+      "When the Peaks Fell": 1,
       "Call of the Sea": 1,
+      "Arctic Fox": 2,
+      "Runeling": 2,
+      "Highgate Guide": 3,
+      "Jussi Puffins": 2,
+      "Sissi Marksmen": 2,
       "The White Death": 1,
       "Aria Wraith": 1,
       "Coy Nixie": 2,
       "Fey Changeling": 2,
       "Lone Wolf": 2,
-      "Polar Bears": 3,
+      "Polar Bears": 4,
       "Failed Mutation": 2,
       "Frost Elemental": 2,
-      "Frozen Horror": 2
+      "Hailstriker": 1,
+      "Swealand Longship": 2,
+      "Stomping Mammoth": 2,
+      "A Yeti So Shy": 1,
+      "Bearserker": 2,
+      "Frozen Horror": 2,
+      "Hibernal Legion": 1,
+      "Nanurluk": 1,
+      "Full-tilt Goliaths": 1,
+      "Jormungand": 1
     },
     "atlas": {
-      "Avalanche": 1,
-      "Deep Snow": 3,
-      "Icicle Dome": 1,
+      "Ancient Thaw": 2,
+      "Avalanche": 2,
+      "Deep Sea": 2,
+      "Deep Snow": 2,
+      "Icicle Dome": 2,
+      "Lighthouse": 2,
       "Mountain Pass": 2,
-      "River Rapids": 1,
-      "Springstem Meadow": 3,
+      "Mountain Peaks": 2,
+      "Permafrost": 2,
+      "River Rapids": 2,
+      "Springstem Meadow": 2,
       "Thin Ice": 2,
-      "Tundra": 1,
-      "Winter River": 3,
-      "Wuthering Heights": 1
+      "Tundra": 2,
+      "Winter River": 2,
+      "Wuthering Heights": 2
     },
     "collection": {
       "Blizzard": 1,
@@ -649,42 +676,60 @@ export const PRECONS: PreconDeck[] = [
   },
   {
     "id": "precon:fvl-lava",
-    "name": "Lavamancer (previews)",
+    "name": "Lavamancer",
     "set": "Frost Mage vs Lavamancer",
     "source": "https://sorcerytcg.com/news/every-card-in-frost-mage-vs-lavamancer",
-    "wip": true,
+    "estimated": true,
     "avatar": "Lavamancer",
     "spellbook": {
       "Rite of Eruption": 1,
+      "None Survive the Sun": 1,
       "Toolbox": 2,
       "Iron Man Talus": 2,
+      "Terraform": 1,
       "Ash of Effort": 1,
+      "Chart": 3,
       "Blaze": 2,
-      "Landmass": 3,
+      "Landmass": 2,
       "Fireball": 2,
       "Ground Slam": 2,
       "Earthquake": 1,
       "Lava Flow": 2,
       "Flame Wave": 1,
       "Emberleaf Dryad": 1,
+      "Flametongue Newt": 3,
+      "Reed Cord Measurer": 2,
       "Namira Cheetah": 3,
       "Sinterfee": 2,
       "Snapjaw Raptor": 2,
+      "Dust Devil": 2,
       "Flat Realm Society": 1,
+      "Gnarled Laborers": 2,
       "Slumbering Giantess": 2,
+      "Sunspear Tribe": 3,
       "Flayer": 3,
       "Lava Elemental": 2,
       "Pass-plug Serpent": 1,
+      "Slag Slug": 2,
       "Southpaw Dyrodor": 2,
-      "Stiff-pitch Witch": 1
+      "Stiff-pitch Witch": 1,
+      "Tusslin' Trolls": 1,
+      "Myrmidons": 1,
+      "King Krakalak": 1
     },
     "atlas": {
+      "Active Volcano": 2,
       "Bouldermaw": 1,
       "Combusting Busts": 3,
+      "Fertile Earth": 2,
+      "Humming Hummocks": 1,
+      "Landslide": 3,
       "Molten Maar": 2,
       "Scoria": 1,
       "Sinkhole": 1,
       "Smoldering Hollow": 1,
+      "Spike Trap": 3,
+      "Steppe": 2,
       "Sulfur Vents": 3,
       "Supervolcano": 1,
       "Trapper's Rest": 2,
@@ -695,8 +740,11 @@ export const PRECONS: PreconDeck[] = [
       "Gift of the Serpent": 1,
       "Boil": 1,
       "Bury": 1,
-      "Heat Ray": 1,
-      "Rolling Boulder": 1
+      "Hamlet's Ablaze!": 1,
+      "Heat Ray": 2,
+      "Hellhounds": 1,
+      "Rolling Boulder": 1,
+      "Amazon Warriors": 1
     }
   }
 ]
