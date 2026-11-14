@@ -740,7 +740,7 @@ export const featuredDecks: DeckList[] = [
       "Screamer": 1
     }
   },
-  // Frost Mage vs Lavamancer (Nov 2026) — the two preconstructed decks (official card list, estimated counts)
+  // Frost Mage vs Lavamancer (Nov 2026) — the two preconstructed decks (the printed deck lists)
   fvlPrecon('precon:fvl-frost', 'Frost Mage (FvL precon)'),
   fvlPrecon('precon:fvl-lava', 'Lavamancer (FvL precon)'),
 ]
