@@ -27,6 +27,11 @@ import Home from './components/Home'
 import DeckBuilder from './components/DeckBuilder'
 import CollectionPage from './components/CollectionPage'
 import ScenariosPage from './components/ScenariosPage'
+import TutorialPage from './components/TutorialPage'
+import TutorialCoach, { type CoachState } from './components/TutorialCoach'
+import { lessonById } from './tutorial/lessons'
+import { gate, advance, next as tutNext, runFoe, coachToAct } from './tutorial/runner'
+import { markLessonDone } from './tutorial/progress'
 import SealedDeckbuild from './components/SealedDeckbuild'
 import Game from './components/Game'
 import ReplayViewer from './components/ReplayViewer'
@@ -70,6 +75,8 @@ export interface Session {
   noAchv?: boolean
   /** sealed only: push your in-progress deck + Ready flag during deckbuild */
   sealedSubmit?: (deck: DeckList, ready: boolean) => void
+  /** a tutorial lesson is running in this (vs-computer) session — the coach drives seat 1 */
+  tutorial?: boolean
   /** hotseat/bot only: the full local state */
   local?: GameState
   /** bot only: pause after each bot action and wait for a manual "Next" click
@@ -225,7 +232,7 @@ function fmtRestart(ms: number): string {
 }
 
 export default function App() {
-  const [page, setPage] = useState<'home' | 'decks' | 'game' | 'collection' | 'scenarios' | 'replays' | 'replay' | 'bugs'>('home')
+  const [page, setPage] = useState<'home' | 'decks' | 'game' | 'collection' | 'scenarios' | 'replays' | 'replay' | 'bugs' | 'tutorial'>('home')
   const [replayData, setReplayData] = useState<ReplayRecord | null>(null)
   // where the full-screen replay viewer returns on leave — the replay list, or the admin bugs panel
   const [replayReturn, setReplayReturn] = useState<'replays' | 'bugs'>('replays')
@@ -706,6 +713,65 @@ export default function App() {
     await auth.pushReplay({ id, name, isPublic, data: r })
   }
 
+  // ---- tutorial: a lesson is a vs-computer session whose opponent is the scripted coach ----
+  const coachRef = useRef<CoachState | null>(null)
+
+  /** after any change to the lesson's game: move past completed steps, record a finished lesson */
+  function coachSettle() {
+    const c = coachRef.current
+    if (!c) return
+    c.i = advance(c.lesson, c.i, c.t)
+    if (c.i >= c.lesson.steps.length) markLessonDone(c.lesson.id)
+  }
+
+  function startLesson(lessonId: string) {
+    const lesson = lessonById(lessonId)
+    if (!lesson) return
+    myDeckFromCollection.current = false
+    localHistory.current = []
+    savedReplayIdRef.current = null
+    recordingRef.current = null // lessons aren't recorded or archived
+    reviewFlagsRef.current = []; archiveDifficultyRef.current = null; archivedEndRef.current = true
+    disposeBotWorker()
+    botBannedRef.current.clear()
+    const t = lesson.build()
+    lesson.steps[0]?.enter?.(t)
+    coachRef.current = { lesson, i: 0, t, nope: null }
+    coachSettle()
+    localClockTick.current = Date.now()
+    const sess: Session = {
+      kind: 'bot',
+      seat: 0,
+      local: t.g,
+      view: null,
+      tutorial: true,
+      noAchv: true, // prepared boards → no achievements
+      botDifficulty: 'fast',
+      onReportBug: reportBugLocal,
+      send: (action: Action) => {
+        const c = coachRef.current
+        if (!c) return
+        const why = gate(c.lesson, c.i, action, c.t)
+        if (why) { c.nope = why; bumpSession(); return }
+        c.nope = null
+        if (runLocal(0, action)) { coachSettle(); bumpSession() }
+      },
+    }
+    localRef.current = t.g
+    setPlayPending(false)
+    setSession(sess)
+    setPage('game')
+  }
+
+  function coachContinue() {
+    const c = coachRef.current
+    if (!c) return
+    c.i = tutNext(c.lesson, c.i, c.t)
+    c.nope = null
+    coachSettle()
+    bumpSession()
+  }
+
   function startVsBot(myDeck: DeckList, botDeck: DeckList, clock: ClockConfig | null = null, stepBot = false, difficulty: 'fast' | 'thinking' = 'fast', secondSeer = false) {
     myDeckFromCollection.current = !!myDeck.fromCollection
     localHistory.current = []
@@ -737,6 +803,7 @@ export default function App() {
     setPage('game')
     recordingRef.current = startReplay('bot', decks, ['You', 'Computer'], seed, first, clock, secondSeer)
     reviewFlagsRef.current = []; archiveDifficultyRef.current = difficulty; archivedEndRef.current = false
+    coachRef.current = null
   }
 
   // apply exactly ONE bot action (seat 1). Shared by the auto-timer and the
@@ -746,6 +813,15 @@ export default function App() {
   function runBotStep() {
     const local = localRef.current
     if (!local || !botNeedsToAct(local, 1)) return
+    // a lesson: the coach makes its scripted move (or, in the free game, the fast bot's)
+    const coach = session?.tutorial ? coachRef.current : null
+    if (coach) {
+      if (!coachToAct(coach.lesson, coach.i, local)) return
+      runFoe(coach.lesson, coach.i, coach.t)
+      coachSettle()
+      bumpSession()
+      return
+    }
     if (chargeLocalClock()) { bumpSession(); return } // bot flagged while thinking
     // "Thinking" difficulty: hand the position to the search worker and wait for its reply. Only the
     // first action of the turn actually thinks; the rest are instant plan-replays (hence the delayed
@@ -776,6 +852,8 @@ export default function App() {
     if (session?.kind !== 'bot' || !session.local) return
     if (!botNeedsToAct(session.local, 1)) return
     if (session.stepBot) return // manual advance only
+    // in a lesson the coach holds still while you read a note
+    if (session.tutorial && coachRef.current && !coachToAct(coachRef.current.lesson, coachRef.current.i, session.local)) return
     let cancelled = false
     const id = setTimeout(() => { if (!cancelled) runBotStep() }, 1000)
     return () => {
@@ -1233,6 +1311,7 @@ export default function App() {
           onDecks={() => setPage('decks')}
           onCollection={() => setPage('collection')}
           onScenarios={() => setPage('scenarios')}
+          onTutorial={() => setPage('tutorial')}
           onWatchReplay={() => setPage('replays')}
           isAdmin={auth.isAdminUser()}
           onOpenBugs={() => setPage('bugs')}
@@ -1262,6 +1341,9 @@ export default function App() {
       )}
       {page === 'decks' && <DeckBuilder onBack={() => setPage('home')} />}
       {page === 'collection' && <CollectionPage onBack={() => setPage('home')} />}
+      {page === 'tutorial' && (
+        <TutorialPage onBack={() => setPage('home')} onStart={startLesson} />
+      )}
       {page === 'scenarios' && (
         <ScenariosPage
           username={username}
@@ -1303,7 +1385,7 @@ export default function App() {
             onSaveScenario={session.kind !== 'online' ? saveScenarioFromCurrent : saveScenarioOnline}
             onGoBack={playPending ? freeGoBack : undefined}
             mobile={mm.mobile}
-            botControl={session.kind === 'bot' && localRef.current ? {
+            botControl={session.kind === 'bot' && !session.tutorial && localRef.current ? {
               stepMode: !!session.stepBot,
               canAdvance: botNeedsToAct(localRef.current, 1),
               onAuto: () => setSession((cur) => (cur ? { ...cur, stepBot: false } : cur)),
@@ -1316,8 +1398,10 @@ export default function App() {
               netRef.current = null
               disposeBotWorker()
               clearRoom(); clearRoomUrl()
+              const wasLesson = !!session.tutorial
+              coachRef.current = null
               setSession(null)
-              setPage('home')
+              setPage(wasLesson ? 'tutorial' : 'home')
             }}
             // keep the online session alive and just switch pages, so a player waiting for an
             // opponent (created room / matchmaking) can browse the rest of the site meanwhile.
@@ -1333,7 +1417,16 @@ export default function App() {
               ))}
             </div>
           )}
-          {!mm.mobile && session.kind === 'bot' && localRef.current && (session.stepBot ? botNeedsToAct(localRef.current, 1) : true) && (
+          {session.tutorial && coachRef.current && (
+            <TutorialCoach
+              coach={coachRef.current}
+              onContinue={coachContinue}
+              onRestart={() => startLesson(coachRef.current!.lesson.id)}
+              onExit={() => { coachRef.current = null; setSession(null); setPage('tutorial') }}
+              onNextLesson={(id) => startLesson(id)}
+            />
+          )}
+          {!mm.mobile && session.kind === 'bot' && !session.tutorial && localRef.current && (session.stepBot ? botNeedsToAct(localRef.current, 1) : true) && (
             <div className="botstepbar">
               {session.stepBot ? (
                 <>

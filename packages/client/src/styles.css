@@ -2652,3 +2652,47 @@ button.autobattle:hover:not(:disabled) { background: #4a5cc0; }
 .board.opp-flip .groundimg.art-theirs,
 .board.opp-flip .aura-theirs .groundimg,
 .board.opp-flip .aura-theirs .auraimg { transform: rotate(180deg); }
+
+/* ---- tutorial: lesson list ---- */
+.tutpage { max-width: 980px; margin: 0 auto; padding: 24px 16px 64px; }
+.tutpage-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.tutpage-head h1 { margin: 0; flex: 1; font-size: 28px; }
+.tutpage-count { opacity: 0.75; font-size: 14px; }
+.tutpage-intro { max-width: 68ch; line-height: 1.5; opacity: 0.9; }
+.tutpage-next { font-size: 16px; padding: 10px 18px; background: #2f6b4f; border-color: #4c9a76; color: #fff; cursor: pointer; border-radius: 8px; }
+.tutpage-next:hover { background: #378060; }
+.tutchapter h2 { font-size: 15px; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.7; margin: 28px 0 10px; }
+.tutlessons { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 10px; }
+.tutlesson { display: flex; gap: 12px; align-items: flex-start; text-align: left; padding: 12px 14px; border-radius: 10px; cursor: pointer; background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.14); color: inherit; font: inherit; }
+.tutlesson:hover { background: rgba(255, 255, 255, 0.09); border-color: rgba(255, 255, 255, 0.3); }
+.tutlesson-n { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 13px; background: rgba(255, 255, 255, 0.1); }
+.tutlesson.is-done .tutlesson-n { background: #2f6b4f; color: #fff; }
+.tutlesson-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.tutlesson-title { font-weight: 700; font-size: 15px; }
+.tutlesson-blurb { font-size: 13px; opacity: 0.85; line-height: 1.35; }
+.tutlesson-covers { font-size: 11px; opacity: 0.55; line-height: 1.35; }
+.home-tutorial { background: #2f6b4f; border-color: #4c9a76; color: #fff; }
+
+/* ---- tutorial: the coach panel ---- */
+.tutcoach { position: fixed; right: 6px; bottom: 6px; z-index: 60; width: min(274px, calc(100vw - 12px)); max-height: min(52vh, 520px); display: flex; flex-direction: column; background: #172231f2; color: #eef2f7; border: 1px solid #4c9a76; border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55); font-size: 13px; line-height: 1.45; }
+.tutcoach header { display: flex; align-items: center; gap: 8px; padding: 8px 10px 8px 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.12); }
+.tutcoach-title { flex: 1; font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tutcoach-prog { font-size: 12px; opacity: 0.7; font-variant-numeric: tabular-nums; }
+.tutcoach-x { width: 24px; height: 24px; padding: 0; line-height: 1; cursor: pointer; }
+.tutcoach-body { padding: 4px 14px 2px; overflow-y: auto; }
+.tutcoach-body p { margin: 9px 0; }
+.tutcoach-body strong { color: #ffe08a; }
+.tutcoach-task { background: rgba(76, 154, 118, 0.2); border-left: 3px solid #5fc396; padding: 8px 10px; border-radius: 0 6px 6px 0; font-weight: 600; }
+.tutcoach-task span { display: block; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.75; font-weight: 700; margin-bottom: 2px; }
+.tutcoach-nope { color: #ffcf8f; background: rgba(255, 170, 60, 0.12); border-radius: 6px; padding: 6px 10px; }
+.tutcoach-lost { color: #ffb1a8; background: rgba(255, 90, 70, 0.14); border-radius: 6px; padding: 6px 10px; }
+.tutcoach-done { font-weight: 700; color: #7fe0b0; }
+.tutcoach footer { display: flex; gap: 8px; flex-wrap: wrap; padding: 8px 12px 10px; border-top: 1px solid rgba(255, 255, 255, 0.12); }
+.tutcoach footer button { cursor: pointer; font-size: 13px; }
+.tutcoach .tutcoach-go { background: #2f6b4f; border-color: #5fc396; color: #fff; font-weight: 700; }
+.tutcoach-min { width: auto; padding: 8px 14px; cursor: pointer; font-weight: 700; flex-direction: row; }
+/* what the coach is pointing at */
+.tut-spot { outline: 3px solid #5fc396 !important; outline-offset: 2px; animation: tut-pulse 1.3s ease-in-out infinite; }
+@keyframes tut-pulse { 0%, 100% { outline-color: #5fc396; box-shadow: 0 0 0 0 rgba(95, 195, 150, 0.55); } 50% { outline-color: #c9ffe3; box-shadow: 0 0 0 7px rgba(95, 195, 150, 0); } }
+@media (prefers-reduced-motion: reduce) { .tut-spot { animation: none; } }
+@media (max-width: 760px) { .tutcoach { left: 6px; right: 6px; bottom: 6px; width: auto; max-height: 40vh; } }
