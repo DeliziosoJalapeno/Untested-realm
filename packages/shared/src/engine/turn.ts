@@ -3,7 +3,7 @@ import { getCard } from '../cards/db'
 import type { GameState, PlayerId } from './types'
 import { pushLog, pushPrompt, registerCont, drawCards, opponent, makeCtx, checkStateBased, killUnit, deferTurnStep, reconcileSummonTax, tapUnit, runDamageEvent, untapUnit, noAtlasDrawChoice, recordManaGain, siteStillFlooded, beginAreaReveal, sealAbilityReveal, snapshotRealm, recordTouchedSites, turnFingerprint } from './effects'
 import { sitesOf, unitsOf, avatarOf, siteAt } from './grid'
-import { abilitiesOff, siteSilenced, artifactSilenced, siteDisabled, canTap, isDisabled, artifactController, artifactActor } from './statics'
+import { abilitiesOff, siteSilenced, artifactSilenced, siteDisabled, canTap, isDisabled, artifactController, artifactActor, permafrostHolds } from './statics'
 import { playSite } from './casting'
 import { noteAddedToEnd } from './knowledge'
 
@@ -121,8 +121,11 @@ export function beginTurn(state: GameState, player: PlayerId): void {
 
   // "until next turn" effects of this player end
   for (const unit of Object.values(state.units)) {
+    // Permafrost: a disable on a minion there is permanent — it doesn't run out with the turn
+    const frozenIn = unit.modifiers.some((m) => m.kind === 'keyword' && m.keyword === 'disabled') && permafrostHolds(state, unit)
     unit.modifiers = unit.modifiers.filter(
-      (m) => !(m.duration === 'untilYourNextTurn' && m.sourcePlayer === player && m.turn < state.turn),
+      (m) => !(m.duration === 'untilYourNextTurn' && m.sourcePlayer === player && m.turn < state.turn
+        && !(frozenIn && m.kind === 'keyword' && m.keyword === 'disabled')),
     )
   }
   // Animated auras revert to mere enchantments at the start of the animator's next turn (handled

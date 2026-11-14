@@ -777,6 +777,9 @@ export function directlyDisabled(state: GameState, unit: UnitState): boolean {
   }
   if (unit.disabled) return true
   if (unit.modifiers.some((m) => m.kind === 'keyword' && m.keyword === 'disabled')) return !unit.isAvatar
+  // frozen by a Hibernal Legion: "disabled until the Legion leaves the realm" — an effect it applied, so it
+  // holds even while the Legion itself is disabled or silenced, and ends the moment the Legion is gone
+  if (!unit.isAvatar && ((state.flow?.hibernal ?? []) as { legionId: string; units: string[] }[]).some((h) => h.units.includes(unit.id) && !!state.units[h.legionId])) return true
   // shackled by a carried artifact (Iron Shackles)
   for (const artId of unit.carrying) {
     const art = state.artifacts[artId]
@@ -1002,6 +1005,15 @@ export function isDisabled(state: GameState, unit: UnitState): boolean {
   return false
 }
 
+/** Is this minion held by Permafrost ("Disable effects on minions here are permanent, but are removed if
+ *  they leave")? While it is, a disable on it doesn't run out or get knocked off (the start-of-turn expiry in
+ *  turn.ts, a sleeper woken by damage); Permafrost's own script lifts them when the minion leaves. */
+export function permafrostHolds(state: GameState, unit: UnitState): boolean {
+  if (unit.isAvatar || unit.region === 'void') return false
+  const site = siteAt(state, unit.x, unit.y)
+  return !!site && !site.isRubble && site.name === 'Permafrost' && !siteSilenced(state, site)
+}
+
 /** Has this unit lost its OWN abilities? Rulebook: a disabled minion "has no abilities" — passive, static,
  *  triggered, replacement and activated alike — exactly like a silenced one. Gate every unit script hook
  *  on this, not on `.silenced` alone. In loops over many units look the hook up FIRST and only ask this
@@ -1023,6 +1035,8 @@ export function canTapForCost(state: GameState, unit: UnitState): boolean {
  *  artifact atop it (Blightstone), or — a Court — while an Overflowing Court has disabled the OTHER Courts. */
 export function siteDisabled(state: GameState, site: { id?: string; name?: string; x: number; y: number }): boolean {
   if (siteDisabledByArtifact(state, site)) return true
+  // frozen by a Hibernal Legion, until that Legion leaves the realm
+  if (site.id && ((state.flow?.hibernal ?? []) as { legionId: string; sites: string[] }[]).some((h) => h.sites.includes(site.id!) && !!state.units[h.legionId])) return true
   if (!site.name || !/\bCourt\b/.test(site.name)) return false
   return ((state.flow?.courtDisables ?? []) as { sourceId: string }[]).some((d) => d.sourceId !== site.id)
 }

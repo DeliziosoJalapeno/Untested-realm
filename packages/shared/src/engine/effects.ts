@@ -7,7 +7,7 @@ import { cloneState } from './clone'
 import type { GameState, PlayerId, Region, UnitState, SiteState, AuraState, Prompt, DeckName } from './types'
 import { isLocation } from './action-shape'
 import { avatarOf, siteAt, unitsAt, edgesConnected, aura2x2Squares, occupiedSquares, inBounds, GRID_W, GRID_H, squareLabel, nearbySquaresW, orthAdjacentWrapped } from './grid'
-import { abilitiesOff, protectionsOf, affinity, effAttack, effDefence, effKeywords, canExistIn, hasRegionKeyword, siteSilenced, siteDisabled, artifactSilenced, artScript, isEvilUnit, isEvilUnitIntrinsic, isDisabled, isUnmodifiable, silenceImmune, footprintAllTerrain, terrainAt, buildStaticGrantIndex, isVoidAt, protectedFromSites, artifactController, artifactActor } from './statics'
+import { abilitiesOff, protectionsOf, permafrostHolds, affinity, effAttack, effDefence, effKeywords, canExistIn, hasRegionKeyword, siteSilenced, siteDisabled, artifactSilenced, artScript, isEvilUnit, isEvilUnitIntrinsic, isDisabled, isUnmodifiable, silenceImmune, footprintAllTerrain, terrainAt, buildStaticGrantIndex, isVoidAt, protectedFromSites, artifactController, artifactActor } from './statics'
 import { siteEntryAllowed, multiSquareDestSquares, oversizedTeleportPlacements } from './movement' // runtime-only use (teleport closure); import cycle is safe
 import { awardAchievement } from './achievements.catalog' // types-only module → no cycle
 import { noteAddedToEnd, noteSeenAtEnd, carryKnownTopIntoHand } from './knowledge'
@@ -1631,8 +1631,9 @@ function applyResolvedDamage(
       return
     }
   }
-  // sleepers wake when hurt (Sleep, Slumbering Giantess, Dream-Quest)
-  if (unit.counters?.asleep) {
+  // sleepers wake when hurt (Sleep, Slumbering Giantess, Dream-Quest) — except on Permafrost, where a
+  // disable only ends when the minion leaves (FAQ: "She won't wake up if she takes damage")
+  if (unit.counters?.asleep && !permafrostHolds(state, unit)) {
     delete unit.counters.asleep
     unit.disabled = undefined
     pushLog(state, null, `${unit.name} jolts awake!`)
@@ -3442,9 +3443,18 @@ function settleRealmFootprints(state: GameState): void {
       if (marked) { u.extraSquares = []; delete u.counters!.occupiesAll }
       continue
     }
-    if (!marked || (u.extraSquares?.length ?? 0) !== GRID_W * GRID_H - 1) {
+    // "occupies all OUTER locations" (Jormungand): the ring of squares on the outside of the realm. Its
+    // own square is one of them — a Jormungand that entered at an inner site coils out to the ring.
+    const outerOnly = !!script.occupiesAllLocations.outerOnly
+    const inFootprint = (x: number, y: number) => !outerOnly || x === 0 || y === 0 || x === GRID_W - 1 || y === GRID_H - 1
+    if (outerOnly && !inFootprint(u.x, u.y)) {
+      u.x = u.x < GRID_W / 2 ? 0 : GRID_W - 1
+      u.extraSquares = undefined
+    }
+    const want = (outerOnly ? 2 * GRID_W + 2 * GRID_H - 4 : GRID_W * GRID_H) - 1
+    if (!marked || (u.extraSquares?.length ?? 0) !== want) {
       u.extraSquares = []
-      for (let x = 0; x < GRID_W; x++) for (let y = 0; y < GRID_H; y++) if (x !== u.x || y !== u.y) u.extraSquares.push({ x, y })
+      for (let x = 0; x < GRID_W; x++) for (let y = 0; y < GRID_H; y++) if ((x !== u.x || y !== u.y) && inFootprint(x, y)) u.extraSquares.push({ x, y })
       u.counters = { ...(u.counters ?? {}), occupiesAll: 1 }
     }
     const min = script.occupiesAllLocations.minVoids

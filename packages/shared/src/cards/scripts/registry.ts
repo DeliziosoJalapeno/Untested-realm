@@ -216,7 +216,7 @@ export interface CardScript {
   /** a footprint CHARACTERISTIC: this minion occupies every location of the realm (Yog-Sothoth), applied by
    *  checkStateBased from the card's name — so transforms into/out of it and silence/disable are honoured.
    *  `minVoids`: "is banished without N voids" (an ability: ignored while its abilities are off). */
-  occupiesAllLocations?: { minVoids?: number }
+  occupiesAllLocations?: { minVoids?: number; outerOnly?: boolean }
   /** minions the caster MAY sacrifice as part of the cost (Gnarled Wendigo: those at its summoning location).
    *  The player picks any subset in the cast's `extra.sacrifice` (ids); the engine checks it against this list,
    *  then kills them with the mana payment, before the minion enters — so the sacrifice is paid even if the

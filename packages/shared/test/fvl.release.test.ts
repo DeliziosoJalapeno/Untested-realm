@@ -4,7 +4,7 @@ import { describe, it, expect } from 'vitest'
 import { newGame, keepBoth, summonCard, placeSite, castMagic, answer, act, actFail, waiveThreshold, giveMana, injectToHand, fillSites, settlePrompts } from './helpers'
 import {
   allCards, getCard, getKeywords, isDisabled, effKeywords, effAttack, legalStepsFrom, endTurn, enterSite, siteAt, siteSilenced,
-  protectedFromSites, isMagicProtected, GRID_W, GRID_H,
+  protectedFromSites, isMagicProtected, siteDisabled, checkStateBased, occupiedSquares, GRID_W, GRID_H,
   type GameState, type PlayerId, type UnitState,
 } from '../src'
 import '../src/cards/scripts/index'
@@ -446,5 +446,281 @@ describe('Stomping Mammoth', () => {
     settlePrompts(g)
     expect(g.units[foe.id]).toBeUndefined()
     expect(avatarLife(g, 1)).toBe(life - 2)
+  })
+})
+
+/** play a site card at (x,y) through the real site entry (Genesis fires; a Trap goes face-down) */
+function playSiteCard(g: GameState, p: PlayerId, name: string, x: number, y: number): string {
+  const old = siteAt(g, x, y)
+  if (old) delete g.sites[old.id]
+  const cid = `csite${g.nextId++}`
+  g.cards[cid] = { id: cid, name, owner: p }
+  return enterSite(g, p, cid, x, y)
+}
+
+const disableMark = (g: GameState, u: UnitState, by: PlayerId) =>
+  u.modifiers.push({ kind: 'keyword', keyword: 'disabled', duration: 'untilYourNextTurn', turn: g.turn, sourcePlayer: by } as any)
+
+describe('Jormungand', () => {
+  it("occupies every outer location, wherever it entered, and can't be modified", () => {
+    const g = board()
+    fillSites(g)
+    const j = summonCard(g, 0, 'Jormungand', 2, 1) // an inner square
+    checkStateBased(g)
+    const squares = occupiedSquares(g.units[j.id])
+    expect(squares.length).toBe(2 * GRID_W + 2 * GRID_H - 4)
+    expect(squares.every((s) => s.x === 0 || s.y === 0 || s.x === GRID_W - 1 || s.y === GRID_H - 1)).toBe(true)
+    disableMark(g, g.units[j.id], 1)
+    expect(isDisabled(g, g.units[j.id])).toBe(false)
+    expect(effAttack(g, g.units[j.id])).toBe(10)
+  })
+})
+
+describe('Man-made Ice Age', () => {
+  it('disables the minions atop the sites it covers — not Avatars, not those beneath or outside', () => {
+    const g = board()
+    fillSites(g)
+    const cid = injectToHand(g, 0, 'Man-made Ice Age')
+    giveMana(g, 0, 10)
+    act(g, 0, { t: 'castSpell', cardId: cid, casterId: g.players[0].avatarUnitId, at: { x: 1, y: 1 } })
+    settlePrompts(g)
+    const ice = Object.values(g.auras).find((r) => r.name === 'Man-made Ice Age')!
+    expect(ice.squares.length).toBe(4)
+    const sq = ice.squares[0]
+    const out = [0, 1, 2, 3, 4].flatMap((x) => [0, 1, 2, 3].map((y) => ({ x, y }))).find((q) => !ice.squares.some((s) => s.x === q.x && s.y === q.y))!
+    const inside = summonCard(g, 1, 'Wild Boars', sq.x, sq.y)
+    const mine = summonCard(g, 0, 'Wild Boars', sq.x, sq.y)
+    const outside = summonCard(g, 1, 'Wild Boars', out.x, out.y)
+    expect(isDisabled(g, inside)).toBe(true)
+    expect(isDisabled(g, mine)).toBe(true)
+    expect(isDisabled(g, outside)).toBe(false)
+  })
+})
+
+describe('None Survive the Sun', () => {
+  it('at the end of each turn burns the minions on the surface, steps west, and sets at the western edge', () => {
+    const g = board()
+    fillSites(g)
+    const cid = injectToHand(g, 0, 'None Survive the Sun')
+    giveMana(g, 0, 10)
+    act(g, 0, { t: 'castSpell', cardId: cid, casterId: g.players[0].avatarUnitId, at: { x: 1, y: 1 } })
+    settlePrompts(g)
+    const sun = Object.values(g.auras).find((r) => r.name === 'None Survive the Sun')!
+    const minX = Math.min(...sun.squares.map((s) => s.x))
+    const here = summonCard(g, 1, 'Escyllion Cyclops', sun.squares[0].x, sun.squares[0].y)
+    const far = summonCard(g, 1, 'Escyllion Cyclops', 4, 3)
+    const under = summonCard(g, 1, 'Myrmidons', 4, 3, 'underground')
+    const frail = summonCard(g, 0, 'Arctic Fox', 4, 0) // 1 defence: dies to the 1
+    endTurn(g); settlePrompts(g)
+    expect(g.units[here.id]).toBeUndefined()
+    expect(g.units[frail.id]).toBeUndefined()
+    expect(g.units[far.id]).toBeDefined()
+    expect(g.units[under.id].damage).toBe(0)
+    expect(g.log.some((e) => /Escyllion Cyclops takes 1 damage/.test(e.msg))).toBe(true)
+    expect(Math.min(...g.auras[sun.id].squares.map((s) => s.x))).toBe(minX - 1)
+    for (let i = 0; i < minX; i++) { endTurn(g); settlePrompts(g) }
+    expect(g.auras[sun.id]).toBeUndefined()
+  })
+})
+
+describe('Hibernal Legion', () => {
+  it('at the end of its turn freezes its site and the other minions there, until it leaves the realm', () => {
+    const g = board()
+    fillSites(g)
+    const legion = summonCard(g, 0, 'Hibernal Legion', 1, 1)
+    const foe = summonCard(g, 1, 'Wild Boars', 1, 1)
+    const ally = summonCard(g, 0, 'Wild Boars', 1, 1)
+    const elsewhere = summonCard(g, 1, 'Wild Boars', 3, 3)
+    endTurn(g); settlePrompts(g)
+    expect(isDisabled(g, g.units[foe.id])).toBe(true)
+    expect(isDisabled(g, g.units[ally.id])).toBe(true)
+    expect(isDisabled(g, g.units[legion.id])).toBe(false)
+    expect(isDisabled(g, g.units[elsewhere.id])).toBe(false)
+    expect(siteDisabled(g, siteAt(g, 1, 1)!)).toBe(true)
+    endTurn(g); settlePrompts(g) // it lasts beyond "your next turn"
+    expect(isDisabled(g, g.units[foe.id])).toBe(true)
+    delete g.units[legion.id] // the Legion leaves the realm
+    expect(isDisabled(g, g.units[foe.id])).toBe(false)
+    expect(siteDisabled(g, siteAt(g, 1, 1)!)).toBe(false)
+  })
+})
+
+describe('Permafrost', () => {
+  it('a timed disable on a minion there does not run out; leaving lifts it', () => {
+    const g = board()
+    fillSites(g)
+    playSiteCard(g, 0, 'Permafrost', 1, 1)
+    const stuck = summonCard(g, 1, 'Wild Boars', 1, 1)
+    const free = summonCard(g, 1, 'Wild Boars', 3, 3)
+    disableMark(g, stuck, 0); disableMark(g, free, 0)
+    passRound(g) // player 0's next turn: the mark on `free` expires, the one on Permafrost stays
+    expect(isDisabled(g, g.units[free.id])).toBe(false)
+    expect(isDisabled(g, g.units[stuck.id])).toBe(true)
+    waiveThreshold(g, 0)
+    castMagic(g, 0, 'Slide', { targets: [stuck.id] }) // a disabled enemy may be slid (forced movement)
+    answer(g, 'n')
+    expect(g.units[stuck.id].y).toBe(GRID_H - 1)
+    expect(isDisabled(g, g.units[stuck.id])).toBe(false)
+  })
+
+  it("a Slumbering Giantess there sleeps through damage (FAQ)", () => {
+    const g = board()
+    fillSites(g)
+    playSiteCard(g, 0, 'Permafrost', 1, 1)
+    const giantess = castMinionAt(g, 0, 'Slumbering Giantess', 1, 1)
+    expect(isDisabled(g, giantess)).toBe(true)
+    castMagic(g, 0, 'Lightning Bolt', { targets: ['sq:1,1,surface'] })
+    settlePrompts(g)
+    expect(g.units[giantess.id].damage).toBeGreaterThan(0)
+    expect(isDisabled(g, g.units[giantess.id])).toBe(true)
+  })
+})
+
+function castMinionAt(g: GameState, p: PlayerId, name: string, x: number, y: number): UnitState {
+  const cardId = injectToHand(g, p, name)
+  giveMana(g, p, 20)
+  const before = new Set(Object.keys(g.units))
+  act(g, p, { t: 'castSpell', cardId, casterId: g.players[p].avatarUnitId, at: { x, y } })
+  settlePrompts(g)
+  return g.units[Object.keys(g.units).find((k) => !before.has(k) && g.units[k].name === name)!]
+}
+
+describe('Landslide', () => {
+  it('Trap (2): swaps with an adjacent site, each carrying what stands on it', () => {
+    const g = board()
+    fillSites(g)
+    const id = playSiteCard(g, 0, 'Landslide', 1, 1)
+    const rider = summonCard(g, 0, 'Wild Boars', 1, 1)
+    const other = siteAt(g, 2, 1)!
+    const passenger = summonCard(g, 1, 'Wild Boars', 2, 1)
+    giveMana(g, 0, 2)
+    waiveThreshold(g, 0)
+    act(g, 0, { t: 'activate', sourceId: id, ability: 'trap:spring' })
+    answer(g, { x: 2, y: 1 })
+    settlePrompts(g)
+    expect([g.sites[id].x, g.sites[id].y]).toEqual([2, 1])
+    expect([g.sites[other.id].x, g.sites[other.id].y]).toEqual([1, 1])
+    expect([g.units[rider.id].x, g.units[passenger.id].x]).toEqual([2, 1])
+  })
+})
+
+describe('Slide', () => {
+  it('slides an ally as far as possible in a direction, then draws a spell; an able enemy is no choice', () => {
+    const g = board()
+    fillSites(g)
+    const ally = summonCard(g, 0, 'Wild Boars', 1, 1)
+    const foe = summonCard(g, 1, 'Wild Boars', 2, 2)
+    const spells = g.players[0].spellbook.length
+    castMagic(g, 0, 'Slide', { targets: [ally.id] })
+    answer(g, 'e')
+    expect([g.units[ally.id].x, g.units[ally.id].y]).toEqual([GRID_W - 1, 1])
+    expect(g.players[0].spellbook.length).toBe(spells - 1)
+    const cid = injectToHand(g, 0, 'Slide')
+    giveMana(g, 0, 5)
+    expect(actFail(g, 0, { t: 'castSpell', cardId: cid, casterId: g.players[0].avatarUnitId, targets: [foe.id] })).toBeTruthy()
+  })
+})
+
+describe('Bearserker', () => {
+  it('from hand, a Mortal or Bear becomes Bearserker for the difference in cost, untapped', () => {
+    const g = board()
+    fillSites(g)
+    const bears = summonCard(g, 0, 'Polar Bears', 1, 1) // cost 3 → pay 2
+    bears.tapped = true
+    bears.damage = 1
+    const cardId = injectToHand(g, 0, 'Bearserker')
+    g.flow = g.flow ?? {}
+    g.flow.judgeThresh = { ...(g.flow.judgeThresh ?? {}), 0: { air: 0, earth: 0, fire: 0, water: 2 } }
+    g.players[0].mana = 2
+    act(g, 0, { t: 'activate', sourceId: g.players[0].avatarUnitId, ability: `bearserk:${cardId}:${bears.id}` })
+    settlePrompts(g)
+    const u = g.units[bears.id]
+    expect(u.name).toBe('Bearserker')
+    expect(u.tapped).toBe(false)
+    expect(g.players[0].mana).toBe(0)
+    expect(g.players[0].hand).not.toContain(cardId)
+    expect(effAttack(g, u)).toBe(4)
+  })
+})
+
+describe('Ancient Thaw', () => {
+  it('Genesis: casts an Alpha Beast from the collection here, disabled; Polar Bears come as the Alpha 2/2 for 2', () => {
+    const g = board()
+    fillSites(g)
+    g.players[0].collection = { 'Polar Bears': 1, 'Lightning Bolt': 1 }
+    g.flow = g.flow ?? {}
+    g.flow.judgeThresh = { ...(g.flow.judgeThresh ?? {}), 0: { air: 0, earth: 0, fire: 0, water: 1 } }
+    g.players[0].mana = 2
+    const id = playSiteCard(g, 0, 'Ancient Thaw', 1, 1)
+    expect(g.prompts[0]?.kind).toBe('chooseOption')
+    expect((g.prompts[0] as any).data.options).toEqual(['Polar Bears', '(none)'])
+    const manaBefore = g.players[0].mana
+    answer(g, 'Polar Bears')
+    settlePrompts(g)
+    const bears = Object.values(g.units).find((u) => u.name === 'Polar Bears')!
+    expect([bears.x, bears.y]).toEqual([g.sites[id].x, g.sites[id].y])
+    expect(isDisabled(g, bears)).toBe(true)
+    expect(effAttack(g, bears)).toBe(2)
+    expect(g.players[0].mana).toBe(manaBefore - 2)
+    expect(g.players[0].collection?.['Polar Bears'] ?? 0).toBe(0)
+  })
+})
+
+describe('Terraform', () => {
+  it("replaces each site in the caster's column from the top of its controller's atlas, back to front", () => {
+    const g = board()
+    const av = avatarOf(g, 0)
+    for (const s of Object.values(g.sites)) delete g.sites[s.id]
+    const mine = placeSite(g, 0, 'Rustic Village', av.x, 0)
+    const theirs = placeSite(g, 1, 'Rustic Village', av.x, 2)
+    const aside = placeSite(g, 0, 'Rustic Village', (av.x + 1) % GRID_W, 0)
+    av.y = 0
+    const myTop = g.cards[g.players[0].atlas[0]].name
+    const theirTop = g.cards[g.players[1].atlas[0]].name
+    const rider = summonCard(g, 0, 'Wild Boars', av.x, 2)
+    castMagic(g, 0, 'Terraform')
+    settlePrompts(g)
+    expect(g.sites[mine.id]).toBeUndefined()
+    expect(g.sites[theirs.id]).toBeUndefined()
+    expect(g.sites[aside.id]).toBeDefined()
+    const now0 = siteAt(g, av.x, 0)!, now2 = siteAt(g, av.x, 2)!
+    expect(g.cards[now0.cardId].name).toBe(myTop)
+    expect(now0.controller).toBe(0)
+    expect(g.cards[now2.cardId].name).toBe(theirTop)
+    expect(now2.controller).toBe(1)
+    expect(g.units[rider.id]).toBeDefined()
+    expect(g.players[0].cemetery.map((id) => g.cards[id].name)).toContain('Rustic Village')
+  })
+})
+
+describe('When the Peaks Fell', () => {
+  it('snow from the chosen sites carries surface units forward; where it stops they take 3 and are disabled', () => {
+    const g = board()
+    fillSites(g)
+    const carried = summonCard(g, 1, 'Escyllion Cyclops', 1, 1)
+    const atEnd = summonCard(g, 1, 'Escyllion Cyclops', 1, GRID_H - 1)
+    const otherColumn = summonCard(g, 1, 'Escyllion Cyclops', 3, 1)
+    const start = siteAt(g, 1, 0)!
+    castMagic(g, 0, 'When the Peaks Fell')
+    expect(g.prompts[0]?.kind).toBe('chooseTargets')
+    answer(g, [start.id])
+    settlePrompts(g)
+    expect(g.units[carried.id].y).toBe(GRID_H - 1)
+    for (const u of [carried, atEnd]) {
+      expect(g.units[u.id].damage).toBe(3)
+      expect(isDisabled(g, g.units[u.id])).toBe(true)
+    }
+    expect(g.units[otherColumn.id].damage).toBe(0)
+  })
+
+  it("snow that starts at the far edge never moves, so it never stops (FAQ)", () => {
+    const g = board()
+    fillSites(g)
+    const there = summonCard(g, 1, 'Escyllion Cyclops', 1, GRID_H - 1)
+    castMagic(g, 0, 'When the Peaks Fell')
+    answer(g, [siteAt(g, 1, GRID_H - 1)!.id])
+    settlePrompts(g)
+    expect(g.units[there.id].damage).toBe(0)
+    expect(isDisabled(g, g.units[there.id])).toBe(false)
   })
 })
