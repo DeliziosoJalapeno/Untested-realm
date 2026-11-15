@@ -8,7 +8,8 @@
 // Configuration (environment, or a `.env` file in the repo root):
 //   ANTHROPIC_API_KEY   required — without it the Claude opponent is simply unavailable
 //   CLAUDE_BOT_MODEL    default claude-sonnet-5-5
-//   CLAUDE_BOT_EFFORT   thinking effort: low | medium | high   (default low — keeps a move to seconds)
+//   CLAUDE_BOT_EFFORT   thinking effort: off | low | medium | high   (default low; off = no thinking at
+//                       all — the cheapest and fastest, with the move tool forced)
 //   CLAUDE_BOT_ACCESS   local (default: loopback callers + admins) | users (any signed-in user) | all
 import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -37,10 +38,11 @@ export const claudeAccess = (): 'local' | 'users' | 'all' => {
   return v === 'all' || v === 'users' ? v : 'local'
 }
 
-export interface ClaudeBotRequest { position: string; candidates: string[]; notes?: string }
-export interface ClaudeBotReply { picks: number[]; plan: string; model: string; ms: number }
+export interface ClaudeBotRequest { position: string; candidates: string[]; notes?: string; reference?: string }
+export interface ClaudeBotUsage { input: number; output: number; cacheRead: number; cacheWrite: number }
+export interface ClaudeBotReply { picks: number[]; plan: string; model: string; ms: number; usage: ClaudeBotUsage }
 
-const MAX_POSITION = 24_000, MAX_CANDIDATES = 200, MAX_CANDIDATE_LEN = 400, MAX_NOTES = 600
+const MAX_POSITION = 24_000, MAX_CANDIDATES = 200, MAX_CANDIDATE_LEN = 400, MAX_NOTES = 1200, MAX_REFERENCE = 40_000
 
 /** check and trim a request body; returns an error string for a malformed one */
 export function parseRequest(body: unknown): ClaudeBotRequest | string {
@@ -49,7 +51,8 @@ export function parseRequest(body: unknown): ClaudeBotRequest | string {
   if (b.position.length > MAX_POSITION) return 'Position too long.'
   if (!b.candidates.length || b.candidates.length > MAX_CANDIDATES) return 'Bad candidate count.'
   if (b.candidates.some((c) => typeof c !== 'string' || c.length > MAX_CANDIDATE_LEN)) return 'Bad candidate.'
-  return { position: b.position, candidates: b.candidates, notes: typeof b.notes === 'string' ? b.notes.slice(0, MAX_NOTES) : '' }
+  if (b.reference !== undefined && (typeof b.reference !== 'string' || b.reference.length > MAX_REFERENCE)) return 'Bad reference.'
+  return { position: b.position, candidates: b.candidates, notes: typeof b.notes === 'string' ? b.notes.slice(0, MAX_NOTES) : '', reference: b.reference ?? '' }
 }
 
 export const SYSTEM_PROMPT = `You are playing the trading card game Sorcery: Contested Realm against a human, as the computer opponent. You play to win, and you play fair: you only know what a player in your seat would know.
@@ -80,7 +83,9 @@ HOW TO PLAY WELL
 - Each move is annotated with "eval", a rough heuristic score change (positive is better for you) from a simple evaluation function, and one move may be marked as the search engine's choice. Treat both as advice from a tactically sound but strategically shallow assistant: follow it unless you can see why another move is better.
 
 ANSWERING
-- picks: the move numbers you want played, IN ORDER, for the rest of this turn. Only list moves that are in the list right now. After each move the game re-checks: if your next pick is no longer legal, or something unexpected happens, you will simply be asked again with a fresh list — so list the independent moves you are sure of, and stop where the outcome of a fight or a draw would change your mind.
+- picks: the move numbers you want played, IN ORDER, for the rest of this turn. Only list moves that are in the list right now. After each move the game re-checks: if your next pick is no longer legal, or something unexpected happens, you will simply be asked again with a fresh list. Being asked again costs time, so plan the WHOLE turn in one answer whenever you can: list every independent move (site, casts, each unit's attack), and stop early only where the outcome of a fight or a draw would really change your mind.
+- Attack moves are annotated with {may be defended by: …} or {no defender in reach}. An attack on an Avatar or a site only lands if no defender steps in.
+- The list is trimmed: plain repositioning moves and site squares show only the best few options.
 - Include the END YOUR TURN move as the last pick only when you are certain nothing else should happen after the moves before it.
 - If you must answer a QUESTION, pick exactly one answer.
 - plan: one or two short sentences for the human to read, describing what you are doing this turn and why. No move numbers in it.`
@@ -99,16 +104,21 @@ const TOOL = {
 }
 
 export function userMessage(r: ClaudeBotRequest): string {
-  return `${r.position}\n\n${r.notes ? `YOUR PLAN SO FAR THIS TURN: ${r.notes}\n\n` : ''}LEGAL MOVES:\n${r.candidates.join('\n')}`
+  return `${r.position}\n\n${r.notes ? `YOUR NOTES:\n${r.notes}\n\n` : ''}LEGAL MOVES:\n${r.candidates.join('\n')}`
 }
 
 /** the Messages API request. `thinking: false` is the plain fallback shape (forced tool, no thinking). */
 export function buildApiRequest(r: ClaudeBotRequest, thinking: boolean): Record<string, unknown> {
   const effort = ['low', 'medium', 'high'].includes(process.env.CLAUDE_BOT_EFFORT ?? '') ? process.env.CLAUDE_BOT_EFFORT : 'low'
+  // Everything that stays the same all game goes first and is marked cacheable: the rules, then the
+  // text of every card in the bot's own deck. Repeat calls then pay a fraction for that part.
+  const system = r.reference
+    ? [{ type: 'text', text: SYSTEM_PROMPT }, { type: 'text', text: `CARD REFERENCE — every card in YOUR deck (name — type, cost, threshold, power, text):\n${r.reference}`, cache_control: { type: 'ephemeral' } }]
+    : [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }]
   return {
     model: claudeModel(),
     max_tokens: thinking ? 6000 : 1024,
-    system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+    system,
     tools: [TOOL],
     // a forced tool call can't be combined with thinking, so with thinking on the tool is left to the model
     ...(thinking ? { thinking: { type: 'adaptive' }, output_config: { effort }, tool_choice: { type: 'auto' } } : { tool_choice: { type: 'tool', name: TOOL.name } }),
@@ -158,13 +168,20 @@ export async function askClaude(r: ClaudeBotRequest, fetchImpl: Fetch = fetch as
     return res.json()
   }
   let resp: any
-  try { resp = await call(true) } catch (e) {
-    if ((e as { status?: number }).status !== 400) throw e
-    resp = await call(false) // this model or account doesn't take the thinking parameters
+  if ((process.env.CLAUDE_BOT_EFFORT ?? '').toLowerCase() === 'off') resp = await call(false)
+  else {
+    try { resp = await call(true) } catch (e) {
+      if ((e as { status?: number }).status !== 400) throw e
+      resp = await call(false) // this model or account doesn't take the thinking parameters
+    }
   }
+  const u = resp?.usage ?? {}
+  const usage: ClaudeBotUsage = { input: Number(u.input_tokens ?? 0), output: Number(u.output_tokens ?? 0), cacheRead: Number(u.cache_read_input_tokens ?? 0), cacheWrite: Number(u.cache_creation_input_tokens ?? 0) }
+  // one line per call in the server log: the numbers to tune cost with
+  console.log(`[claude-bot] ${claudeModel()} ${Date.now() - t0}ms  in ${usage.input} (+${usage.cacheRead} cached, +${usage.cacheWrite} written)  out ${usage.output}  moves offered ${r.candidates.length}`)
   const out = parseApiResponse(resp, r.candidates.length)
   if (!out.picks.length) throw new Error('Claude did not choose a move.')
-  return { ...out, model: claudeModel(), ms: Date.now() - t0 }
+  return { ...out, model: claudeModel(), ms: Date.now() - t0, usage }
 }
 
 // a simple global throttle: this is a paid API behind a game button

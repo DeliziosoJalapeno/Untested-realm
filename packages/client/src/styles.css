@@ -2730,3 +2730,4 @@ button.autobattle:hover:not(:disabled) { background: #4a5cc0; }
 .claude-note.is-fallback { border-color: #7d8798; opacity: 0.85; }
 .claude-note-tag { color: #e8a878; font-weight: 700; margin-right: 8px; white-space: nowrap; }
 .claude-note-tag { display: block; font-size: 11px; letter-spacing: 0.04em; }
+.claude-note-usage { display: block; margin-top: 4px; font-size: 10.5px; opacity: 0.6; font-variant-numeric: tabular-nums; }

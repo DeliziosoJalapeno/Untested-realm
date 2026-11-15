@@ -3,7 +3,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { applyAction, type Action } from '@sorcery/shared'
 import { scene } from '../src/tutorial/scene'
-import { candidates, describePosition, buildRequest, claudeBotAction, claudeQuick, resetClaudeBot, lastClaudeNote, type AskClaude } from '../src/claude_bot'
+import { candidates, describePosition, deckReference, buildRequest, claudeBotAction, claudeQuick, claudeDefers, claudeUsage, resetClaudeBot, lastClaudeNote, MAX_CANDIDATES, type AskClaude } from '../src/claude_bot'
 import { fairView } from '../src/bot_search'
 import { askClaude, buildApiRequest, parseApiResponse, parseRequest, SYSTEM_PROMPT, userMessage } from '../../server/src/claudeBot'
 
@@ -27,7 +27,10 @@ describe('Claude opponent — what Claude is told', () => {
     expect(text).toMatch(/It is YOUR turn/)
     expect(text).toMatch(/YOUR Amazon Warriors at c2/)
     expect(text).toMatch(/ENEMY Raal Dromedary at c3/)
-    expect(text).toMatch(/Lightning Bolt — Magic, cost 2, needs 1 air/)
+    expect(text).toMatch(/Lightning Bolt \(Magic, cost 2\)/)          // the hand: name and cost only…
+    expect(text).not.toMatch(/Lightning Bolt — Magic/)
+    expect(deckReference(fairView(t.g, 0), 0)).toMatch(/Lightning Bolt — Magic, cost 2, needs 1 air/) // …the text is in the cached reference
+    expect(text).toMatch(/No enemy unit is within one step of your Avatar/)
     expect(text).toMatch(/Opponent: .*2 cards in hand \(hidden\)/)
     expect(text).not.toMatch(/Hellhounds|Blaze/)
   })
@@ -41,6 +44,7 @@ describe('Claude opponent — what Claude is told', () => {
     expect(find(cs, /^Avatar: tap to PLAY Stream at/)).toBeGreaterThan(0)
     const attack = cs[find(cs, /Amazon Warriors.*ATTACKS Raal/) - 1].action
     const req = buildRequest(t.g, 0, cs, attack, 'kill the camel')
+    expect(req.reference).toBe(deckReference(fairView(t.g, 0), 0))
     expect(req.candidates.filter((c) => /search engine's choice/.test(c))).toHaveLength(1)
     expect(req.candidates[0]).toMatch(/^1\. .*\[eval [+-]\d/)
     expect(req.notes).toBe('kill the camel')
@@ -52,6 +56,53 @@ describe('Claude opponent — what Claude is told', () => {
     const text = describePosition(fairView(t.g, 1), 1)
     expect(text).toMatch(/ENEMY Amazon Warriors at c3/)   // c2 seen from the other side
     expect(text).toMatch(/YOUR Raal Dromedary at c2/)
+  })
+})
+
+describe('Claude opponent — keeping each call small', () => {
+  it('says who could defend each attack, and warns about attackers next to its Avatar', () => {
+    const t = scene({
+      sites: [[0, 'Valley', 2, 0], [0, 'Spire', 2, 1], [1, 'Wasteland', 2, 3], [1, 'Wasteland', 2, 2], [1, 'Valley', 1, 2]],
+      units: [
+        { key: 'war', p: 0, name: 'Amazon Warriors', x: 2, y: 1 },
+        { key: 'cam', p: 1, name: 'Raal Dromedary', x: 2, y: 2 }, { key: 'tro', p: 1, name: 'Cave Trolls', x: 1, y: 2 }, { key: 'dog', p: 1, name: 'Hellhounds', x: 2, y: 0 },
+      ],
+    })
+    const cs = candidates(t.g, 0)
+    expect(cs.find((c) => /Amazon Warriors.*ATTACKS Raal Dromedary/.test(c.text))!.text).toMatch(/\{may be defended by: Flamecaller, Cave Trolls \(3\)\}/)
+    expect(describePosition(fairView(t.g, 0), 0)).toMatch(/THREAT: enemy units one step from your Avatar.*Hellhounds \(3\)/)
+    expect(describePosition(fairView(t.g, 0), 0)).toMatch(/Cave Trolls — Minion/) // an enemy card's text is still spelled out
+  })
+
+  it('offers only the best few repositioning moves and site squares, and never more than the cap', () => {
+    const t = scene({
+      sites: [[0, 'Valley', 2, 0], [0, 'Spire', 2, 1], [0, 'Wasteland', 1, 1], [0, 'Stream', 3, 1], [0, 'Valley', 1, 0], [0, 'Valley', 3, 0], [1, 'Wasteland', 2, 3]],
+      hand: ['Stream'],
+      units: ['a', 'b', 'c', 'd'].map((k, i) => ({ key: k, p: 0 as const, name: 'Foot Soldiers', x: 1 + (i % 3), y: i < 3 ? 1 : 0 })),
+    })
+    const cs = candidates(t.g, 0)
+    expect(cs.filter((c) => c.action.t === 'moveAttack' && !c.action.attack).length).toBeLessThanOrEqual(6)
+    expect(cs.filter((c) => c.action.t === 'avatarSite' && c.action.mode === 'play').length).toBeLessThanOrEqual(4)
+    expect(cs.length).toBeLessThanOrEqual(MAX_CANDIDATES)
+    expect(cs.some((c) => c.action.t === 'endTurn')).toBe(true)
+  })
+
+  it('does not call Claude when there is nothing to decide, or for the game\'s housekeeping questions', async () => {
+    const t = scene({ sites: [[0, 'Valley', 2, 0], [1, 'Wasteland', 2, 3]], units: [{ key: 'a', p: 0, name: 'Foot Soldiers', x: 2, y: 0, tapped: true }] })
+    const ask = vi.fn(async () => ({ picks: [1], plan: 'x' }))
+    applyAction(t.g, 0, { t: 'avatarSite', mode: 'draw' })   // Avatar spent: only "end turn" style moves remain
+    const r = await claudeBotAction(t.g, 0, { t: 'endTurn' }, ask)
+    expect(ask).not.toHaveBeenCalled()
+    expect(r.action).toEqual({ t: 'endTurn' })
+    applyAction(t.g, 0, { t: 'endTurn' })
+    expect(t.g.prompts[0]?.kind).toBe('drawDeck')
+    expect(claudeDefers(t.g)).toBe(true)                      // which deck to draw from: the search bot decides
+  })
+
+  it('adds up the tokens each call reports', async () => {
+    const t = board()
+    await claudeBotAction(t.g, 0, null, async () => ({ picks: [1], plan: 'a', usage: { input: 900, output: 120, cacheRead: 2400, cacheWrite: 0 } }))
+    expect(claudeUsage()).toEqual({ calls: 1, input: 900, output: 120, cacheRead: 2400, cacheWrite: 0 })
   })
 })
 
@@ -110,6 +161,12 @@ describe('Claude opponent — the server side', () => {
     const body = buildApiRequest(req, true) as any
     expect(body.model).toBe('claude-sonnet-5-5')
     expect(body.system[0]).toMatchObject({ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } })
+    // with a deck reference, the cache breakpoint moves to the end of it (rules + reference are cached together)
+    const withRef = buildApiRequest({ ...req, reference: 'Lightning Bolt — Magic, cost 2' }, true) as any
+    expect(withRef.system).toHaveLength(2)
+    expect(withRef.system[0].cache_control).toBeUndefined()
+    expect(withRef.system[1]).toMatchObject({ cache_control: { type: 'ephemeral' } })
+    expect(withRef.system[1].text).toMatch(/CARD REFERENCE[\s\S]*Lightning Bolt — Magic/)
     expect(body.thinking).toEqual({ type: 'adaptive' })
     expect(body.tool_choice).toEqual({ type: 'auto' })
     expect(body.messages[0].content).toBe(userMessage(req))
@@ -134,15 +191,23 @@ describe('Claude opponent — the server side', () => {
       const fake = async (url: string, init: any) => {
         seen.push({ url, headers: init.headers, body: JSON.parse(init.body) })
         if (seen.length === 1) return { ok: false, status: 400, json: async () => ({}), text: async () => 'thinking: unsupported' }
-        return { ok: true, status: 200, text: async () => '', json: async () => ({ content: [{ type: 'tool_use', name: 'choose_moves', input: { picks: [2], plan: 'Bolt the camel.' } }] }) }
+        return { ok: true, status: 200, text: async () => '', json: async () => ({ usage: { input_tokens: 700, output_tokens: 90, cache_read_input_tokens: 2100 }, content: [{ type: 'tool_use', name: 'choose_moves', input: { picks: [2], plan: 'Bolt the camel.' } }] }) }
       }
       const out = await askClaude(req, fake)
-      expect(out).toMatchObject({ picks: [2], plan: 'Bolt the camel.', model: 'claude-sonnet-5-5' })
+      expect(out).toMatchObject({ picks: [2], plan: 'Bolt the camel.', model: 'claude-sonnet-5-5', usage: { input: 700, output: 90, cacheRead: 2100, cacheWrite: 0 } })
       expect(seen).toHaveLength(2)
       expect(seen[0].url).toBe('https://api.anthropic.com/v1/messages')
       expect(seen[0].headers).toMatchObject({ 'x-api-key': 'test-key', 'anthropic-version': '2023-06-01' })
       expect(seen[0].body.thinking).toBeDefined()
       expect(seen[1].body.thinking).toBeUndefined()
+      // CLAUDE_BOT_EFFORT=off: no thinking at all, one plain call
+      process.env.CLAUDE_BOT_EFFORT = 'off'
+      seen.length = 0
+      const ok = async (_u: string, init: any) => { seen.push(JSON.parse(init.body)); return { ok: true, status: 200, text: async () => '', json: async () => ({ content: [{ type: 'tool_use', name: 'choose_moves', input: { picks: [1], plan: 'Pass.' } }] }) } }
+      await askClaude(req, ok)
+      expect(seen).toHaveLength(1)
+      expect(seen[0].thinking).toBeUndefined()
+      delete process.env.CLAUDE_BOT_EFFORT
       await expect(askClaude(req, async () => ({ ok: false, status: 401, json: async () => ({}), text: async () => 'bad key' }))).rejects.toThrow(/401/)
     } finally {
       if (old === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = old

@@ -19,8 +19,9 @@ import { fairView } from './bot_search'
 import { botActionKey } from './bot'
 
 export interface ClaudeCandidate { action: Action; text: string; delta: number }
-export interface ClaudeRequest { position: string; candidates: string[]; notes: string }
-export interface ClaudeReply { picks: number[]; plan: string; model?: string; ms?: number }
+export interface ClaudeRequest { position: string; candidates: string[]; notes: string; reference?: string }
+export interface ClaudeUsage { input: number; output: number; cacheRead: number; cacheWrite: number }
+export interface ClaudeReply { picks: number[]; plan: string; model?: string; ms?: number; usage?: ClaudeUsage }
 export interface ClaudeStatus { enabled: boolean; model: string | null; reason?: string }
 
 // ---------- naming things ----------
@@ -53,6 +54,28 @@ function unitLine(s: GameState, me: PlayerId, u: UnitState): string {
   return `${u.name} at ${sqName(me, u.x, u.y)}${regionTag(u.region)} — ${bits.join('; ')}`
 }
 
+const shortLine = (name: string): string => { const c = getCard(name); return `${name} (${c.type}, cost ${c.cost ?? 0})` }
+
+/** every distinct card that started in `me`'s own deck (its text goes into the cached reference) */
+function ownCardNames(view: GameState, me: PlayerId): Set<string> {
+  const names = new Set<string>()
+  for (const c of Object.values(view.cards)) if (c.owner === me && c.name) names.add(c.name)
+  return names
+}
+/** the rules text of the bot's own deck: identical for the whole game, so the API can cache it */
+export function deckReference(view: GameState, me: PlayerId): string {
+  const lines: string[] = []
+  for (const n of [...ownCardNames(view, me)].sort()) { try { lines.push(cardLine(n)) } catch { /* a token without a card entry */ } }
+  return lines.join('\n')
+}
+
+/** could `u` step to (x,y) and fight there? One orthogonal step (or already there); flyers also diagonally */
+function inReach(s: GameState, u: UnitState, x: number, y: number): boolean {
+  const dx = Math.abs(u.x - x), dy = Math.abs(u.y - y)
+  if (dx + dy <= 1) return true
+  return dx === 1 && dy === 1 && !!(effKeywords(s, u) as Record<string, unknown>).airborne
+}
+
 /** the position in words, from seat `me`. `view` must already be me's fair view. */
 export function describePosition(view: GameState, me: PlayerId): string {
   const foe = opponent(me)
@@ -74,11 +97,21 @@ export function describePosition(view: GameState, me: PlayerId): string {
   }
   const auras = Object.values(view.auras ?? {})
   if (auras.length) out.push('', 'AURAS: ' + auras.map((a: any) => `${a.name} at ${sqName(me, a.x, a.y)} (${a.controller === me ? 'yours' : "opponent's"})`).join('; '))
+  // who could hit your Avatar next turn — the thing a model most easily overlooks
+  const av = view.units[P.avatarUnitId]
+  if (av) {
+    const near = Object.values(view.units).filter((u) => u.controller === foe && !u.isAvatar && !isDisabled(view, u) && u.region === av.region && inReach(view, u, av.x, av.y))
+    out.push('', near.length
+      ? `THREAT: enemy units one step from your Avatar (they can attack it next turn unless you leave an untapped defender within a step of it): ${near.map((u) => `${u.name} (${effAttack(view, u)})`).join(', ')}`
+      : 'No enemy unit is within one step of your Avatar.')
+  }
+  // your own cards' text lives in the (cached) deck reference; only the name and cost are repeated here
+  const own = ownCardNames(view, me)
   out.push('', 'YOUR HAND:')
-  for (const id of P.hand) out.push('  ' + cardLine(view.cards[id]?.name ?? '?'))
+  for (const id of P.hand) { const n = view.cards[id]?.name ?? '?'; out.push('  ' + (own.has(n) ? shortLine(n) : cardLine(n))) }
   if (!P.hand.length) out.push('  (empty)')
-  // rules text of everything in play that isn't already printed above
-  const seen = new Set(P.hand.map((id) => view.cards[id]?.name))
+  // rules text of everything in play that isn't in your deck reference
+  const seen = own
   const inPlay = new Set<string>()
   for (const u of Object.values(view.units)) inPlay.add(u.name)
   for (const st of sites) if (!st.isRubble) inPlay.add(st.name)
@@ -106,7 +139,7 @@ export function describeAction(s: GameState, me: PlayerId, a: Action): string {
       const last = a.path[a.path.length - 1]
       const go = last ? (last.x === u.x && last.y === u.y ? (last.region !== u.region ? `changes layer to ${last.region}` : 'stays') : `moves to ${sqName(me, last.x, last.y)}${regionTag(last.region)}`) : 'stays'
       const atk = a.attack ? ('unit' in a.attack ? ` and ATTACKS ${un(a.attack.unit)}` : ` and ATTACKS THE SITE there`) : ''
-      return `${un(a.unitId)} ${go}${atk}`
+      return `${un(a.unitId)} ${go}${atk}${a.attack ? defenders(s, me, u, last ?? { x: u.x, y: u.y, region: u.region }, 'unit' in a.attack ? a.attack.unit : null) : ''}`
     }
     case 'castSpell': {
       const extra = a.extra as Record<string, unknown> | undefined
@@ -128,6 +161,13 @@ export function describeAction(s: GameState, me: PlayerId, a: Action): string {
     case 'prompt': return `Answer: ${describeChoice(s, me, a.choice, un)}`
     default: return JSON.stringify(a)
   }
+}
+
+/** who could step in if this attack is made: the enemy's untapped units within a step of the fight */
+function defenders(s: GameState, me: PlayerId, attacker: UnitState, at: { x: number; y: number; region: string }, targetId: string | null): string {
+  if (attacker.stealth) return ' {cannot be defended: Stealth}'
+  const ds = Object.values(s.units).filter((u) => u.controller !== me && u.id !== targetId && !u.tapped && !isDisabled(s, u) && u.region === at.region && inReach(s, u, at.x, at.y))
+  return ds.length ? ` {may be defended by: ${ds.map((u) => `${u.name}${u.isAvatar ? '' : ` (${effAttack(s, u)})`}`).join(', ')}}` : ' {no defender in reach}'
 }
 
 function describeChoice(s: GameState, me: PlayerId, c: unknown, un: (id: string) => string): string {
@@ -159,14 +199,41 @@ export function candidates(real: GameState, me: PlayerId): ClaudeCandidate[] {
     try { delta = evaluate(e.next, me, DEFAULT_WEIGHTS) - base } catch { /* keep 0 */ }
     out.push({ action: e.action, text: describeAction(view, me, e.action), delta })
   }
-  return out.slice(0, MAX_CANDIDATES)
+  return trim(out)
 }
-export const MAX_CANDIDATES = 160
+export const MAX_CANDIDATES = 60
+const MAX_PLAIN_MOVES = 6, MAX_SITE_SQUARES = 4
+
+/** is this more than shuffling a unit around? (a cast, an attack, an ability, a site, an answer) */
+const meaningful = (a: Action): boolean =>
+  a.t === 'castSpell' || a.t === 'activate' || a.t === 'prompt' || a.t === 'pickUp' || (a.t === 'avatarSite' && a.mode === 'play') || (a.t === 'moveAttack' && !!a.attack)
+
+/** Keep the list short (every line is paid for on every call): all the meaningful moves, but only the
+ *  best few plain repositioning moves and the best few squares for each site in hand. */
+function trim(all: ClaudeCandidate[]): ClaudeCandidate[] {
+  const byEval = (x: ClaudeCandidate, y: ClaudeCandidate) => y.delta - x.delta
+  const plain = all.filter((c) => c.action.t === 'moveAttack' && !c.action.attack).sort(byEval).slice(0, MAX_PLAIN_MOVES)
+  const sites = new Map<string, ClaudeCandidate[]>()
+  for (const c of all) if (c.action.t === 'avatarSite' && c.action.mode === 'play') { const k = c.action.cardId; sites.set(k, [...(sites.get(k) ?? []), c]) }
+  const keepSites = new Set([...sites.values()].flatMap((l) => l.sort(byEval).slice(0, MAX_SITE_SQUARES)))
+  const keep = new Set<ClaudeCandidate>([...plain, ...keepSites])
+  const kept = all.filter((c) => {
+    if (c.action.t === 'moveAttack' && !c.action.attack) return keep.has(c)
+    if (c.action.t === 'avatarSite' && c.action.mode === 'play') return keep.has(c)
+    return true
+  })
+  if (kept.length <= MAX_CANDIDATES) return kept
+  // still too many (a wide board): drop the worst-scoring meaningful moves, never the passes
+  const fixed = kept.filter((c) => c.action.t === 'endTurn' || c.action.t === 'avatarSite' || c.action.t === 'prompt')
+  const rest = kept.filter((c) => !fixed.includes(c)).sort(byEval).slice(0, Math.max(0, MAX_CANDIDATES - fixed.length))
+  return kept.filter((c) => fixed.includes(c) || rest.includes(c))
+}
 
 export function buildRequest(real: GameState, me: PlayerId, cands: ClaudeCandidate[], suggested: Action | null, notes: string): ClaudeRequest {
   const view = fairView(real, me)
   const hint = suggested ? botActionKey(suggested) : null
   return {
+    reference: deckReference(view, me),
     position: describePosition(view, me),
     candidates: cands.map((c, i) => `${i + 1}. ${c.text}  [eval ${c.delta >= 0 ? '+' : ''}${c.delta.toFixed(1)}]${hint && botActionKey(c.action) === hint ? '  <- the search engine\'s choice' : ''}`),
     notes,
@@ -177,8 +244,22 @@ export function buildRequest(real: GameState, me: PlayerId, cands: ClaudeCandida
 interface Plan { seat: PlayerId; turn: number; queue: string[]; hand: string; notes: string }
 let PLAN: Plan | null = null
 let LAST_NOTE = ''
+/** what Claude said it was doing on its previous turns (most recent last) — cheap continuity */
+let MEMO: { turn: number; plan: string }[] = []
+let USAGE = { calls: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
 export const lastClaudeNote = (): string => LAST_NOTE
-export function resetClaudeBot(): void { PLAN = null; LAST_NOTE = '' }
+/** tokens used by this game's Claude calls so far */
+export const claudeUsage = () => ({ ...USAGE })
+/** forget the queued plan (an undo makes it stale); the game's memo and usage are kept */
+export function dropClaudePlan(): void { PLAN = null }
+/** a new game */
+export function resetClaudeBot(): void { PLAN = null; LAST_NOTE = ''; MEMO = []; USAGE = { calls: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }
+
+function notesFor(real: GameState): string {
+  const earlier = MEMO.filter((m) => m.turn < real.turn).slice(-2).map((m) => `turn ${m.turn}: ${m.plan}`)
+  const now = PLAN && PLAN.turn === real.turn ? PLAN.notes : ''
+  return [earlier.length ? `Your earlier turns — ${earlier.join(' | ')}` : '', now ? `This turn so far — ${now}` : ''].filter(Boolean).join('\n')
+}
 
 const handKey = (s: GameState, me: PlayerId) => [...s.players[me].hand].sort().join(',')
 
@@ -207,8 +288,11 @@ export function claudeQuick(real: GameState, me: PlayerId): Action | null {
     return fromQueue(real, me, cands)
   } catch { return null }
 }
-/** decisions left to the search bot outright: the opening hand and which deck to draw from */
-export const claudeDefers = (real: GameState): boolean => real.phase === 'mulligan' || real.prompts[0]?.kind === 'drawDeck'
+/** Questions worth a model call. Everything else the game asks (which deck to draw from, the first
+ *  site, ordering cards, dividing damage, the opening hand) stays with the search bot: cheap, and tuned. */
+const CLAUDE_PROMPTS = new Set(['defend', 'intercept', 'chooseTargets', 'chooseSquare', 'chooseOption', 'chooseCards', 'yesNo', 'siteOrSpell'])
+export const claudeDefers = (real: GameState): boolean =>
+  real.phase === 'mulligan' || (!!real.prompts[0] && !CLAUDE_PROMPTS.has(real.prompts[0].kind))
 
 export type AskClaude = (req: ClaudeRequest, signal: AbortSignal) => Promise<ClaudeReply>
 
@@ -217,22 +301,27 @@ export type AskClaude = (req: ClaudeRequest, signal: AbortSignal) => Promise<Cla
 export async function claudeBotAction(real: GameState, me: PlayerId, suggested: Action | null, ask: AskClaude, timeoutMs = 20000): Promise<{ action: Action; source: 'claude' | 'queue' | 'fallback'; note: string }> {
   const fallback = (why: string) => ({ action: suggested ?? ({ t: 'endTurn' } as Action), source: 'fallback' as const, note: why })
   // the opening hand and draw-pile choices stay with the procedural policy (cheap, and well tuned)
-  if (real.phase === 'mulligan' || real.prompts[0]?.kind === 'drawDeck') return fallback('')
+  if (claudeDefers(real)) return fallback('')
   let cands: ClaudeCandidate[]
   try { cands = candidates(real, me) } catch { return fallback('move generation failed') }
   if (!cands.length) return fallback('no legal moves found')
   if (cands.length === 1) return { action: cands[0].action, source: 'queue', note: LAST_NOTE }
   const queued = fromQueue(real, me, cands)
   if (queued) return { action: queued, source: 'queue', note: LAST_NOTE }
+  // nothing to decide: no spell, attack, ability, site or question on offer — don't pay to be told to pass
+  if (!cands.some((c) => meaningful(c.action))) return fallback('')
 
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), timeoutMs)
   try {
-    const reply = await ask(buildRequest(real, me, cands, suggested, PLAN && PLAN.turn === real.turn ? PLAN.notes : ''), ctrl.signal)
+    const reply = await ask(buildRequest(real, me, cands, suggested, notesFor(real)), ctrl.signal)
+    USAGE.calls++
+    if (reply.usage) { USAGE.input += reply.usage.input; USAGE.output += reply.usage.output; USAGE.cacheRead += reply.usage.cacheRead; USAGE.cacheWrite += reply.usage.cacheWrite }
     const picks = (reply.picks ?? []).filter((n) => Number.isInteger(n) && n >= 1 && n <= cands.length)
     if (!picks.length) return fallback('Claude chose no legal move')
     const keys = picks.map((n) => botActionKey(cands[n - 1].action))
     LAST_NOTE = String(reply.plan ?? '').slice(0, 400)
+    if (LAST_NOTE && real.activePlayer === me && !real.prompts[0]) { MEMO = MEMO.filter((m) => m.turn !== real.turn); MEMO.push({ turn: real.turn, plan: LAST_NOTE }) }
     PLAN = { seat: me, turn: real.turn, queue: keys.slice(1), hand: handKey(real, me), notes: LAST_NOTE }
     return { action: cands[picks[0] - 1].action, source: 'claude', note: LAST_NOTE }
   } catch (e) {

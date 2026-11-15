@@ -34,7 +34,7 @@ import { puzzleById, PUZZLES } from './puzzle/puzzles'
 import PuzzlePage from './components/PuzzlePage'
 import { gate, advance, next as tutNext, runFoe, coachToAct } from './tutorial/runner'
 import { markLessonDone, markPuzzleSolved } from './tutorial/progress'
-import { claudeBotAction, claudeQuick, claudeDefers, askServer, resetClaudeBot } from './claude_bot'
+import { claudeBotAction, claudeQuick, claudeDefers, askServer, resetClaudeBot, dropClaudePlan, claudeUsage } from './claude_bot'
 import SealedDeckbuild from './components/SealedDeckbuild'
 import Game from './components/Game'
 import ReplayViewer from './components/ReplayViewer'
@@ -426,7 +426,7 @@ export default function App() {
   /** invalidate any in-flight worker computation (its reply will be dropped) and clear the spinner. */
   function invalidateBotThink() {
     claudeWaitRef.current = null
-    resetClaudeBot() // an undo or a new game makes Claude's queued plan stale
+    dropClaudePlan() // an undo makes Claude's queued plan stale
     botReqIdRef.current++
     botBusyRef.current = false
     if (botThinkTimerRef.current !== null) { clearTimeout(botThinkTimerRef.current); botThinkTimerRef.current = null }
@@ -1504,6 +1504,7 @@ export default function App() {
           {session.botDifficulty === 'claude' && claudeNote && (
             <div className={`claude-note ${claudeNote.fallback ? 'is-fallback' : ''}`} role="status" aria-live="polite" title="Claude's plan for its turn">
               <span className="claude-note-tag">✳ Claude</span>{claudeNote.text}
+              {(() => { const u = claudeUsage(); const k = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)); return u.calls ? <span className="claude-note-usage">{u.calls} calls · {k(u.input + u.cacheRead + u.cacheWrite)} tokens in{u.cacheRead ? ` (${k(u.cacheRead)} cached)` : ''} · {k(u.output)} out</span> : null })()}
             </div>
           )}
         </>
