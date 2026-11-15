@@ -3,6 +3,7 @@ import type { ClockConfig, DeckList } from '@sorcery/shared'
 import type { SealedConfig } from '../net'
 import { loadDecks } from '../App'
 import * as auth from '../auth'
+import { claudeStatus, type ClaudeStatus } from '../claude_bot'
 import type { RoomInfo } from '../auth'
 import DeckPreview from './DeckPreview'
 import CardImg from './CardImg'
@@ -87,7 +88,7 @@ export default function Home({
   onHotseat: (a: DeckList, b: DeckList, clock: ClockConfig | null, secondSeer?: boolean) => void
   onOnline: (mode: 'create' | 'join' | 'spectate' | 'matchmake' | 'rejoin', name: string, deck: DeckList | null, code?: string, clock?: ClockConfig | null, isPublic?: boolean, secondSeer?: boolean, precon?: boolean) => void
   onSealed: (mode: 'create' | 'join', name: string, opts: { cfg?: SealedConfig; code?: string; clock?: ClockConfig | null; isPublic?: boolean; secondSeer?: boolean }) => void
-  onVsBot: (mine: DeckList, bot: DeckList, clock: ClockConfig | null, stepBot: boolean, difficulty: 'fast' | 'thinking', secondSeer?: boolean) => void
+  onVsBot: (mine: DeckList, bot: DeckList, clock: ClockConfig | null, stepBot: boolean, difficulty: 'fast' | 'thinking' | 'claude', secondSeer?: boolean) => void
   onDecks: () => void
   onCollection: () => void
   onScenarios: () => void
@@ -162,7 +163,10 @@ export default function Home({
 
   // optional chess clock (off by default; enabling defaults to 15 + 30)
   const [stepBot, setStepBot] = useState(false) // pause the computer after each action
-  const [botDifficulty, setBotDifficulty] = useState<'fast' | 'thinking'>('thinking') // 'thinking' = strong search bot
+  const [botDifficulty, setBotDifficulty] = useState<'fast' | 'thinking' | 'claude'>('thinking') // 'thinking' = strong search bot
+  // the Claude opponent needs the server to hold an Anthropic API key — ask once whether it does
+  const [claude, setClaude] = useState<ClaudeStatus | null>(null)
+  useEffect(() => { let live = true; claudeStatus().then((s) => { if (live) setClaude(s) }); return () => { live = false } }, [])
   const [clockOn, setClockOn] = useState(false)
   const [baseMin, setBaseMin] = useState(15)
   const [incSec, setIncSec] = useState(30)
@@ -633,11 +637,18 @@ export default function Home({
         </label>
         <label title="Fast = an instant, casual opponent. Thinking = the strong search AI; it plans for up to 30s on its turn (a 'Computer is thinking…' indicator shows while it does — the game stays responsive).">
           Difficulty{' '}
-          <select value={botDifficulty} onChange={(e) => setBotDifficulty(e.target.value as 'fast' | 'thinking')}>
+          <select value={botDifficulty} onChange={(e) => setBotDifficulty(e.target.value as 'fast' | 'thinking' | 'claude')}>
             <option value="fast">🙂 Fast (casual)</option>
             <option value="thinking">🧠 Thinking (strong)</option>
+            <option value="claude" disabled={!claude?.enabled}>✳ Claude (AI model){claude?.enabled ? '' : ' — not set up'}</option>
           </select>
         </label>
+        {botDifficulty === 'claude' && claude?.enabled && (
+          <p className="claude-hint">Claude ({claude.model}) chooses the computer's moves, with the search bot as its adviser and fallback. Expect 10–20 seconds on its turn; each turn uses your Anthropic API credit.</p>
+        )}
+        {claude && !claude.enabled && (
+          <p className="claude-hint">Claude opponent: {claude.reason ?? 'not available'}</p>
+        )}
         <label title="The computer pauses after each of its actions until you click ▶ Next — a calmer pace to follow along.">
           <input type="checkbox" checked={stepBot} onChange={(e) => setStepBot(e.target.checked)} /> ⏸ Step through the computer's turns
         </label>

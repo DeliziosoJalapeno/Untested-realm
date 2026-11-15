@@ -2718,3 +2718,15 @@ button.autobattle:hover:not(:disabled) { background: #4a5cc0; }
 @media (max-aspect-ratio: 13/10) { .home.hq::before, .home.lq::after { background-size: cover; background-position: 35% 30%; } }
 /* the longer site name must fit a phone */
 .home h1 { font-size: clamp(32px, 10vw, 56px); letter-spacing: clamp(1px, 0.5vw, 3px); }
+
+/* ---- the Claude opponent ---- */
+.claude-hint { font-size: 12px; opacity: 0.8; margin: 2px 0 6px; line-height: 1.35; }
+.claude-note {
+  position: fixed; right: 8px; bottom: 86px; z-index: 55; width: min(272px, calc(100vw - 16px));
+  background: #1c2433f0; color: #eef2f7; border: 1px solid #c98a5a; border-radius: 10px;
+  padding: 6px 12px; font-size: 13px; line-height: 1.35; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+.claude-note.is-fallback { border-color: #7d8798; opacity: 0.85; }
+.claude-note-tag { color: #e8a878; font-weight: 700; margin-right: 8px; white-space: nowrap; }
+.claude-note-tag { display: block; font-size: 11px; letter-spacing: 0.04em; }

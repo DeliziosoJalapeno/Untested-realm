@@ -1,4 +1,6 @@
 .git
+.env
+.env.*
 node_modules
 packages/*/node_modules
 packages/client/dist

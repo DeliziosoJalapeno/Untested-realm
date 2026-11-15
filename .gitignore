@@ -19,6 +19,7 @@ build/
 # Environment & secrets
 .env
 .env.*
+!.env.example
 
 # Editor / agent tooling state (machine-local)
 .omc/

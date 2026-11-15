@@ -6,6 +6,7 @@ import { readFileSync, existsSync, statSync } from 'node:fs'
 import { join, extname, resolve } from 'node:path'
 import { WebSocketServer, WebSocket } from 'ws'
 import { saveLocalReplay, isLoopback } from './localReplays'
+import { askClaude, claudeAccess, claudeEnabled, claudeModel, parseRequest, throttled } from './claudeBot'
 import { users, sessions, decks as deckStore, collections as collectionStore, scenarios as scenarioStore, replays as replayStore, achievements as achievementStore, bugs as bugStore, type UserRow } from './db'
 import {
   hashPassword, verifyPassword, newSessionToken, sha256,
@@ -1201,6 +1202,19 @@ function readJsonBody(req: IncomingMessage, limitBytes = 256 * 1024): Promise<an
     req.on('error', reject)
   })
 }
+/** Who may spend the server's Anthropic key. `local` (default): a browser on this machine — a loopback
+ *  caller whose Origin, if any, is itself a localhost page, so another website open in the same browser
+ *  can't reach it — or a signed-in admin. `users`: any signed-in user. `all`: anyone. */
+function claudeMayCall(req: IncomingMessage): boolean {
+  const mode = claudeAccess()
+  if (mode === 'all') return true
+  const user = userFromReq(req)
+  if (user && (mode === 'users' || user.is_admin)) return true
+  if (!isLoopback(req)) return false
+  const origin = req.headers.origin
+  if (typeof origin !== 'string') return true
+  try { return ['localhost', '127.0.0.1', '[::1]'].includes(new URL(origin).hostname) } catch { return false }
+}
 /** resolve the Bearer token to a live user, or null */
 function userFromReq(req: IncomingMessage): UserRow | null {
   const auth = req.headers['authorization']
@@ -1332,6 +1346,24 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, path: string
   const method = req.method ?? 'GET'
   if (method === 'OPTIONS') { sendJson(res, 204, {}); return }
   try {
+    // --- the Claude opponent: one constrained call to the Anthropic API per bot decision ---
+    if (path === '/api/claude-bot') {
+      const allowed = claudeMayCall(req)
+      if (method === 'GET') {
+        return sendJson(res, 200, !claudeEnabled()
+          ? { enabled: false, model: null, reason: 'No ANTHROPIC_API_KEY is set on the server.' }
+          : allowed ? { enabled: true, model: claudeModel() } : { enabled: false, model: claudeModel(), reason: claudeAccess() === 'users' ? 'Sign in to play against Claude.' : 'The Claude opponent is only available to the site admin.' })
+      }
+      if (method === 'POST') {
+        if (!claudeEnabled()) return sendJson(res, 503, { error: 'The Claude opponent is not configured on this server.' })
+        if (!allowed) return sendJson(res, 403, { error: 'Not allowed.' })
+        const parsed = parseRequest(await readJsonBody(req, 256 * 1024))
+        if (typeof parsed === 'string') return sendJson(res, 400, { error: parsed })
+        if (throttled()) return sendJson(res, 429, { error: 'Too many Claude moves this minute.' })
+        try { return sendJson(res, 200, await askClaude(parsed)) }
+        catch (e) { return sendJson(res, 502, { error: (e as Error).message }) }
+      }
+    }
     // --- local match archive: a game played on this machine is written to <repo>/match-replays ---
     if (path === '/api/local-replay' && method === 'POST') {
       if (!isLoopback(req)) return sendJson(res, 403, { error: 'Local only.' })

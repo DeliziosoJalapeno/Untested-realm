@@ -30,6 +30,11 @@ services:
         value: admin
       - key: SORCERY_ADMIN_PASSWORD
         generateValue: true
+      # optional: an Anthropic API key turns on the "Claude" computer opponent. Leave it empty to keep it
+      # off. With the default CLAUDE_BOT_ACCESS=local only the admin account above can use it on a
+      # hosted site (it spends your API credit); set it to `users` or `all` to open it up.
+      - key: ANTHROPIC_API_KEY
+        sync: false
     # disk:
     #   name: realmforge-data
     #   mountPath: /data

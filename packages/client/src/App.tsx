@@ -34,6 +34,7 @@ import { puzzleById, PUZZLES } from './puzzle/puzzles'
 import PuzzlePage from './components/PuzzlePage'
 import { gate, advance, next as tutNext, runFoe, coachToAct } from './tutorial/runner'
 import { markLessonDone, markPuzzleSolved } from './tutorial/progress'
+import { claudeBotAction, claudeQuick, claudeDefers, askServer, resetClaudeBot } from './claude_bot'
 import SealedDeckbuild from './components/SealedDeckbuild'
 import Game from './components/Game'
 import ReplayViewer from './components/ReplayViewer'
@@ -86,7 +87,7 @@ export interface Session {
   stepBot?: boolean
   /** bot only: 'fast' = the instant procedural opponent; 'thinking' = the strong search bot, which
    *  plans in a Web Worker (see bot.worker.ts) while a "computer is thinking" indicator shows. */
-  botDifficulty?: 'fast' | 'thinking'
+  botDifficulty?: 'fast' | 'thinking' | 'claude'
   // ---- rematch (online): the post-game "play again?" offer + the deck-selection lobby ----
   /** answer the offer (both seats yes → rematch starts from deck selection) */
   rematchVote?: (yes: boolean) => void
@@ -362,6 +363,10 @@ export default function App() {
   // instead of re-taking a score-neutral action forever. Cleared when the bot's turn ends.
   const botBannedRef = useRef<Set<string>>(new Set())
   const [botThinking, setBotThinking] = useState(false)
+  // the Claude opponent: its one-line plan for the turn, and whether its last move was really Claude's
+  const [claudeNote, setClaudeNote] = useState<{ text: string; fallback: boolean } | null>(null)
+  /** the worker request whose answer is the search bot's SUGGESTION for Claude (not a move to play) */
+  const claudeWaitRef = useRef<number | null>(null)
 
   // ── secret achievements: unlocks earned mid-game surface as dismissable toasts ──
   const [achvToasts, setAchvToasts] = useState<{ key: number; id: string }[]>([])
@@ -382,6 +387,12 @@ export default function App() {
       const w = new Worker(new URL('./bot.worker.ts', import.meta.url), { type: 'module' })
       w.onmessage = (e: MessageEvent<BotReply>) => {
         const { id, action, error } = e.data
+        // Claude difficulty: this is the search bot's suggestion — pass it on to Claude, stay busy
+        if (claudeWaitRef.current === id) {
+          claudeWaitRef.current = null
+          void finishClaudeMove(id, error || !action ? null : action)
+          return
+        }
         botBusyRef.current = false
         if (botThinkTimerRef.current !== null) { clearTimeout(botThinkTimerRef.current); botThinkTimerRef.current = null }
         setBotThinking(false)
@@ -395,8 +406,27 @@ export default function App() {
     return botWorkerRef.current
   }
 
+  /** Claude difficulty, second half: with the search bot's suggestion in hand, ask Claude (through the
+   *  server) and play its move. Any failure plays the suggestion instead. */
+  async function finishClaudeMove(id: number, suggestion: Action | null) {
+    const before = localRef.current
+    if (!before || id !== botReqIdRef.current) return
+    const r = await claudeBotAction(before, 1, suggestion, askServer)
+    if (id !== botReqIdRef.current) return // superseded by an undo / new game / leave
+    botBusyRef.current = false
+    if (botThinkTimerRef.current !== null) { clearTimeout(botThinkTimerRef.current); botThinkTimerRef.current = null }
+    setBotThinking(false)
+    if (r.source === 'fallback') { if (r.note) setClaudeNote({ text: `${r.note} — the search bot played this move.`, fallback: true }) }
+    else if (r.note) setClaudeNote({ text: r.note, fallback: false })
+    const local = localRef.current
+    if (!local || !botNeedsToAct(local, 1)) return
+    applyBotAction(local, r.action)
+  }
+
   /** invalidate any in-flight worker computation (its reply will be dropped) and clear the spinner. */
   function invalidateBotThink() {
+    claudeWaitRef.current = null
+    resetClaudeBot() // an undo or a new game makes Claude's queued plan stale
     botReqIdRef.current++
     botBusyRef.current = false
     if (botThinkTimerRef.current !== null) { clearTimeout(botThinkTimerRef.current); botThinkTimerRef.current = null }
@@ -774,7 +804,7 @@ export default function App() {
     bumpSession()
   }
 
-  function startVsBot(myDeck: DeckList, botDeck: DeckList, clock: ClockConfig | null = null, stepBot = false, difficulty: 'fast' | 'thinking' = 'fast', secondSeer = false) {
+  function startVsBot(myDeck: DeckList, botDeck: DeckList, clock: ClockConfig | null = null, stepBot = false, difficulty: 'fast' | 'thinking' | 'claude' = 'fast', secondSeer = false) {
     myDeckFromCollection.current = !!myDeck.fromCollection
     localHistory.current = []
     savedReplayIdRef.current = null
@@ -806,6 +836,7 @@ export default function App() {
     recordingRef.current = startReplay('bot', decks, ['You', 'Computer'], seed, first, clock, secondSeer)
     reviewFlagsRef.current = []; archiveDifficultyRef.current = difficulty; archivedEndRef.current = false
     coachRef.current = null
+    resetClaudeBot(); setClaudeNote(null)
   }
 
   // apply exactly ONE bot action (seat 1). Shared by the auto-timer and the
@@ -828,7 +859,23 @@ export default function App() {
     // "Thinking" difficulty: hand the position to the search worker and wait for its reply. Only the
     // first action of the turn actually thinks; the rest are instant plan-replays (hence the delayed
     // spinner). The worker's clock keeps charging seat 1 via the heartbeat while it plans.
-    if (session?.botDifficulty === 'thinking') {
+    // "Claude" difficulty: queued moves of Claude's plan for this turn play at once; otherwise the search
+    // worker is asked for its move first (a few seconds) — it is the hint Claude sees and the fallback —
+    // and its answer is routed to finishClaudeMove. The opening hand and draw-pile choices stay with
+    // the search bot outright.
+    if (session?.botDifficulty === 'claude' && !claudeDefers(local)) {
+      if (botBusyRef.current) return
+      const quick = claudeQuick(local, 1)
+      if (quick) { applyBotAction(local, quick); return }
+      botBusyRef.current = true
+      const id = ++botReqIdRef.current
+      claudeWaitRef.current = id
+      if (botThinkTimerRef.current !== null) clearTimeout(botThinkTimerRef.current)
+      botThinkTimerRef.current = window.setTimeout(() => setBotThinking(true), 350)
+      ensureBotWorker().postMessage({ id, state: JSON.stringify(local), seat: 1, timeBudgetMs: 3000, banned: [...botBannedRef.current] })
+      return
+    }
+    if (session?.botDifficulty === 'thinking' || session?.botDifficulty === 'claude') {
       if (botBusyRef.current) return // already waiting on the worker
       botBusyRef.current = true
       const id = ++botReqIdRef.current
@@ -1451,7 +1498,12 @@ export default function App() {
           {botThinking && (
             <div className="bot-thinking" role="status" aria-live="polite">
               <span className="bot-thinking-spinner" aria-hidden="true" />
-              <span>Computer is thinking…</span>
+              <span>{session.botDifficulty === 'claude' ? 'Claude is thinking…' : 'Computer is thinking…'}</span>
+            </div>
+          )}
+          {session.botDifficulty === 'claude' && claudeNote && (
+            <div className={`claude-note ${claudeNote.fallback ? 'is-fallback' : ''}`} role="status" aria-live="polite" title="Claude's plan for its turn">
+              <span className="claude-note-tag">✳ Claude</span>{claudeNote.text}
             </div>
           )}
         </>
