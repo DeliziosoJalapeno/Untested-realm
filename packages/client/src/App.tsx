@@ -34,7 +34,7 @@ import { puzzleById, PUZZLES } from './puzzle/puzzles'
 import PuzzlePage from './components/PuzzlePage'
 import { gate, advance, next as tutNext, runFoe, coachToAct } from './tutorial/runner'
 import { markLessonDone, markPuzzleSolved } from './tutorial/progress'
-import { claudeBotAction, claudeQuick, claudeDefers, askServer, resetClaudeBot, dropClaudePlan, claudeUsage, type ClaudeAnalysis } from './claude_bot'
+import { claudeBotAction, claudeQuick, claudeDefers, askServer, resetClaudeBot, dropClaudePlan, claudeUsage, claudeJournal, type ClaudeAnalysis } from './claude_bot'
 import SealedDeckbuild from './components/SealedDeckbuild'
 import Game from './components/Game'
 import ReplayViewer from './components/ReplayViewer'
@@ -421,6 +421,26 @@ export default function App() {
     const local = localRef.current
     if (!local || !botNeedsToAct(local, 1)) return
     applyBotAction(local, r.action)
+  }
+
+  /** A file with this game's Claude decisions (what it was shown, what it chose, what the engine would have
+   *  played) and the game log — the hosted site keeps nothing, so this is how a game gets reviewed. */
+  function downloadClaudeLog() {
+    const g = localRef.current
+    const data = {
+      savedAt: new Date().toISOString(),
+      result: !g ? null : g.winner === null ? 'unfinished' : g.winner === 1 ? 'Claude won' : g.winner === 0 ? 'Claude lost' : 'draw',
+      turn: g?.turn ?? null,
+      usage: claudeUsage(),
+      decisions: claudeJournal(),
+      gameLog: (g?.log ?? []).map((l) => l.msg),
+    }
+    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `claude-game-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.json`
+    document.body.appendChild(a); a.click(); a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 2000)
   }
 
   /** invalidate any in-flight worker computation (its reply will be dropped) and clear the spinner. */
@@ -1504,6 +1524,7 @@ export default function App() {
           {session.botDifficulty === 'claude' && claudeNote && (
             <div className={`claude-note ${claudeNote.fallback ? 'is-fallback' : ''}`} role="status" aria-live="polite" title="Claude's plan for its turn">
               <span className="claude-note-tag">✳ Claude</span>{claudeNote.text}
+              <button className="claude-note-save" onClick={downloadClaudeLog} title="Save everything Claude was shown and chose this game, with the game log, as a file — for reviewing its play">⬇ Save game for review</button>
               {(() => { const u = claudeUsage(); const k = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)); return u.calls ? <span className="claude-note-usage">{u.calls} calls · {k(u.input + u.cacheRead + u.cacheWrite)} tokens in{u.cacheRead ? ` (${k(u.cacheRead)} cached)` : ''} · {k(u.output)} out</span> : null })()}
             </div>
           )}

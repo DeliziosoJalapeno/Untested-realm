@@ -320,7 +320,7 @@ export const claudeUsage = () => ({ ...USAGE })
 /** forget the queued plan (an undo makes it stale); the game's memo and usage are kept */
 export function dropClaudePlan(): void { PLAN = null }
 /** a new game */
-export function resetClaudeBot(): void { PLAN = null; LAST_NOTE = ''; MEMO = []; STRATEGY = ''; USAGE = { calls: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }
+export function resetClaudeBot(): void { JOURNAL = []; PLAN = null; LAST_NOTE = ''; MEMO = []; STRATEGY = ''; USAGE = { calls: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }
 
 function notesFor(real: GameState): string {
   const earlier = MEMO.filter((m) => m.turn < real.turn).slice(-2).map((m) => `turn ${m.turn}: ${m.plan}`)
@@ -361,6 +361,31 @@ const CLAUDE_PROMPTS = new Set(['defend', 'intercept', 'chooseTargets', 'chooseS
 export const claudeDefers = (real: GameState): boolean =>
   real.phase === 'mulligan' || (!!real.prompts[0] && !CLAUDE_PROMPTS.has(real.prompts[0].kind))
 
+/** One consultation, kept so a finished game can be reviewed: exactly what Claude was shown, what it
+ *  chose, what the engine would have played, and whether the engine objected. */
+export interface ClaudeDecision {
+  turn: number
+  /** the question being answered, if it was one (defend, chooseTargets, …) */
+  prompt?: string
+  position: string
+  moves: string[]
+  notes: string
+  engine?: string
+  picked?: string[]
+  plan?: string
+  strategy?: string
+  /** the engine's objection to the first answer, when it made one */
+  objection?: string
+  /** the first answer, when a second one replaced it */
+  firstAnswer?: string
+  result: 'claude' | 'fallback'
+  why?: string
+  ms: number
+}
+let JOURNAL: ClaudeDecision[] = []
+/** everything Claude was asked this game, for review */
+export const claudeJournal = (): ClaudeDecision[] => JOURNAL.slice()
+
 export type AskClaude = (req: ClaudeRequest, signal: AbortSignal) => Promise<ClaudeReply>
 
 /** Decide the bot's next action with Claude. `suggested` is the search bot's move for this position
@@ -380,14 +405,21 @@ export async function claudeBotAction(real: GameState, me: PlayerId, suggested: 
 
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), timeoutMs)
+  const t0 = Date.now()
+  const entry: ClaudeDecision = { turn: real.turn, prompt: real.prompts[0]?.kind, position: '', moves: [], notes: '', result: 'fallback', ms: 0 }
+  JOURNAL.push(entry)
+  if (JOURNAL.length > 400) JOURNAL.shift()
   try {
     const count = (r: ClaudeReply) => { USAGE.calls++; if (r.usage) { USAGE.input += r.usage.input; USAGE.output += r.usage.output; USAGE.cacheRead += r.usage.cacheRead; USAGE.cacheWrite += r.usage.cacheWrite } }
     const legalPicks = (r: ClaudeReply) => (r.picks ?? []).filter((n) => Number.isInteger(n) && n >= 1 && n <= cands.length)
     const req = buildRequest(real, me, cands, suggested, notesFor(real), analysis)
+    entry.position = req.position; entry.moves = req.candidates; entry.notes = req.notes
+    const sugKey = suggested ? botActionKey(suggested) : null
+    entry.engine = cands.find((c) => botActionKey(c.action) === sugKey)?.text
     let reply = await ask(req, ctrl.signal)
     count(reply)
     let picks = legalPicks(reply)
-    if (!picks.length) return fallback('Claude chose no legal move')
+    if (!picks.length) { entry.why = 'no legal move chosen'; return fallback('Claude chose no legal move') }
     // the engine double-checks the first move against its own: a likely blunder goes back to Claude once,
     // with the simulated consequences spelled out. Claude has the last word — except on a move the
     // simulation says loses the game outright, which is replaced by the engine's.
@@ -398,12 +430,13 @@ export async function claudeBotAction(real: GameState, me: PlayerId, suggested: 
       const engine = suggested ? (suggested.t === 'endTurn' ? analysis.pass ?? undefined : analysis.outcomes[botActionKey(suggested)]) : undefined
       const why = objection(outcomeOf(picks[0]), engine, analysis.pass, mine, theirs)
       if (why) {
+        entry.objection = why; entry.firstAnswer = cands[picks[0] - 1].text
         const second = await ask({ ...req, check: `You answered: ${cands[picks[0] - 1].text}.\n${why}` }, ctrl.signal)
         count(second)
         const again = legalPicks(second)
         if (again.length) { reply = second; picks = again }
         const final = outcomeOf(picks[0])
-        if (final?.lose && engine && !engine.lose && suggested) return { action: suggested, source: 'fallback', note: 'Claude\'s move lost to a simulated reply' }
+        if (final?.lose && engine && !engine.lose && suggested) { entry.why = 'replaced: the move lost the game in the simulation'; entry.picked = picks.map((n) => cands[n - 1].text); return { action: suggested, source: 'fallback', note: 'Claude\'s move lost to a simulated reply' } }
       }
     }
     const keys = picks.map((n) => botActionKey(cands[n - 1].action))
@@ -411,12 +444,15 @@ export async function claudeBotAction(real: GameState, me: PlayerId, suggested: 
     if (reply.strategy) STRATEGY = String(reply.strategy).slice(0, 300)
     if (LAST_NOTE && real.activePlayer === me && !real.prompts[0]) { MEMO = MEMO.filter((m) => m.turn !== real.turn); MEMO.push({ turn: real.turn, plan: LAST_NOTE }) }
     PLAN = { seat: me, turn: real.turn, queue: keys.slice(1), hand: handKey(real, me), notes: LAST_NOTE }
+    entry.result = 'claude'; entry.picked = picks.map((n) => cands[n - 1].text); entry.plan = LAST_NOTE; entry.strategy = reply.strategy || undefined
     return { action: cands[picks[0] - 1].action, source: 'claude', note: LAST_NOTE }
   } catch (e) {
     PLAN = null
+    entry.why = ctrl.signal.aborted ? 'timed out' : String((e as Error)?.message ?? 'error')
     return fallback(ctrl.signal.aborted ? 'Claude took too long' : `Claude unavailable (${(e as Error)?.message ?? 'error'})`)
   } finally {
     clearTimeout(timer)
+    entry.ms = Date.now() - t0
   }
 }
 

@@ -3,7 +3,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { applyAction, type Action } from '@sorcery/shared'
 import { scene } from '../src/tutorial/scene'
-import { candidates, describePosition, deckReference, buildRequest, claudeBotAction, claudeQuick, claudeDefers, claudeUsage, resetClaudeBot, lastClaudeNote, MAX_CANDIDATES, analyze, outcomeText, objection, BLUNDER_MARGIN, type AskClaude, type ClaudeAnalysis } from '../src/claude_bot'
+import { candidates, describePosition, deckReference, buildRequest, claudeBotAction, claudeQuick, claudeDefers, claudeUsage, claudeJournal, resetClaudeBot, lastClaudeNote, MAX_CANDIDATES, analyze, outcomeText, objection, BLUNDER_MARGIN, type AskClaude, type ClaudeAnalysis } from '../src/claude_bot'
 import { botActionKey } from '../src/bot'
 import type { ReplyOutcome } from '../src/bot_search'
 import { fairView } from '../src/bot_search'
@@ -161,6 +161,12 @@ describe('Claude opponent — looking ahead', () => {
     expect(asks[1]).toMatch(/You answered: CAST Lightning Bolt[\s\S]*ENGINE CHECK/)
     expect(r1).toMatchObject({ source: 'claude', note: 'Attack instead.' })
     expect(r1.action).toMatchObject({ t: 'moveAttack' })
+    // …and the whole exchange is in the game's journal for later review
+    expect(claudeJournal()).toHaveLength(1)
+    expect(claudeJournal()[0]).toMatchObject({ result: 'claude', firstAnswer: expect.stringMatching(/^CAST Lightning Bolt/), engine: expect.stringMatching(/Amazon Warriors/), picked: [expect.stringMatching(/Amazon Warriors.*ATTACKS/)], plan: 'Attack instead.' })
+    expect(claudeJournal()[0].objection).toMatch(/ENGINE CHECK/)
+    expect(claudeJournal()[0].moves.length).toBe(cs.length)
+    expect(claudeJournal()[0].position).toMatch(/BOARD/)
     // 2. Claude insists on a merely worse move: it has the last word
     resetClaudeBot()
     const r2 = await claudeBotAction(t.g, 0, cs[good - 1].action, async () => ({ picks: [bad], plan: 'Bolt it.' }), 5000, analysis(O({ eval: -40 })))
