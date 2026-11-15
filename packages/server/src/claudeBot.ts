@@ -42,15 +42,16 @@ export interface ClaudeBotRequest { position: string; candidates: string[]; note
 export interface ClaudeBotUsage { input: number; output: number; cacheRead: number; cacheWrite: number }
 export interface ClaudeBotReply { picks: number[]; plan: string; strategy: string; model: string; ms: number; usage: ClaudeBotUsage }
 
-const MAX_POSITION = 24_000, MAX_CANDIDATES = 200, MAX_CANDIDATE_LEN = 400, MAX_NOTES = 1200, MAX_REFERENCE = 40_000
+const MAX_POSITION = 40_000, MAX_CANDIDATES = 200, MAX_CANDIDATE_LEN = 1200, MAX_NOTES = 1200, MAX_REFERENCE = 40_000
 
 /** check and trim a request body; returns an error string for a malformed one */
 export function parseRequest(body: unknown): ClaudeBotRequest | string {
   const b = body as Partial<ClaudeBotRequest> | null
   if (!b || typeof b.position !== 'string' || !Array.isArray(b.candidates)) return 'Expected { position, candidates }.'
-  if (b.position.length > MAX_POSITION) return 'Position too long.'
+  if (b.position.length > MAX_POSITION) return `Position too long (${b.position.length} characters).`
   if (!b.candidates.length || b.candidates.length > MAX_CANDIDATES) return 'Bad candidate count.'
-  if (b.candidates.some((c) => typeof c !== 'string' || c.length > MAX_CANDIDATE_LEN)) return 'Bad candidate.'
+  const long = b.candidates.find((c) => typeof c !== 'string' || c.length > MAX_CANDIDATE_LEN)
+  if (long !== undefined) return typeof long === 'string' ? `A move description is too long (${long.length} characters).` : 'Bad candidate.'
   if (b.reference !== undefined && (typeof b.reference !== 'string' || b.reference.length > MAX_REFERENCE)) return 'Bad reference.'
   return { position: b.position, candidates: b.candidates, notes: typeof b.notes === 'string' ? b.notes.slice(0, MAX_NOTES) : '', reference: b.reference ?? '', check: typeof b.check === 'string' ? b.check.slice(0, 1500) : '' }
 }
@@ -157,7 +158,7 @@ export function parseApiResponse(resp: any, candidateCount: number): { picks: nu
 type Fetch = (url: string, init: { method: string; headers: Record<string, string>; body: string; signal?: AbortSignal }) => Promise<{ ok: boolean; status: number; json(): Promise<any>; text(): Promise<string> }>
 
 /** ask Claude. One retry in the plain shape if the thinking request is rejected as malformed. */
-export async function askClaude(r: ClaudeBotRequest, fetchImpl: Fetch = fetch as unknown as Fetch, timeoutMs = 40_000): Promise<ClaudeBotReply> {
+export async function askClaude(r: ClaudeBotRequest, fetchImpl: Fetch = fetch as unknown as Fetch, timeoutMs = 35_000): Promise<ClaudeBotReply> {
   const key = process.env.ANTHROPIC_API_KEY
   if (!key) throw new Error('The Claude opponent is not configured on this server (no ANTHROPIC_API_KEY).')
   const t0 = Date.now()
@@ -166,7 +167,8 @@ export async function askClaude(r: ClaudeBotRequest, fetchImpl: Fetch = fetch as
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify(buildApiRequest(r, thinking)),
-      signal: AbortSignal.timeout(timeoutMs),
+      // the plain (no thinking) shape answers in a few seconds; it is also the retry after a slow call
+      signal: AbortSignal.timeout(thinking ? timeoutMs : 20_000),
     })
     if (!res.ok) {
       const detail = await res.text().catch(() => '')
@@ -180,8 +182,13 @@ export async function askClaude(r: ClaudeBotRequest, fetchImpl: Fetch = fetch as
   if ((process.env.CLAUDE_BOT_EFFORT ?? '').toLowerCase() === 'off') resp = await call(false)
   else {
     try { resp = await call(true) } catch (e) {
-      if ((e as { status?: number }).status !== 400) throw e
-      resp = await call(false) // this model or account doesn't take the thinking parameters
+      const err = e as { status?: number; name?: string }
+      const tooSlow = err.name === 'TimeoutError' || err.name === 'AbortError'
+      // 400: this model or account doesn't take the thinking parameters. Too slow: thinking ran past the
+      // limit. Either way, ask again in the plain shape rather than give the move up.
+      if (err.status !== 400 && !tooSlow) { console.error(`[claude-bot] failed: ${(e as Error).message}`); throw e }
+      console.warn(`[claude-bot] ${tooSlow ? `no answer in ${timeoutMs / 1000}s with thinking` : 'thinking request rejected (400)'} — retrying without thinking`)
+      resp = await call(false)
     }
   }
   const u = resp?.usage ?? {}

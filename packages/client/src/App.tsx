@@ -411,7 +411,7 @@ export default function App() {
   async function finishClaudeMove(id: number, suggestion: Action | null, analysis: ClaudeAnalysis | null) {
     const before = localRef.current
     if (!before || id !== botReqIdRef.current) return
-    const r = await claudeBotAction(before, 1, suggestion, askServer, 45000, analysis)
+    const r = await claudeBotAction(before, 1, suggestion, askServer, 75000, analysis)
     if (id !== botReqIdRef.current) return // superseded by an undo / new game / leave
     botBusyRef.current = false
     if (botThinkTimerRef.current !== null) { clearTimeout(botThinkTimerRef.current); botThinkTimerRef.current = null }

@@ -280,8 +280,9 @@ export function buildRequest(real: GameState, me: PlayerId, cands: ClaudeCandida
   const line = analysis?.line?.length ? `\n\nTHE SEARCH ENGINE'S PLAN FOR THIS TURN (its best line; a tactical suggestion, not an order):\n${analysis.line.map((a, i) => `  ${i + 1}) ${describeAction(view, me, a)}`).join('\n')}` : ''
   return {
     reference: deckReference(view, me),
-    position: describePosition(view, me) + line,
-    candidates: cands.map((c, i) => `${i + 1}. ${c.text}  ${note(c)}${hint && botActionKey(c.action) === hint ? '  <- the search engine\'s choice' : ''}`),
+    position: (describePosition(view, me) + line).slice(0, 38_000),
+    // (each line is capped: the server refuses over-long move descriptions)
+    candidates: cands.map((c, i) => `${i + 1}. ${c.text.slice(0, 500)}  ${note(c).slice(0, 400)}${hint && botActionKey(c.action) === hint ? '  <- the search engine\'s choice' : ''}`),
     notes,
   }
 }
@@ -364,7 +365,7 @@ export type AskClaude = (req: ClaudeRequest, signal: AbortSignal) => Promise<Cla
 
 /** Decide the bot's next action with Claude. `suggested` is the search bot's move for this position
  *  (the hint, and the fallback). Never throws: any failure returns `suggested` (or ends the turn). */
-export async function claudeBotAction(real: GameState, me: PlayerId, suggested: Action | null, ask: AskClaude, timeoutMs = 45000, analysis: ClaudeAnalysis | null = null): Promise<{ action: Action; source: 'claude' | 'queue' | 'fallback'; note: string }> {
+export async function claudeBotAction(real: GameState, me: PlayerId, suggested: Action | null, ask: AskClaude, timeoutMs = 75000, analysis: ClaudeAnalysis | null = null): Promise<{ action: Action; source: 'claude' | 'queue' | 'fallback'; note: string }> {
   const fallback = (why: string) => ({ action: suggested ?? ({ t: 'endTurn' } as Action), source: 'fallback' as const, note: why })
   // the opening hand and draw-pile choices stay with the procedural policy (cheap, and well tuned)
   if (claudeDefers(real)) return fallback('')

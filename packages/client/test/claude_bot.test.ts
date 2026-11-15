@@ -249,9 +249,12 @@ describe('Claude opponent — the server side', () => {
   it('accepts only the fixed request shape', () => {
     expect(parseRequest(req)).toMatchObject({ position: req.position })
     expect(parseRequest({ position: 'x' })).toMatch(/Expected/)
-    expect(parseRequest({ position: 'x'.repeat(30000), candidates: ['1'] })).toMatch(/too long/)
+    expect(parseRequest({ position: 'x'.repeat(50000), candidates: ['1'] })).toMatch(/too long/)
     expect(parseRequest({ position: 'x', candidates: [] })).toMatch(/candidate/)
     expect(parseRequest({ position: 'x', candidates: [{ evil: 1 }] })).toMatch(/candidate/)
+    // long, fully annotated move lines are accepted (a 400-character cap used to refuse them)
+    expect(parseRequest({ position: 'x', candidates: ['1. ' + 'y'.repeat(900)] })).toMatchObject({ position: 'x' })
+    expect(parseRequest({ position: 'x', candidates: ['1. ' + 'y'.repeat(1300)] })).toMatch(/too long \(1303 characters\)/)
   })
 
   it('builds a Messages API request with a cached system prompt and the move tool', () => {
@@ -305,6 +308,15 @@ describe('Claude opponent — the server side', () => {
       expect(seen).toHaveLength(1)
       expect(seen[0].thinking).toBeUndefined()
       delete process.env.CLAUDE_BOT_EFFORT
+      // a thinking call that times out is retried once without thinking
+      seen.length = 0
+      const slowThenFast = async (_u: string, init: any) => {
+        const body = JSON.parse(init.body); seen.push(body)
+        if (body.thinking) { const e = new Error('The operation was aborted due to timeout'); e.name = 'TimeoutError'; throw e }
+        return { ok: true, status: 200, text: async () => '', json: async () => ({ content: [{ type: 'tool_use', name: 'choose_moves', input: { picks: [1], plan: 'Pass.' } }] }) }
+      }
+      expect((await askClaude(req, slowThenFast)).picks).toEqual([1])
+      expect(seen.map((b) => !!b.thinking)).toEqual([true, false])
       await expect(askClaude(req, async () => ({ ok: false, status: 401, json: async () => ({}), text: async () => 'bad key' }))).rejects.toThrow(/401/)
     } finally {
       if (old === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = old
