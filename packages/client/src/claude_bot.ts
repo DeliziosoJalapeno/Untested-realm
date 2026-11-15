@@ -15,13 +15,16 @@ import {
   expandActions, evaluate, DEFAULT_WEIGHTS, getCard, affinity, effAttack, effKeywords, isDisabled, opponent,
   GRID_W, GRID_H, type Action, type GameState, type PlayerId, type UnitState,
 } from '@sorcery/shared'
-import { fairView } from './bot_search'
+import { fairView, replyOutcome, type ReplyOutcome } from './bot_search'
 import { botActionKey } from './bot'
 
-export interface ClaudeCandidate { action: Action; text: string; delta: number }
-export interface ClaudeRequest { position: string; candidates: string[]; notes: string; reference?: string }
+export interface ClaudeCandidate { action: Action; text: string; delta: number; next?: GameState }
+/** what the search worker adds to a Claude decision: its own move and plan, and a simulated outcome
+ *  ("this move, then stop, then the opponent's reply turn") for the moves on offer */
+export interface ClaudeAnalysis { line: Action[]; outcomes: Record<string, ReplyOutcome>; pass: ReplyOutcome | null }
+export interface ClaudeRequest { position: string; candidates: string[]; notes: string; reference?: string; check?: string }
 export interface ClaudeUsage { input: number; output: number; cacheRead: number; cacheWrite: number }
-export interface ClaudeReply { picks: number[]; plan: string; model?: string; ms?: number; usage?: ClaudeUsage }
+export interface ClaudeReply { picks: number[]; plan: string; strategy?: string; model?: string; ms?: number; usage?: ClaudeUsage }
 export interface ClaudeStatus { enabled: boolean; model: string | null; reason?: string }
 
 // ---------- naming things ----------
@@ -128,7 +131,7 @@ export function describePosition(view: GameState, me: PlayerId): string {
 
 /** one legal move in words */
 export function describeAction(s: GameState, me: PlayerId, a: Action): string {
-  const un = (id: string) => { const u = s.units[id]; return u ? `${u.name}${u.controller === me ? '' : ' (enemy)'} at ${sqName(me, u.x, u.y)}` : s.sites[id] ? `${s.sites[id].name} at ${sqName(me, s.sites[id].x, s.sites[id].y)}` : s.artifacts[id]?.name ?? id }
+  const un = (id: string) => { const u = s.units[id]; return u ? `${u.name}${u.controller === me ? '' : ' (enemy)'} at ${sqName(me, u.x, u.y)}` : s.sites[id] ? `${s.sites[id].trap && s.sites[id].controller === me ? `your face-down trap ${s.sites[id].trap!.realName}` : s.sites[id].name} at ${sqName(me, s.sites[id].x, s.sites[id].y)}` : s.artifacts[id]?.name ?? id }
   const tgt = (t: string) => { const m = /^sq:(\d+),(\d+)(?:,(\w+))?$/.exec(t); return m ? `${sqName(me, +m[1], +m[2])}${m[3] && m[3] !== 'surface' ? ` (${m[3]})` : ''}` : un(t) }
   const dir = (d: unknown) => { const map: Record<string, string> = me === 0 ? { n: 'forward', s: 'backward', e: 'right', w: 'left' } : { n: 'backward', s: 'forward', e: 'left', w: 'right' }; return typeof d === 'string' ? map[d] ?? d : '' }
   switch (a.t) {
@@ -154,7 +157,7 @@ export function describeAction(s: GameState, me: PlayerId, a: Action): string {
     }
     case 'activate': {
       const extra = a.extra as Record<string, unknown> | undefined
-      return `ABILITY "${a.ability}" of ${un(a.sourceId)}${a.targets?.length ? ` targeting ${a.targets.map(tgt).join(', ')}` : ''}${extra?.direction ? `, direction ${dir(extra.direction)}` : ''}`
+      return `${a.ability === 'trap:spring' ? 'SPRING' : `ABILITY "${a.ability}" of`} ${un(a.sourceId)}${a.targets?.length ? ` targeting ${a.targets.map(tgt).join(', ')}` : ''}${extra?.direction ? `, direction ${dir(extra.direction)}` : ''}`
     }
     case 'pickUp': return `${un(a.unitId)} PICKS UP ${a.artifactIds.map((id) => s.artifacts[id]?.name).join(', ')}`
     case 'drop': return `${un((a as any).unitId)} DROPS what it carries`
@@ -185,7 +188,7 @@ function describeChoice(s: GameState, me: PlayerId, c: unknown, un: (id: string)
 }
 
 /** every legal move for `me` right now, described, with the evaluation's opinion of the result */
-export function candidates(real: GameState, me: PlayerId): ClaudeCandidate[] {
+export function candidates(real: GameState, me: PlayerId, keepNext = false): ClaudeCandidate[] {
   const view = fairView(real, me)
   const base = evaluate(view, me, DEFAULT_WEIGHTS)
   const seen = new Set<string>()
@@ -197,7 +200,7 @@ export function candidates(real: GameState, me: PlayerId): ClaudeCandidate[] {
     seen.add(k)
     let delta = 0
     try { delta = evaluate(e.next, me, DEFAULT_WEIGHTS) - base } catch { /* keep 0 */ }
-    out.push({ action: e.action, text: describeAction(view, me, e.action), delta })
+    out.push({ action: e.action, text: describeAction(view, me, e.action), delta, ...(keepNext ? { next: e.next } : {}) })
   }
   return trim(out)
 }
@@ -229,16 +232,77 @@ function trim(all: ClaudeCandidate[]): ClaudeCandidate[] {
   return kept.filter((c) => fixed.includes(c) || rest.includes(c))
 }
 
-export function buildRequest(real: GameState, me: PlayerId, cands: ClaudeCandidate[], suggested: Action | null, notes: string): ClaudeRequest {
+/** Simulate the moves on offer (run in the search worker — it takes a second or two): for each, "play
+ *  it, stop, and let the opponent take its reply turn". Meaningful moves first; stops at the budget. */
+export function analyze(real: GameState, me: PlayerId, budgetMs = 2500): { outcomes: Record<string, ReplyOutcome>; pass: ReplyOutcome | null } {
+  const outcomes: Record<string, ReplyOutcome> = {}
+  let pass: ReplyOutcome | null = null
+  try {
+    const view = fairView(real, me)
+    const deadline = Date.now() + budgetMs
+    if (!view.prompts[0] && view.activePlayer === me) pass = replyOutcome(view, view, me)
+    const cands = candidates(real, me, true).sort((a, b) => Number(meaningful(b.action)) - Number(meaningful(a.action)))
+    for (const c of cands) {
+      if (Date.now() > deadline) break
+      if (!c.next || c.action.t === 'endTurn') continue
+      outcomes[botActionKey(c.action)] = replyOutcome(view, c.next, me)
+    }
+  } catch { /* partial analysis is fine */ }
+  return { outcomes, pass }
+}
+
+const signed = (n: number) => `${n >= 0 ? '+' : ''}${n.toFixed(0)}`
+/** one simulated outcome in a few words, relative to simply passing the turn */
+export function outcomeText(o: ReplyOutcome, pass: ReplyOutcome | null, myLifeNow: number, foeLifeNow: number): string {
+  if (o.win) return 'YOU WIN'
+  const bits: string[] = [`eval ${signed(o.eval - (pass?.eval ?? o.eval))} vs passing`]
+  if (o.lose) bits.unshift('YOUR AVATAR DIES')
+  else if (o.door && myLifeNow > 0) bits.push("you fall to Death's Door")
+  else if (o.myLife < myLifeNow) bits.push(`you lose ${myLifeNow - o.myLife} life`)
+  if (o.foeLife < foeLifeNow) bits.push(o.foeLife <= 0 ? "they fall to Death's Door" : `they lose ${foeLifeNow - o.foeLife} life`)
+  if (o.lostMine.length) bits.push(`you lose ${o.lostMine.join(', ')}`)
+  if (o.lostTheirs.length) bits.push(`they lose ${o.lostTheirs.join(', ')}`)
+  return bits.join('; ')
+}
+
+const lifeNow = (s: GameState, p: PlayerId) => { const a = s.units[s.players[p].avatarUnitId]; return a ? (a.deathsDoor ? 0 : a.life ?? 0) : 0 }
+
+export function buildRequest(real: GameState, me: PlayerId, cands: ClaudeCandidate[], suggested: Action | null, notes: string, analysis: ClaudeAnalysis | null = null): ClaudeRequest {
   const view = fairView(real, me)
   const hint = suggested ? botActionKey(suggested) : null
+  const mine = lifeNow(view, me), theirs = lifeNow(view, opponent(me))
+  const note = (c: ClaudeCandidate): string => {
+    const o = analysis?.outcomes[botActionKey(c.action)]
+    if (o) return `[then their reply: ${outcomeText(o, analysis!.pass, mine, theirs)}]`
+    if (c.action.t === 'endTurn' && analysis?.pass) return `[then their reply: ${outcomeText(analysis.pass, analysis.pass, mine, theirs)}]`
+    return `[eval ${c.delta >= 0 ? '+' : ''}${c.delta.toFixed(1)}]`
+  }
+  const line = analysis?.line?.length ? `\n\nTHE SEARCH ENGINE'S PLAN FOR THIS TURN (its best line; a tactical suggestion, not an order):\n${analysis.line.map((a, i) => `  ${i + 1}) ${describeAction(view, me, a)}`).join('\n')}` : ''
   return {
     reference: deckReference(view, me),
-    position: describePosition(view, me),
-    candidates: cands.map((c, i) => `${i + 1}. ${c.text}  [eval ${c.delta >= 0 ? '+' : ''}${c.delta.toFixed(1)}]${hint && botActionKey(c.action) === hint ? '  <- the search engine\'s choice' : ''}`),
+    position: describePosition(view, me) + line,
+    candidates: cands.map((c, i) => `${i + 1}. ${c.text}  ${note(c)}${hint && botActionKey(c.action) === hint ? '  <- the search engine\'s choice' : ''}`),
     notes,
   }
 }
+
+/** Is Claude's move a likely blunder next to the engine's? Compared on the simulated outcomes. Returns
+ *  what to tell Claude, or null when there is nothing to object to. */
+export function objection(pick: ReplyOutcome | undefined, engine: ReplyOutcome | undefined, pass: ReplyOutcome | null, myLifeNow: number, foeLifeNow: number): string | null {
+  if (!pick || pick.win) return null
+  const ref = engine ?? pass
+  if (!ref) return null
+  const worse =
+    (pick.lose && !ref.lose) ? 'it gets your Avatar killed'
+      : (pick.door && !ref.door) ? "it drops you to Death's Door"
+        : (ref.myLife - pick.myLife >= 4 && ref.foeLife - pick.foeLife <= 2) ? `it costs you ${ref.myLife - pick.myLife} more life`
+          : (ref.eval - pick.eval >= BLUNDER_MARGIN) ? 'the position afterwards is clearly worse' : null
+  if (!worse) return null
+  return `ENGINE CHECK — your first move was simulated (the move, then the opponent's best reply turn) and ${worse}.\n  Your move: ${outcomeText(pick, pass, myLifeNow, foeLifeNow)}\n  ${engine ? "The search engine's move" : 'Passing instead'}: ${outcomeText(ref, pass, myLifeNow, foeLifeNow)}\nThe simulation only sees one reply turn and no cards from the opponent's hand. Choose again: keep your move only if you can name what the simulation is missing.`
+}
+/** evaluation points below which a difference is not called a blunder (moves in one position typically span 100–400) */
+export const BLUNDER_MARGIN = 60
+
 
 // ---------- the per-turn plan queue ----------
 interface Plan { seat: PlayerId; turn: number; queue: string[]; hand: string; notes: string }
@@ -246,6 +310,8 @@ let PLAN: Plan | null = null
 let LAST_NOTE = ''
 /** what Claude said it was doing on its previous turns (most recent last) — cheap continuity */
 let MEMO: { turn: number; plan: string }[] = []
+/** Claude's standing game plan, in its own words — rewritten whenever it sends a new one */
+let STRATEGY = ''
 let USAGE = { calls: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
 export const lastClaudeNote = (): string => LAST_NOTE
 /** tokens used by this game's Claude calls so far */
@@ -253,12 +319,12 @@ export const claudeUsage = () => ({ ...USAGE })
 /** forget the queued plan (an undo makes it stale); the game's memo and usage are kept */
 export function dropClaudePlan(): void { PLAN = null }
 /** a new game */
-export function resetClaudeBot(): void { PLAN = null; LAST_NOTE = ''; MEMO = []; USAGE = { calls: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }
+export function resetClaudeBot(): void { PLAN = null; LAST_NOTE = ''; MEMO = []; STRATEGY = ''; USAGE = { calls: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }
 
 function notesFor(real: GameState): string {
   const earlier = MEMO.filter((m) => m.turn < real.turn).slice(-2).map((m) => `turn ${m.turn}: ${m.plan}`)
   const now = PLAN && PLAN.turn === real.turn ? PLAN.notes : ''
-  return [earlier.length ? `Your earlier turns — ${earlier.join(' | ')}` : '', now ? `This turn so far — ${now}` : ''].filter(Boolean).join('\n')
+  return [STRATEGY ? `Your game plan — ${STRATEGY}` : '', earlier.length ? `Your earlier turns — ${earlier.join(' | ')}` : '', now ? `This turn so far — ${now}` : ''].filter(Boolean).join('\n')
 }
 
 const handKey = (s: GameState, me: PlayerId) => [...s.players[me].hand].sort().join(',')
@@ -298,7 +364,7 @@ export type AskClaude = (req: ClaudeRequest, signal: AbortSignal) => Promise<Cla
 
 /** Decide the bot's next action with Claude. `suggested` is the search bot's move for this position
  *  (the hint, and the fallback). Never throws: any failure returns `suggested` (or ends the turn). */
-export async function claudeBotAction(real: GameState, me: PlayerId, suggested: Action | null, ask: AskClaude, timeoutMs = 20000): Promise<{ action: Action; source: 'claude' | 'queue' | 'fallback'; note: string }> {
+export async function claudeBotAction(real: GameState, me: PlayerId, suggested: Action | null, ask: AskClaude, timeoutMs = 45000, analysis: ClaudeAnalysis | null = null): Promise<{ action: Action; source: 'claude' | 'queue' | 'fallback'; note: string }> {
   const fallback = (why: string) => ({ action: suggested ?? ({ t: 'endTurn' } as Action), source: 'fallback' as const, note: why })
   // the opening hand and draw-pile choices stay with the procedural policy (cheap, and well tuned)
   if (claudeDefers(real)) return fallback('')
@@ -314,13 +380,34 @@ export async function claudeBotAction(real: GameState, me: PlayerId, suggested: 
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), timeoutMs)
   try {
-    const reply = await ask(buildRequest(real, me, cands, suggested, notesFor(real)), ctrl.signal)
-    USAGE.calls++
-    if (reply.usage) { USAGE.input += reply.usage.input; USAGE.output += reply.usage.output; USAGE.cacheRead += reply.usage.cacheRead; USAGE.cacheWrite += reply.usage.cacheWrite }
-    const picks = (reply.picks ?? []).filter((n) => Number.isInteger(n) && n >= 1 && n <= cands.length)
+    const count = (r: ClaudeReply) => { USAGE.calls++; if (r.usage) { USAGE.input += r.usage.input; USAGE.output += r.usage.output; USAGE.cacheRead += r.usage.cacheRead; USAGE.cacheWrite += r.usage.cacheWrite } }
+    const legalPicks = (r: ClaudeReply) => (r.picks ?? []).filter((n) => Number.isInteger(n) && n >= 1 && n <= cands.length)
+    const req = buildRequest(real, me, cands, suggested, notesFor(real), analysis)
+    let reply = await ask(req, ctrl.signal)
+    count(reply)
+    let picks = legalPicks(reply)
     if (!picks.length) return fallback('Claude chose no legal move')
+    // the engine double-checks the first move against its own: a likely blunder goes back to Claude once,
+    // with the simulated consequences spelled out. Claude has the last word — except on a move the
+    // simulation says loses the game outright, which is replaced by the engine's.
+    if (analysis) {
+      const view = fairView(real, me)
+      const mine = lifeNow(view, me), theirs = lifeNow(view, opponent(me))
+      const outcomeOf = (n: number) => (cands[n - 1].action.t === 'endTurn' ? analysis.pass ?? undefined : analysis.outcomes[botActionKey(cands[n - 1].action)])
+      const engine = suggested ? (suggested.t === 'endTurn' ? analysis.pass ?? undefined : analysis.outcomes[botActionKey(suggested)]) : undefined
+      const why = objection(outcomeOf(picks[0]), engine, analysis.pass, mine, theirs)
+      if (why) {
+        const second = await ask({ ...req, check: `You answered: ${cands[picks[0] - 1].text}.\n${why}` }, ctrl.signal)
+        count(second)
+        const again = legalPicks(second)
+        if (again.length) { reply = second; picks = again }
+        const final = outcomeOf(picks[0])
+        if (final?.lose && engine && !engine.lose && suggested) return { action: suggested, source: 'fallback', note: 'Claude\'s move lost to a simulated reply' }
+      }
+    }
     const keys = picks.map((n) => botActionKey(cands[n - 1].action))
     LAST_NOTE = String(reply.plan ?? '').slice(0, 400)
+    if (reply.strategy) STRATEGY = String(reply.strategy).slice(0, 300)
     if (LAST_NOTE && real.activePlayer === me && !real.prompts[0]) { MEMO = MEMO.filter((m) => m.turn !== real.turn); MEMO.push({ turn: real.turn, plan: LAST_NOTE }) }
     PLAN = { seat: me, turn: real.turn, queue: keys.slice(1), hand: handKey(real, me), notes: LAST_NOTE }
     return { action: cands[picks[0] - 1].action, source: 'claude', note: LAST_NOTE }

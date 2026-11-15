@@ -8,8 +8,8 @@
 // Configuration (environment, or a `.env` file in the repo root):
 //   ANTHROPIC_API_KEY   required — without it the Claude opponent is simply unavailable
 //   CLAUDE_BOT_MODEL    default claude-sonnet-5-5
-//   CLAUDE_BOT_EFFORT   thinking effort: off | low | medium | high   (default low; off = no thinking at
-//                       all — the cheapest and fastest, with the move tool forced)
+//   CLAUDE_BOT_EFFORT   thinking effort: off | low | medium | high   (default medium; off = no thinking
+//                       at all — the cheapest and fastest, with the move tool forced)
 //   CLAUDE_BOT_ACCESS   local (default: loopback callers + admins) | users (any signed-in user) | all
 import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -38,9 +38,9 @@ export const claudeAccess = (): 'local' | 'users' | 'all' => {
   return v === 'all' || v === 'users' ? v : 'local'
 }
 
-export interface ClaudeBotRequest { position: string; candidates: string[]; notes?: string; reference?: string }
+export interface ClaudeBotRequest { position: string; candidates: string[]; notes?: string; reference?: string; check?: string }
 export interface ClaudeBotUsage { input: number; output: number; cacheRead: number; cacheWrite: number }
-export interface ClaudeBotReply { picks: number[]; plan: string; model: string; ms: number; usage: ClaudeBotUsage }
+export interface ClaudeBotReply { picks: number[]; plan: string; strategy: string; model: string; ms: number; usage: ClaudeBotUsage }
 
 const MAX_POSITION = 24_000, MAX_CANDIDATES = 200, MAX_CANDIDATE_LEN = 400, MAX_NOTES = 1200, MAX_REFERENCE = 40_000
 
@@ -52,7 +52,7 @@ export function parseRequest(body: unknown): ClaudeBotRequest | string {
   if (!b.candidates.length || b.candidates.length > MAX_CANDIDATES) return 'Bad candidate count.'
   if (b.candidates.some((c) => typeof c !== 'string' || c.length > MAX_CANDIDATE_LEN)) return 'Bad candidate.'
   if (b.reference !== undefined && (typeof b.reference !== 'string' || b.reference.length > MAX_REFERENCE)) return 'Bad reference.'
-  return { position: b.position, candidates: b.candidates, notes: typeof b.notes === 'string' ? b.notes.slice(0, MAX_NOTES) : '', reference: b.reference ?? '' }
+  return { position: b.position, candidates: b.candidates, notes: typeof b.notes === 'string' ? b.notes.slice(0, MAX_NOTES) : '', reference: b.reference ?? '', check: typeof b.check === 'string' ? b.check.slice(0, 1500) : '' }
 }
 
 export const SYSTEM_PROMPT = `You are playing the trading card game Sorcery: Contested Realm against a human, as the computer opponent. You play to win, and you play fair: you only know what a player in your seat would know.
@@ -73,14 +73,22 @@ RULES YOU NEED
 - Trap sites are face down and look like a basic site; their owner can pay to spring them on their own turn.
 
 HOW TO PLAY WELL
-- Every turn: play a site if you have one (mana wins games), then spend your mana on the strongest plays you can afford, then attack.
-- Count defenders before attacking. An attack only reaches its target if every untapped enemy unit within one step of it is tapped, dead, or unwilling to take the fight.
-- Prefer fights you win outright or trade up in. Don't feed small minions into big untapped ones.
-- Attack sites to drain life when the Avatar is guarded; once the enemy Avatar is at Death's Door, switch to getting ONE point of damage onto it (a strike or any damage spell).
+Think like a strong human player. Before answering, work through the turn: what does the opponent threaten next turn, what are your possible lines this turn, and what does the opponent do after each?
+- YOUR AVATAR IS THE GAME. Keep it on your own back rows, on a site you control, with an untapped unit within one step whenever the opponent has attackers in reach. Never move it, or the site it stands on, toward the enemy — not with a step, not with an ability, not with a card that swaps or moves sites — unless that move wins the game this turn. An Avatar among enemy units loses life every turn and has no defenders.
+- Develop first: play a site every turn while you have one (mana wins games), then spend your mana on the strongest plays you can afford, then attack. Mana left unspent is wasted.
+- Count defenders before attacking. An attack only reaches its target if every untapped enemy unit within one step of it is tapped, dead, or unwilling to take the fight. Tap or remove the defenders first, or attack something they can't reach.
+- Prefer fights you win outright or trade up in. Don't feed small minions into big untapped ones. Damage heals at end of turn, so partial damage is worthless unless something finishes the job the same turn.
+- Attack sites to drain life when the Avatar is guarded; once the enemy Avatar is at Death's Door, switch entirely to getting ONE point of damage onto it (a strike or any damage spell).
+- Tempo and cards: a removal spell on a minion that cost more than the spell is a good trade. Hold removal for the unit that is actually stopping you (a guard, a Spellcaster, a big attacker). Don't spend a card for no gain.
 - A minion you only control temporarily should be used NOW: attack with it.
-- Keep at least one untapped unit near your own Avatar when the opponent has attackers in reach, especially when you are low on life.
-- Use removal on the unit that is actually stopping you (a guard, a Spellcaster, a big attacker), not on whatever is closest.
-- Each move is annotated with "eval", a rough heuristic score change (positive is better for you) from a simple evaluation function, and one move may be marked as the search engine's choice. Treat both as advice from a tactically sound but strategically shallow assistant: follow it unless you can see why another move is better.
+- Read each card's text before using it; an ability that sounds strong can hurt you (moving your own units or sites into danger, damaging your own units, giving the opponent something).
+- Have a game plan and keep to it across turns: are you the aggressor racing their life total, or defending until your bigger spells take over? Say so in "strategy".
+
+WHAT THE ANNOTATIONS MEAN
+- Every move carries a simulation in brackets: "then their reply: …". It is what the game engine found when it played that ONE move, stopped, and let the opponent take its best reply turn with the units on the board (it cannot see cards in the opponent's hand). "eval +N vs passing" compares the resulting position with doing nothing: positive is good for you. Differences under about 20 are noise; 60 or more is a real difference. Life and units lost are listed. "YOUR AVATAR DIES" means exactly that.
+- These simulations judge each move on its own. A move that only sets up a later one may look neutral; a move that looks fine may be bad if you tap the defenders it relies on. Use them as facts about consequences, and do your own reasoning about sequences.
+- One move may be marked as the search engine's choice, and its whole line for the turn may be shown. The engine is tactically sound and strategically shallow: its line is a safe default. Deviate when you see a better plan — and check your alternative against the simulations first.
+- If you see "ENGINE CHECK", your previous answer was simulated and looked like a mistake. Take it seriously.
 
 ANSWERING
 - picks: the move numbers you want played, IN ORDER, for the rest of this turn. Only list moves that are in the list right now. After each move the game re-checks: if your next pick is no longer legal, or something unexpected happens, you will simply be asked again with a fresh list. Being asked again costs time, so plan the WHOLE turn in one answer whenever you can: list every independent move (site, casts, each unit's attack), and stop early only where the outcome of a fight or a draw would really change your mind.
@@ -98,18 +106,19 @@ const TOOL = {
     properties: {
       picks: { type: 'array', items: { type: 'integer', minimum: 1 }, minItems: 1, maxItems: 12, description: 'Numbers from the legal-move list, in the order to play them.' },
       plan: { type: 'string', description: 'One or two short sentences describing the plan for this turn.' },
+      strategy: { type: 'string', description: 'Optional. Your standing game plan in one sentence (how you intend to win, what you are holding back and why). It is shown back to you on later turns; send it again only to change it.' },
     },
     required: ['picks', 'plan'],
   },
 }
 
 export function userMessage(r: ClaudeBotRequest): string {
-  return `${r.position}\n\n${r.notes ? `YOUR NOTES:\n${r.notes}\n\n` : ''}LEGAL MOVES:\n${r.candidates.join('\n')}`
+  return `${r.position}\n\n${r.notes ? `YOUR NOTES:\n${r.notes}\n\n` : ''}LEGAL MOVES:\n${r.candidates.join('\n')}${r.check ? `\n\n${r.check}` : ''}`
 }
 
 /** the Messages API request. `thinking: false` is the plain fallback shape (forced tool, no thinking). */
 export function buildApiRequest(r: ClaudeBotRequest, thinking: boolean): Record<string, unknown> {
-  const effort = ['low', 'medium', 'high'].includes(process.env.CLAUDE_BOT_EFFORT ?? '') ? process.env.CLAUDE_BOT_EFFORT : 'low'
+  const effort = ['low', 'medium', 'high'].includes(process.env.CLAUDE_BOT_EFFORT ?? '') ? process.env.CLAUDE_BOT_EFFORT : 'medium'
   // Everything that stays the same all game goes first and is marked cacheable: the rules, then the
   // text of every card in the bot's own deck. Repeat calls then pay a fraction for that part.
   const system = r.reference
@@ -117,7 +126,7 @@ export function buildApiRequest(r: ClaudeBotRequest, thinking: boolean): Record<
     : [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }]
   return {
     model: claudeModel(),
-    max_tokens: thinking ? 6000 : 1024,
+    max_tokens: thinking ? 12000 : 1024,
     system,
     tools: [TOOL],
     // a forced tool call can't be combined with thinking, so with thinking on the tool is left to the model
@@ -127,7 +136,7 @@ export function buildApiRequest(r: ClaudeBotRequest, thinking: boolean): Record<
 }
 
 /** pull the picks out of an API response: the tool call if there is one, else numbers in the text */
-export function parseApiResponse(resp: any, candidateCount: number): { picks: number[]; plan: string } {
+export function parseApiResponse(resp: any, candidateCount: number): { picks: number[]; plan: string; strategy: string } {
   const blocks: any[] = Array.isArray(resp?.content) ? resp.content : []
   const tool = blocks.find((b) => b?.type === 'tool_use' && b?.name === TOOL.name)
   let picks: unknown[] = Array.isArray(tool?.input?.picks) ? tool.input.picks : []
@@ -142,13 +151,13 @@ export function parseApiResponse(resp: any, candidateCount: number): { picks: nu
     const n = Number(p)
     if (Number.isInteger(n) && n >= 1 && n <= candidateCount && !clean.includes(n)) clean.push(n)
   }
-  return { picks: clean, plan: plan.trim() }
+  return { picks: clean, plan: plan.trim(), strategy: typeof tool?.input?.strategy === 'string' ? tool.input.strategy.trim() : '' }
 }
 
 type Fetch = (url: string, init: { method: string; headers: Record<string, string>; body: string; signal?: AbortSignal }) => Promise<{ ok: boolean; status: number; json(): Promise<any>; text(): Promise<string> }>
 
 /** ask Claude. One retry in the plain shape if the thinking request is rejected as malformed. */
-export async function askClaude(r: ClaudeBotRequest, fetchImpl: Fetch = fetch as unknown as Fetch, timeoutMs = 25_000): Promise<ClaudeBotReply> {
+export async function askClaude(r: ClaudeBotRequest, fetchImpl: Fetch = fetch as unknown as Fetch, timeoutMs = 40_000): Promise<ClaudeBotReply> {
   const key = process.env.ANTHROPIC_API_KEY
   if (!key) throw new Error('The Claude opponent is not configured on this server (no ANTHROPIC_API_KEY).')
   const t0 = Date.now()

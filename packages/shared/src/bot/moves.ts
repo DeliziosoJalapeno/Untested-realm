@@ -110,8 +110,13 @@ function promptChoices(prompt: any, state: GameState): any[] {
       for (const n of d.names ?? []) add(n)
       break
     case 'firstSite':
+      for (const id of d.ids ?? []) add(id) // choose one card id (which site to establish)
+      break
     case 'drawDeck':
-      for (const id of d.ids ?? []) add(id) // choose one card id (e.g. which site to establish)
+      // the start-of-turn draw: 'spellbook' or 'atlas'. (Without this a modelled turn stalled at the
+      // draw, so nothing after it — the whole reply turn — was ever played out.)
+      for (const o of d.options ?? []) add(o)
+      for (const id of d.ids ?? []) add(id)
       break
     case 'chooseCards': {
       const pick = d.pick ?? 1

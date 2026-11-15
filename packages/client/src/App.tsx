@@ -34,7 +34,7 @@ import { puzzleById, PUZZLES } from './puzzle/puzzles'
 import PuzzlePage from './components/PuzzlePage'
 import { gate, advance, next as tutNext, runFoe, coachToAct } from './tutorial/runner'
 import { markLessonDone, markPuzzleSolved } from './tutorial/progress'
-import { claudeBotAction, claudeQuick, claudeDefers, askServer, resetClaudeBot, dropClaudePlan, claudeUsage } from './claude_bot'
+import { claudeBotAction, claudeQuick, claudeDefers, askServer, resetClaudeBot, dropClaudePlan, claudeUsage, type ClaudeAnalysis } from './claude_bot'
 import SealedDeckbuild from './components/SealedDeckbuild'
 import Game from './components/Game'
 import ReplayViewer from './components/ReplayViewer'
@@ -390,7 +390,7 @@ export default function App() {
         // Claude difficulty: this is the search bot's suggestion — pass it on to Claude, stay busy
         if (claudeWaitRef.current === id) {
           claudeWaitRef.current = null
-          void finishClaudeMove(id, error || !action ? null : action)
+          void finishClaudeMove(id, error || !action ? null : action, e.data.outcomes ? { line: e.data.line ?? [], outcomes: e.data.outcomes, pass: e.data.pass ?? null } : null)
           return
         }
         botBusyRef.current = false
@@ -408,10 +408,10 @@ export default function App() {
 
   /** Claude difficulty, second half: with the search bot's suggestion in hand, ask Claude (through the
    *  server) and play its move. Any failure plays the suggestion instead. */
-  async function finishClaudeMove(id: number, suggestion: Action | null) {
+  async function finishClaudeMove(id: number, suggestion: Action | null, analysis: ClaudeAnalysis | null) {
     const before = localRef.current
     if (!before || id !== botReqIdRef.current) return
-    const r = await claudeBotAction(before, 1, suggestion, askServer)
+    const r = await claudeBotAction(before, 1, suggestion, askServer, 45000, analysis)
     if (id !== botReqIdRef.current) return // superseded by an undo / new game / leave
     botBusyRef.current = false
     if (botThinkTimerRef.current !== null) { clearTimeout(botThinkTimerRef.current); botThinkTimerRef.current = null }
@@ -872,7 +872,7 @@ export default function App() {
       claudeWaitRef.current = id
       if (botThinkTimerRef.current !== null) clearTimeout(botThinkTimerRef.current)
       botThinkTimerRef.current = window.setTimeout(() => setBotThinking(true), 350)
-      ensureBotWorker().postMessage({ id, state: JSON.stringify(local), seat: 1, timeBudgetMs: 3000, banned: [...botBannedRef.current] })
+      ensureBotWorker().postMessage({ id, state: JSON.stringify(local), seat: 1, timeBudgetMs: 4000, banned: [...botBannedRef.current], analyze: true })
       return
     }
     if (session?.botDifficulty === 'thinking' || session?.botDifficulty === 'claude') {

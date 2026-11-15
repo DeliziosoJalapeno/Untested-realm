@@ -7,7 +7,8 @@
 // harness. Game state crosses the boundary as a JSON string (the same shape App already round-trips for
 // its undo snapshots), which also sidesteps structured-clone's rejection of any stray functions.
 import type { GameState, PlayerId, Action } from '@sorcery/shared'
-import { searchBotAction, DEFAULT_SEARCH } from './bot_search'
+import { searchBotAction, DEFAULT_SEARCH, plannedLine, type ReplyOutcome } from './bot_search'
+import { analyze } from './claude_bot'
 
 export interface BotRequest {
   id: number
@@ -15,20 +16,30 @@ export interface BotRequest {
   seat: PlayerId
   timeBudgetMs: number
   banned?: string[] // anti-loop ward: action keys already proved score-neutral this turn (excluded)
+  /** Claude difficulty: also return the search's plan line and a simulated outcome for each move on offer */
+  analyze?: boolean
 }
 export interface BotReply {
   id: number
   action?: Action
   error?: string
+  /** with `analyze`: the search's whole line this turn (its action first) and the simulated outcomes */
+  line?: Action[]
+  outcomes?: Record<string, ReplyOutcome>
+  pass?: ReplyOutcome | null
 }
 
 self.onmessage = (e: MessageEvent<BotRequest>) => {
-  const { id, state, seat, timeBudgetMs, banned } = e.data
+  const { id, state, seat, timeBudgetMs, banned, analyze: wantAnalysis } = e.data
   let reply: BotReply
   try {
     const g = JSON.parse(state) as GameState
     const action = searchBotAction(g, seat, { ...DEFAULT_SEARCH, timeBudgetMs, banned: banned?.length ? new Set(banned) : undefined })
     reply = { id, action }
+    if (wantAnalysis) {
+      reply.line = [action, ...plannedLine()]
+      Object.assign(reply, analyze(g, seat))
+    }
   } catch (err) {
     reply = { id, error: String((err as Error)?.message ?? err) }
   }

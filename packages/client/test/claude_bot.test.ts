@@ -3,7 +3,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { applyAction, type Action } from '@sorcery/shared'
 import { scene } from '../src/tutorial/scene'
-import { candidates, describePosition, deckReference, buildRequest, claudeBotAction, claudeQuick, claudeDefers, claudeUsage, resetClaudeBot, lastClaudeNote, MAX_CANDIDATES, type AskClaude } from '../src/claude_bot'
+import { candidates, describePosition, deckReference, buildRequest, claudeBotAction, claudeQuick, claudeDefers, claudeUsage, resetClaudeBot, lastClaudeNote, MAX_CANDIDATES, analyze, outcomeText, objection, BLUNDER_MARGIN, type AskClaude, type ClaudeAnalysis } from '../src/claude_bot'
+import { botActionKey } from '../src/bot'
+import type { ReplyOutcome } from '../src/bot_search'
 import { fairView } from '../src/bot_search'
 import { askClaude, buildApiRequest, parseApiResponse, parseRequest, SYSTEM_PROMPT, userMessage } from '../../server/src/claudeBot'
 
@@ -106,6 +108,101 @@ describe('Claude opponent — keeping each call small', () => {
   })
 })
 
+describe('Claude opponent — looking ahead', () => {
+  const O = (o: Partial<ReplyOutcome>): ReplyOutcome => ({ eval: 0, myLife: 20, foeLife: 20, door: false, lose: false, win: false, lostMine: [], lostTheirs: [], ...o })
+
+  it('simulates each move and the opponent\'s reply, on the real engine', () => {
+    // the enemy Hellhounds stand next to the bot's Avatar: passing costs life, killing them does not
+    const t = scene({
+      sites: [[0, 'Valley', 2, 0], [0, 'Spire', 2, 1], [1, 'Wasteland', 2, 3], [1, 'Wasteland', 2, 2]],
+      units: [{ key: 'war', p: 0, name: 'Amazon Warriors', x: 2, y: 1 }, { key: 'dog', p: 1, name: 'Hellhounds', x: 2, y: 2 }],
+    })
+    const a = analyze(t.g, 0)
+    const cs = candidates(t.g, 0)
+    const kill = cs.find((c) => /Amazon Warriors.*ATTACKS Hellhounds/.test(c.text))!
+    const out = a.outcomes[botActionKey(kill.action)]
+    expect(out.lostTheirs).toEqual(['Hellhounds'])
+    expect(out.myLife).toBe(20)
+    expect(a.pass).not.toBeNull()
+    expect(out.eval).toBeGreaterThan(a.pass!.eval)             // killing the attacker beats doing nothing
+    const req = buildRequest(t.g, 0, cs, kill.action, '', { line: [kill.action, { t: 'endTurn' }], ...a })
+    expect(req.candidates.find((c) => /ATTACKS Hellhounds/.test(c))).toMatch(/\[then their reply: eval \+\d+ vs passing;.*they lose Hellhounds\].*search engine's choice/)
+    expect(req.position).toMatch(/THE SEARCH ENGINE'S PLAN FOR THIS TURN[\s\S]*1\) Amazon Warriors[\s\S]*2\) END YOUR TURN/)
+  })
+
+  it('puts a simulated outcome in a few words', () => {
+    expect(outcomeText(O({ eval: -80, myLife: 15, lostMine: ['Snow Leopard'] }), O({ eval: 10 }), 20, 20)).toBe('eval -90 vs passing; you lose 5 life; you lose Snow Leopard')
+    expect(outcomeText(O({ lose: true, myLife: 0 }), O({}), 3, 20)).toMatch(/^YOUR AVATAR DIES/)
+    expect(outcomeText(O({ win: true }), O({}), 20, 0)).toBe('YOU WIN')
+    expect(outcomeText(O({ eval: 40, foeLife: 0 }), O({}), 20, 4)).toMatch(/they fall to Death's Door/)
+  })
+
+  it('objects only to moves that are clearly worse than the engine\'s', () => {
+    const engine = O({ eval: 50 })
+    expect(objection(O({ eval: 50 - BLUNDER_MARGIN + 1 }), engine, O({}), 20, 20)).toBeNull()      // within the margin
+    expect(objection(O({ eval: 50 - BLUNDER_MARGIN }), engine, O({}), 20, 20)).toMatch(/ENGINE CHECK[\s\S]*clearly worse/)
+    expect(objection(O({ eval: 60, myLife: 14 }), engine, O({}), 20, 20)).toMatch(/costs you 6 more life/)
+    expect(objection(O({ lose: true }), engine, O({}), 20, 20)).toMatch(/Avatar killed/)
+    expect(objection(O({ win: true, eval: -999 }), engine, O({}), 20, 20)).toBeNull()                // a winning move is never questioned
+    expect(objection(undefined, engine, O({}), 20, 20)).toBeNull()                                    // nothing simulated → nothing to say
+  })
+
+  it('sends a likely blunder back to Claude once, and replaces a move that loses the game', async () => {
+    const t = board()
+    const cs = candidates(t.g, 0)
+    const bad = find(cs, /^CAST Lightning Bolt targeting c3/), good = find(cs, /Amazon Warriors.*ATTACKS Raal/)
+    const key = (n: number) => botActionKey(cs[n - 1].action)
+    const analysis = (badOutcome: ReplyOutcome): ClaudeAnalysis => ({ line: [], pass: O({}), outcomes: { [key(bad)]: badOutcome, [key(good)]: O({ eval: 120 }) } })
+    // 1. Claude reconsiders and switches
+    const asks: string[] = []
+    const switching: AskClaude = async (req) => { asks.push(req.check ?? ''); return { picks: [asks.length === 1 ? bad : good], plan: asks.length === 1 ? 'Bolt it.' : 'Attack instead.' } }
+    const r1 = await claudeBotAction(t.g, 0, cs[good - 1].action, switching, 5000, analysis(O({ eval: -40 })))
+    expect(asks).toHaveLength(2)
+    expect(asks[1]).toMatch(/You answered: CAST Lightning Bolt[\s\S]*ENGINE CHECK/)
+    expect(r1).toMatchObject({ source: 'claude', note: 'Attack instead.' })
+    expect(r1.action).toMatchObject({ t: 'moveAttack' })
+    // 2. Claude insists on a merely worse move: it has the last word
+    resetClaudeBot()
+    const r2 = await claudeBotAction(t.g, 0, cs[good - 1].action, async () => ({ picks: [bad], plan: 'Bolt it.' }), 5000, analysis(O({ eval: -40 })))
+    expect(r2.action).toMatchObject({ t: 'castSpell' })
+    // 3. …but not on a move the simulation says loses the game
+    resetClaudeBot()
+    const r3 = await claudeBotAction(t.g, 0, cs[good - 1].action, async () => ({ picks: [bad], plan: 'Bolt it.' }), 5000, analysis(O({ lose: true })))
+    expect(r3).toMatchObject({ source: 'fallback' })
+    expect(r3.action).toMatchObject({ t: 'moveAttack' })
+    // 4. no objection → a single call
+    resetClaudeBot()
+    const once = vi.fn(async () => ({ picks: [good], plan: 'Attack.' }))
+    await claudeBotAction(t.g, 0, cs[good - 1].action, once, 5000, analysis(O({ eval: -40 })))
+    expect(once).toHaveBeenCalledTimes(1)
+  })
+
+  it('carries Claude\'s standing game plan into later requests', async () => {
+    const t = board()
+    const seen: string[] = []
+    const ask: AskClaude = async (req) => { seen.push(req.notes); return { picks: [1], plan: 'Tempo.', strategy: 'Race in the air; hold the Bolt for a Spellcaster.' } }
+    await claudeBotAction(t.g, 0, null, ask)
+    await claudeBotAction(t.g, 0, null, ask)
+    expect(seen[0]).toBe('')
+    expect(seen[1]).toMatch(/Your game plan — Race in the air; hold the Bolt for a Spellcaster\./)
+  })
+})
+
+describe('Claude opponent — its own traps', () => {
+  it('names a face-down trap for what it is, and simulates what springing it does to its own units', () => {
+    // the bot's Avatar is standing on its own face-down Avalanche: springing it sweeps the Avatar forward
+    const t = scene({ sites: [[0, 'Spire', 1, 0], [0, 'Spire', 2, 1], [1, 'Wasteland', 2, 3], [1, 'Wasteland', 2, 2], [1, 'Valley', 1, 3], [1, 'Valley', 3, 3]], traps: [['Avalanche', 2, 0]], mana: 3,
+      units: [{ key: 'dog', p: 1, name: 'Hellhounds', x: 1, y: 3 }, { key: 'war', p: 1, name: 'Amazon Warriors', x: 3, y: 3 }] })
+    const cs = candidates(t.g, 0)
+    const spring = cs.find((c) => c.action.t === 'activate' && c.action.ability === 'trap:spring')!
+    expect(spring.text).toMatch(/^SPRING your face-down trap Avalanche at c1/)
+    const a = analyze(t.g, 0)
+    const out = a.outcomes[botActionKey(spring.action)]
+    expect(out.myLife).toBeLessThan(a.pass!.myLife - 3)               // the Avatar lands among enemy minions and is hit…
+    expect(objection(out, undefined, a.pass, 20, 20)).toMatch(/ENGINE CHECK/) // …so it would be sent back
+  })
+})
+
 describe('Claude opponent — turning the answer into moves', () => {
   it('plays the first pick, then replays the rest of the plan without asking again', async () => {
     const t = board()
@@ -178,7 +275,7 @@ describe('Claude opponent — the server side', () => {
 
   it('reads the picks from the tool call, or from plain text, and discards anything out of range', () => {
     const tool = { content: [{ type: 'thinking', thinking: '…' }, { type: 'tool_use', name: 'choose_moves', input: { picks: [2, 2, 7, 1], plan: 'Bolt, then pass.' } }] }
-    expect(parseApiResponse(tool, 2)).toEqual({ picks: [2, 1], plan: 'Bolt, then pass.' })
+    expect(parseApiResponse(tool, 2)).toEqual({ picks: [2, 1], plan: 'Bolt, then pass.', strategy: '' })
     expect(parseApiResponse({ content: [{ type: 'text', text: 'I play 2 and then 1.' }] }, 2).picks).toEqual([2, 1])
     expect(parseApiResponse({ content: [] }, 2).picks).toEqual([])
   })

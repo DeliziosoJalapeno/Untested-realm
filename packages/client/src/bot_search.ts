@@ -1041,3 +1041,58 @@ export function resetSearchState(): void {
 
 /** exported for tests: the fair copy and the point-of-view position signature. */
 export { fairView, sig as fairSignature }
+
+// ───────────────────────── look-ahead for the Claude opponent ─────────────────────────
+
+/** what the game looks like one opponent turn after a position — see `replyOutcome` */
+export interface ReplyOutcome {
+  /** the evaluation (for me) once the opponent has replied */
+  eval: number
+  myLife: number
+  foeLife: number
+  /** my Avatar is at Death's Door afterwards */
+  door: boolean
+  /** the reply kills my Avatar / I have already won */
+  lose: boolean
+  win: boolean
+  lostMine: string[]
+  lostTheirs: string[]
+}
+
+/** "If I stopped here": finish my turn from `next` (my open questions answered greedily, then end
+ *  turn), let the opponent take its modelled reply turn (board moves and a site, no spells — its hand
+ *  is hidden), and report what changed since `base`, the position before the move being judged.
+ *  Both states are fair views. */
+export function replyOutcome(base: GameState, next: GameState, me: PlayerId, budgetMs = 150): ReplyOutcome {
+  // exactly one reply turn; the opponent's attacks are judged by their resolved effect (the fight played
+  // out), not by the half-made attack — otherwise an attack that opens a question looks harmless
+  const cfg: SearchConfig = { ...DEFAULT_SEARCH, earlyPlanUntilTurn: 0, oppResolvePrompts: true, oppTurnMaxActions: 10 }
+  const deadline = Date.now() + budgetMs
+  NODES = 0
+  let s = clone(next)
+  const foe = opponent(me)
+  try {
+    if (s.winner === null) s = resolvePrompts(s, me, cfg, deadline)
+    if (s.winner === null && s.phase === 'main' && s.activePlayer === me && !s.prompts[0]) applyAction(s, me, { t: 'endTurn' })
+    if (s.winner === null && s.activePlayer === foe) s = rollForward(s, me, cfg, deadline)
+  } catch { /* judge whatever position was reached */ }
+  const life = (st: GameState, p: PlayerId) => { const a = st.units[st.players[p].avatarUnitId]; return a ? (a.deathsDoor ? 0 : a.life ?? 0) : 0 }
+  const gone = (p: PlayerId) => Object.values(base.units).filter((u) => u.controller === p && !u.isAvatar && !s.units[u.id]).map((u) => u.name)
+  const mine = s.units[s.players[me].avatarUnitId]
+  return {
+    eval: evaluate(s, me, cfg.weights),
+    myLife: life(s, me), foeLife: life(s, foe),
+    door: !!mine?.deathsDoor,
+    lose: s.winner === foe, win: s.winner === me,
+    lostMine: gone(me), lostTheirs: gone(foe),
+  }
+}
+
+/** the rest of the turn plan the search just produced (after the action it returned), as far as it is
+ *  a straight line — it stops at the first point where the opponent's answer decides what comes next */
+export function plannedLine(): Action[] {
+  const out: Action[] = []
+  let p = PLAN
+  while (p && p.kind === 'act' && out.length < 12) { out.push(p.action); p = p.next }
+  return out
+}
