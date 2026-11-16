@@ -9,7 +9,7 @@ import { saveLocalReplay, isLoopback } from './localReplays'
 import { askClaude, claudeAccess, claudeEnabled, claudeModel, parseRequest, throttled } from './claudeBot'
 import { users, sessions, decks as deckStore, collections as collectionStore, scenarios as scenarioStore, replays as replayStore, achievements as achievementStore, bugs as bugStore, type UserRow } from './db'
 import {
-  hashPassword, verifyPassword, newSessionToken, sha256,
+  hashPassword, verifyPassword, newSessionToken, newAdminToken, adminTokenExpiry, sha256,
   validateUsername, validatePassword, rateAllow, rateReset, SESSION_TTL_MS,
 } from './auth'
 import {
@@ -545,7 +545,7 @@ setInterval(() => {
 /** the signed-in account username for an auth token, or null (guest / invalid / expired). */
 function accountFromToken(authToken: unknown): string | null {
   if (typeof authToken === 'string' && authToken) {
-    const sess = sessions.get(sha256(authToken))
+    const sess = sessionOf(authToken)
     if (sess && sess.expires_at >= Date.now()) return users.byId(sess.user_id)?.username ?? null
   }
   return null
@@ -561,7 +561,7 @@ function deckProblem(mode: Room['mode'], deck: unknown): string | null {
 
 function resolvePlayerName(authToken: unknown, rawName: unknown, fallback: string): { name: string } | { error: string } {
   if (typeof authToken === 'string' && authToken) {
-    const sess = sessions.get(sha256(authToken))
+    const sess = sessionOf(authToken)
     if (sess && sess.expires_at >= Date.now()) {
       const u = users.byId(sess.user_id)
       if (u) return { name: u.username }
@@ -1071,7 +1071,7 @@ wss.on('connection', (ws) => {
           const game = m.room?.game
           const hidden = !!game && game.phase !== 'over'
           if (!m.room || !game) return reply(false, 'No game to save.')
-          const sess = typeof msg.authToken === 'string' && msg.authToken ? sessions.get(sha256(msg.authToken)) : undefined
+          const sess = typeof msg.authToken === 'string' && msg.authToken ? sessionOf(msg.authToken) : undefined
           const userId = sess && sess.expires_at >= Date.now() ? sess.user_id : null
           if (userId === null) return reply(false, 'Sign in to save scenarios.')
           const name = String(msg.name ?? '').trim()
@@ -1215,11 +1215,33 @@ function claudeMayCall(req: IncomingMessage): boolean {
   if (typeof origin !== 'string') return true
   try { return ['localhost', '127.0.0.1', '[::1]'].includes(new URL(origin).hostname) } catch { return false }
 }
+/** The admin password, when one was really set (never the built-in default: its tokens would be forgeable). */
+function adminSecret(): string | null {
+  const p = process.env.SORCERY_ADMIN_PASSWORD
+  return p && p !== 'sorcery-admin' ? p : null
+}
+/** signed admin tokens that were signed out since the server started: not restored. (A restart forgets
+ *  this list, so a signed-out token is only fully dead once it expires or the admin password changes.) */
+const signedOut = new Set<string>()
+/** The live session for a token. A signed admin token the table no longer knows (the server restarted
+ *  on a host without a disk) is checked and its session restored, so a deploy doesn't sign the admin out. */
+function sessionOf(token: string): { user_id: number; expires_at: number } | undefined {
+  const hash = sha256(token)
+  const sess = sessions.get(hash)
+  if (sess) return sess
+  const secret = adminSecret()
+  const exp = secret ? adminTokenExpiry(token, secret) : null
+  if (exp === null || signedOut.has(hash)) return undefined
+  const admin = users.byName((process.env.SORCERY_ADMIN_USERNAME ?? 'admin').trim())
+  if (!admin || !admin.is_admin) return undefined
+  sessions.create(hash, admin.id, exp - Date.now())
+  return sessions.get(hash)
+}
 /** resolve the Bearer token to a live user, or null */
 function userFromReq(req: IncomingMessage): UserRow | null {
   const auth = req.headers['authorization']
   if (typeof auth !== 'string' || !auth.startsWith('Bearer ')) return null
-  const sess = sessions.get(sha256(auth.slice(7)))
+  const sess = sessionOf(auth.slice(7))
   if (!sess || sess.expires_at < Date.now()) return null
   return users.byId(sess.user_id) ?? null
 }
@@ -1396,7 +1418,9 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, path: string
       // constant-ish work + generic error → no user enumeration
       const ok = u ? verifyPassword(String(body.password ?? ''), u.pass_hash, u.pass_salt) : verifyPassword('x', '00', '00')
       if (!u || !ok) return sendJson(res, 401, { error: 'Invalid username or password.' })
-      const { token, hash: th } = newSessionToken()
+      const secret = adminSecret()
+      const isSeedAdmin = !!u.is_admin && u.username === (process.env.SORCERY_ADMIN_USERNAME ?? 'admin').trim()
+      const { token, hash: th } = secret && isSeedAdmin ? newAdminToken(secret, SESSION_TTL_MS) : newSessionToken()
       sessions.create(th, u.id, SESSION_TTL_MS)
       rateReset(ipKey)
       return sendJson(res, 200, { token, user: publicUser(u) })
@@ -1406,7 +1430,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, path: string
     const user = userFromReq(req)
     if (path === '/api/logout' && method === 'POST') {
       const auth = req.headers['authorization']
-      if (typeof auth === 'string' && auth.startsWith('Bearer ')) sessions.drop(sha256(auth.slice(7)))
+      if (typeof auth === 'string' && auth.startsWith('Bearer ')) { const h = sha256(auth.slice(7)); sessions.drop(h); signedOut.add(h) }
       return sendJson(res, 200, { ok: true })
     }
     // --- scenarios: browsing/loading public scenarios needs NO sign-in ---

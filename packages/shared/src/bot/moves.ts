@@ -209,6 +209,17 @@ function castTargetCombos(state: GameState, me: PlayerId, script: CardScript, ca
   return combos.map((combo) => combo.map((c) => c.id))
 }
 
+/** flow entries that are caches or display state: they change on any action, even one that does nothing */
+const FLOW_NOISE = new Set(['disablerIndex', 'staticGrantIndex', 'areaReveal', 'manaBase'])
+/** Everything an ability could visibly change, cheaply: used to drop activations that do nothing. */
+function boardSig(s: GameState): string {
+  const u = Object.values(s.units).map((x) => `${x.id}${x.tapped ? 't' : ''}${x.damage}.${x.x}${x.y}${x.region}.${x.life ?? ''}.${x.carriedBy ?? ''}${x.silenced ? 's' : ''}${x.disabled ? 'd' : ''}`).join('|')
+  const a = Object.values(s.artifacts).map((x) => `${x.id}${x.tapped ? 't' : ''}${x.x}${x.y}${x.carriedBy ?? ''}`).join('|')
+  const st = Object.values(s.sites).map((x) => `${x.id}${x.controller}${x.isRubble ? 'r' : ''}${x.trap ? 'f' : ''}`).join('|')
+  const pl = s.players.map((p) => `${p.mana},${p.hand.length},${p.cemetery.length},${p.spellbook.length},${p.atlas.length}`).join('/')
+  return `${s.nextId}#${s.prompts.length}#${s.winner ?? ''}#${pl}#${u}#${a}#${st}#${Object.keys(s.auras).length}#${JSON.stringify(s.flow ?? null, (k, v) => (FLOW_NOISE.has(k) ? undefined : v))}`
+}
+
 /**
  * Every legal action for `player` right now, with the resulting state.
  * Handles the three decision contexts: an open prompt, the mulligan, and the main phase.
@@ -216,6 +227,7 @@ function castTargetCombos(state: GameState, me: PlayerId, script: CardScript, ca
 export function expandActions(state: GameState, player: PlayerId, opts?: { deadline?: number; boardOnly?: boolean; noSpellCasts?: boolean; minionCasters?: boolean; abilityTargets?: boolean }): Expansion[] {
   const out: Expansion[] = []
   const push = (a: Action) => { const next = tryAction(state, player, a); if (next) out.push({ action: a, next }) }
+  let baseSig: string | undefined // this position's signature, worked out once and only if an activation needs it
   // anytime generation: with a deadline set, stop between phases once time is up and return what we
   // have (endTurn is emitted FIRST so it's always an option). Each candidate still applies fully, so
   // a single heavy apply can overshoot slightly — but a full board no longer runs for many seconds.
@@ -359,7 +371,9 @@ export function expandActions(state: GameState, player: PlayerId, opts?: { deadl
           if (combo.length) push({ t: 'activate', sourceId: src.id, ability: ab.key, targets: combo })
         }
       }
-      push({ t: 'activate', sourceId: src.id, ability: ab.key }) // ability targets come via the follow-up prompt
+      // ability targets come via the follow-up prompt. One that resolves at once and changes nothing
+      // (Toolbox with no spell it can pay for) is not a move: it only fills the log and the search's line.
+      { const a: Action = { t: 'activate', sourceId: src.id, ability: ab.key }; const next = tryAction(state, player, a); if (next && boardSig(next) !== (baseSig ??= boardSig(state))) out.push({ action: a, next }) }
     }
     // a face-down trap of mine (the bot only ever sees its OWN traps' real names) can be sprung
     if (state.sites[src.id]?.trap?.realName && canActivate(state, me, src.id, 'trap:spring') === null) {

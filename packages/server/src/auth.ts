@@ -2,7 +2,7 @@
 // tokens (stored HASHED so a DB leak can't be replayed), input validation, and
 // a small in-memory login/register rate limiter. Public-facing, so no user
 // enumeration and constant-time password comparison.
-import { scryptSync, randomBytes, createHash, timingSafeEqual } from 'node:crypto'
+import { scryptSync, randomBytes, createHash, createHmac, timingSafeEqual } from 'node:crypto'
 
 const SCRYPT_KEYLEN = 64
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000 // 30 days
@@ -62,3 +62,29 @@ export function rateReset(key: string): void { buckets.delete(key) }
 
 // periodically drop stale buckets so the map can't grow unbounded
 setInterval(() => { const now = Date.now(); for (const [k, b] of buckets) if (now > b.resetAt) buckets.delete(k) }, WINDOW_MS).unref?.()
+
+// ── restart-proof admin sign-in ───────────────────────────────────────────────
+// A host without a persistent disk (Render's free plan) loses the session table on every deploy, which
+// signed the admin out mid-game. The admin's token is therefore SIGNED with a key derived from the admin
+// password (which lives in the environment and survives a deploy): `a1.<expiry>.<nonce>.<hmac>`. After a
+// restart the server can check the signature and restore the session. Changing the password voids them.
+function adminKey(adminPassword: string): Buffer {
+  return createHmac('sha256', 'realmforge admin session v1').update(adminPassword).digest()
+}
+export function newAdminToken(adminPassword: string, ttlMs: number): { token: string; hash: string } {
+  const body = `a1.${Date.now() + ttlMs}.${randomBytes(18).toString('base64url')}`
+  const token = `${body}.${createHmac('sha256', adminKey(adminPassword)).update(body).digest('base64url')}`
+  return { token, hash: sha256(token) }
+}
+/** the expiry time of a genuine, unexpired admin token — or null */
+export function adminTokenExpiry(token: string, adminPassword: string): number | null {
+  const parts = token.split('.')
+  if (parts.length !== 4 || parts[0] !== 'a1') return null
+  const body = parts.slice(0, 3).join('.')
+  const want = createHmac('sha256', adminKey(adminPassword)).update(body).digest()
+  let got: Buffer
+  try { got = Buffer.from(parts[3], 'base64url') } catch { return null }
+  if (got.length !== want.length || !timingSafeEqual(got, want)) return null
+  const exp = Number(parts[1])
+  return Number.isFinite(exp) && exp > Date.now() ? exp : null
+}

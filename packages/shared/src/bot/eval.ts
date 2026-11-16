@@ -458,6 +458,11 @@ function explainEvalRaw(state: GameState, me: PlayerId, w: EvalWeights): EvalBre
   terms.siteMana = siteWorth(mySites, w) - siteWorth(foeSites, w)
   terms.thresholdFit = w.thresholdFit * thresholdFit(state, me)
 
+  // a weak Avatar off my own ground: it is the thing I lose the game with, and it hits for 1
+  if (w.avatarAbroad && !foeAv.deathsDoor && (effAttack(state, myAv) <= 1 || !!CASTER_AVATARS[myAv.name])) {
+    const ground = siteAt(state, myAv.x, myAv.y)
+    if (!ground || ground.isRubble || ground.controller !== me) terms.avatarAbroad = -w.avatarAbroad
+  }
   // the avatar's conduct on my latest turn (this one, or the one just ended while the opponent plays)
   avatarDisciplineTerms(state, me, lastOwnTurn(state, me), w, terms)
   terms.exposedSite = -w.exposedSite * predictedSiteLoss(state, me) // my sites the foe can raze (life + mana)

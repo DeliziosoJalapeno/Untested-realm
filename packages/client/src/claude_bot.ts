@@ -452,7 +452,8 @@ export async function claudeBotAction(real: GameState, me: PlayerId, suggested: 
   } catch (e) {
     PLAN = null
     entry.why = ctrl.signal.aborted ? 'timed out' : String((e as Error)?.message ?? 'error')
-    return fallback(ctrl.signal.aborted ? 'Claude took too long' : `Claude unavailable (${(e as Error)?.message ?? 'error'})`)
+    const msg = String((e as Error)?.message ?? 'error')
+    return fallback(ctrl.signal.aborted ? 'Claude took too long' : /not allowed/i.test(msg) ? 'Claude is off: you are signed out. Sign in as admin again (your game continues)' : `Claude unavailable (${msg})`)
   } finally {
     clearTimeout(timer)
     entry.ms = Date.now() - t0

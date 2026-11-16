@@ -69,6 +69,10 @@ export interface EvalWeights {
   /** penalty for a WEAK (power ≤ 1) avatar sitting OFF its own sites while developing (< 6 sites) — a
    *  support avatar like the Interrogator shouldn't wander; aggression is the minions' job, not its. */
   avatarWander: number
+  /** penalty for a WEAK avatar (power ≤ 1, or a caster) standing on ground I don't control — at ANY site
+   *  count. Flat (a version doubled when behind on life made paying life flip the score). Waived when the foe is at death's door (the
+   *  finish is worth the walk). A 1-damage site hit must not lure the Avatar into the enemy's units. */
+  avatarAbroad: number
   /** penalty for spending the avatar's Tap on a NON-site special ability (Sorcerer's "Draw a spell", …)
    *  instead of developing. HEAVY under 5 sites, moderate at 5, slight at 6, NOTHING above 6 (fully
    *  developed). Below 4 sites the bot never even considers it (a hard ban in moves.ts). */
@@ -186,6 +190,7 @@ export const DEFAULT_WEIGHTS: EvalWeights = {
   avatarUndefendedDeathsDoor: 42, // and heavily at death's door (a single strike ends you)
   avatarIdle: 26, // (was 12) while developing (<6 sites) an untapped avatar is a WASTED site play — prized
   avatarWander: 28, // roaming instead of developing (scaled ×2 weak / ×1 strong <4 sites / ×0.5 strong 4–5)
+  avatarAbroad: 60, // more than two site hits are worth (~24 each + pressure)
   avatarTapWaste: 45, // Tap squandered on a non-site ability vs developing — heavy (>a card/site's worth) so
   //                     it beats even a strong Tap while developing; scaled ×1 <5 / ×0.5 at 5 / ×0.2 at 6 / 0 above 6
   pathfinderIdle: 50, // SEVERE — a Pathfinder that can blaze but doesn't is wasting a site play AND a board
