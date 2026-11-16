@@ -34,7 +34,8 @@ import { puzzleById, PUZZLES } from './puzzle/puzzles'
 import PuzzlePage from './components/PuzzlePage'
 import { gate, advance, next as tutNext, runFoe, coachToAct } from './tutorial/runner'
 import { markLessonDone, markPuzzleSolved } from './tutorial/progress'
-import { claudeBotAction, claudeQuick, claudeDefers, askServer, resetClaudeBot, dropClaudePlan, claudeUsage, claudeJournal, type ClaudeAnalysis } from './claude_bot'
+import { claudeBotAction, claudeQuick, claudeDefers, askServer, resetClaudeBot, dropClaudePlan, claudeUsage, claudeJournal, claudeStatus, askGameReview, type ClaudeAnalysis } from './claude_bot'
+import { buildReport, reportText, type GameReport } from './game_report'
 import SealedDeckbuild from './components/SealedDeckbuild'
 import Game from './components/Game'
 import ReplayViewer from './components/ReplayViewer'
@@ -365,6 +366,9 @@ export default function App() {
   const [botThinking, setBotThinking] = useState(false)
   // the Claude opponent: its one-line plan for the turn, and whether its last move was really Claude's
   const [claudeNote, setClaudeNote] = useState<{ text: string; fallback: boolean } | null>(null)
+  // after a game against the computer: the engine report and Claude's written review (see afterGame)
+  const [gameReview, setGameReview] = useState<{ text: string; pending: boolean } | null>(null)
+  const postGameRef = useRef<{ report?: GameReport; review?: string }>({})
   /** the worker request whose answer is the search bot's SUGGESTION for Claude (not a move to play) */
   const claudeWaitRef = useRef<number | null>(null)
 
@@ -606,6 +610,7 @@ export default function App() {
     localHistory.current = []
     recordingRef.current = null // scenarios (which reuse this) don't record; startHotseat sets it after
     reviewFlagsRef.current = []; archiveDifficultyRef.current = null; archivedEndRef.current = false
+    postGameRef.current = {}; setGameReview(null)
     savedReplayIdRef.current = null
     localClockTick.current = Date.now()
     const sess: Session = {
@@ -709,6 +714,10 @@ export default function App() {
         turn: local.turn,
         botDifficulty: archiveDifficultyRef.current,
         flags: reviewFlagsRef.current.filter((f) => f.at <= r.actions.length),
+        report: postGameRef.current.report,
+        review: postGameRef.current.review,
+        // a Claude game also carries everything Claude was shown and chose
+        claude: archiveDifficultyRef.current === 'claude' ? { usage: claudeUsage(), decisions: claudeJournal() } : undefined,
       }),
     })
     const body = await res.json().catch(() => ({}))
@@ -719,6 +728,34 @@ export default function App() {
     if (local.phase !== 'over' || archivedEndRef.current || !recordingRef.current) return
     archivedEndRef.current = true
     void archiveLocalGame().catch(() => { /* archive off or unreachable: nothing to do */ })
+    void afterGame(local)
+  }
+  /** A finished game against the computer: build the engine report from the replay, ask Claude for a
+   *  written review where that is available, and save the game again with both. The game was already
+   *  saved once, so nothing is lost if the page is closed while this runs. */
+  async function afterGame(local: GameState) {
+    const r = recordingRef.current
+    if (!r || r.mode !== 'bot') return
+    const still = () => recordingRef.current === r // a new game was started: drop the result
+    const save = () => archiveLocalGame().catch(() => { /* archive off or unreachable */ })
+    try {
+      await new Promise((res) => setTimeout(res, 400)) // let the end of the game paint first
+      const report = await buildReport(r, 1)
+      if (!still()) return
+      postGameRef.current.report = report
+      await save()
+      const status = await claudeStatus().catch(() => null)
+      if (!still() || !status?.enabled) return
+      setGameReview({ text: '', pending: true })
+      const plans = archiveDifficultyRef.current === 'claude' ? claudeJournal().filter((d) => d.plan).map((d) => ({ turn: d.turn, plan: String(d.plan) })) : undefined
+      const text = await askGameReview(reportText(r, report, local.log.map((l) => l.msg), { difficulty: archiveDifficultyRef.current, plans }))
+      if (!still()) return
+      postGameRef.current.review = text
+      setGameReview({ text, pending: false })
+      await save()
+    } catch {
+      if (still()) setGameReview(null) // the review is a bonus: never in the way of the game
+    }
   }
   /** flag the current moment of a local game for review, with a note, and save the game now */
   async function flagForReview(note: string): Promise<string> {
@@ -855,6 +892,7 @@ export default function App() {
     setPage('game')
     recordingRef.current = startReplay('bot', decks, ['You', 'Computer'], seed, first, clock, secondSeer)
     reviewFlagsRef.current = []; archiveDifficultyRef.current = difficulty; archivedEndRef.current = false
+    postGameRef.current = {}; setGameReview(null)
     coachRef.current = null
     resetClaudeBot(); setClaudeNote(null)
   }
@@ -1519,6 +1557,13 @@ export default function App() {
             <div className="bot-thinking" role="status" aria-live="polite">
               <span className="bot-thinking-spinner" aria-hidden="true" />
               <span>{session.botDifficulty === 'claude' ? 'Claude is thinking…' : 'Computer is thinking…'}</span>
+            </div>
+          )}
+          {gameReview && (
+            <div className="game-review" role="status" aria-live="polite">
+              <button className="game-review-close" onClick={() => setGameReview(null)} aria-label="Close the review">×</button>
+              <span className="claude-note-tag">✳ Game review</span>
+              {gameReview.pending ? <span className="game-review-wait">Claude is reviewing the game…</span> : <div className="game-review-text">{gameReview.text}</div>}
             </div>
           )}
           {session.botDifficulty === 'claude' && claudeNote && (

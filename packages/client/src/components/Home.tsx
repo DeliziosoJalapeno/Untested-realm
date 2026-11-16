@@ -379,6 +379,10 @@ export default function Home({
           Card statistics used by the computer opponents: data from{' '}
           <a href="https://playsorceryonline.com/" target="_blank" rel="noreferrer noopener">Play Sorcery Online</a>.
         </p>
+        <p>
+          Games against the computer may be saved (decks and moves only, no account or personal details) to find
+          rules mistakes and improve the computer opponents.
+        </p>
       </div>
 
       <div className="panel account">

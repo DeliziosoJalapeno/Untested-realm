@@ -477,3 +477,12 @@ export const askServer: AskClaude = async (req, signal) => {
   if (!r.ok) throw new Error((body as any)?.error ?? `HTTP ${r.status}`)
   return body as ClaudeReply
 }
+
+/** Ask the server for Claude's written review of a finished game (see reportText in game_report.ts).
+ *  Same access as the Claude opponent; throws when it is off, not allowed or fails. */
+export async function askGameReview(summary: string, signal?: AbortSignal): Promise<string> {
+  const r = await fetch('/api/game-review', { method: 'POST', headers: { 'content-type': 'application/json', ...authHeader() }, body: JSON.stringify({ summary }), signal })
+  const body = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error((body as any)?.error ?? `HTTP ${r.status}`)
+  return String((body as any)?.text ?? '')
+}

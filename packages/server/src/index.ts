@@ -5,8 +5,9 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync, existsSync, statSync } from 'node:fs'
 import { join, extname, resolve } from 'node:path'
 import { WebSocketServer, WebSocket } from 'ws'
-import { saveLocalReplay, isLoopback } from './localReplays'
-import { askClaude, claudeAccess, claudeEnabled, claudeModel, parseRequest, throttled } from './claudeBot'
+import { saveLocalReplay, isLoopback, buildRecord, localArchiveOn } from './localReplays'
+import { hostedArchiveOn, saveHostedReplay, archiveAllowed } from './gameArchive'
+import { askClaude, claudeAccess, claudeEnabled, claudeModel, parseRequest, throttled, parseReviewRequest, reviewGame } from './claudeBot'
 import { users, sessions, decks as deckStore, collections as collectionStore, scenarios as scenarioStore, replays as replayStore, achievements as achievementStore, bugs as bugStore, type UserRow } from './db'
 import {
   hashPassword, verifyPassword, newSessionToken, newAdminToken, adminTokenExpiry, sha256,
@@ -1387,10 +1388,30 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, path: string
       }
     }
     // --- local match archive: a game played on this machine is written to <repo>/match-replays ---
+    //     On the hosted site (no disk) it is committed to the archive branch on GitHub instead: gameArchive.ts.
+    if (path === '/api/local-replay' && method === 'GET')
+      return sendJson(res, 200, { enabled: (isLoopback(req) && localArchiveOn()) || hostedArchiveOn(), hosted: !(isLoopback(req) && localArchiveOn()) && hostedArchiveOn() })
     if (path === '/api/local-replay' && method === 'POST') {
-      if (!isLoopback(req)) return sendJson(res, 403, { error: 'Local only.' })
-      const out = saveLocalReplay(await readJsonBody(req, 4 * 1024 * 1024))
-      return sendJson(res, out.status, out.body)
+      if (isLoopback(req) && localArchiveOn()) {
+        const out = saveLocalReplay(await readJsonBody(req, 4 * 1024 * 1024))
+        return sendJson(res, out.status, out.body)
+      }
+      if (!hostedArchiveOn()) return sendJson(res, isLoopback(req) ? 404 : 403, { error: 'The match archive is off.' })
+      if (!archiveAllowed(clientIp(req))) return sendJson(res, 429, { error: 'Too many games saved this hour.' })
+      const built = buildRecord(await readJsonBody(req, 4 * 1024 * 1024))
+      if ('error' in built) return sendJson(res, built.status, { error: built.error })
+      try { return sendJson(res, 200, { ok: true, file: await saveHostedReplay(built), flags: built.flags }) }
+      catch (e) { console.error(`[game-archive] ${(e as Error).message}`); return sendJson(res, 502, { error: 'Could not save the game.' }) }
+    }
+    // --- a written review of a finished game (Claude; same access as the Claude opponent: it costs money) ---
+    if (path === '/api/game-review' && method === 'POST') {
+      if (!claudeEnabled()) return sendJson(res, 503, { error: 'Claude is not configured on this server.' })
+      if (!claudeMayCall(req)) return sendJson(res, 403, { error: 'Not allowed.' })
+      const parsed = parseReviewRequest(await readJsonBody(req, 256 * 1024))
+      if (typeof parsed === 'string') return sendJson(res, 400, { error: parsed })
+      if (throttled()) return sendJson(res, 429, { error: 'Too many Claude requests this minute.' })
+      try { return sendJson(res, 200, await reviewGame(parsed.summary)) }
+      catch (e) { return sendJson(res, 502, { error: (e as Error).message }) }
     }
     // --- register / login (rate-limited per IP) ---
     if (path === '/api/register' && method === 'POST') {

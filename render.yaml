@@ -35,6 +35,11 @@ services:
       # hosted site (it spends your API credit); set it to `users` or `all` to open it up.
       - key: ANTHROPIC_API_KEY
         sync: false
+      # Optional: the game archive. With a GitHub token that may write this repository's contents, every
+      # finished game against the computer is committed to the `match-replays` branch (not main, so it
+      # does not redeploy the site). Without it, games are not kept. See packages/server/src/gameArchive.ts.
+      - key: GAME_ARCHIVE_TOKEN
+        sync: false
     # disk:
     #   name: realmforge-data
     #   mountPath: /data

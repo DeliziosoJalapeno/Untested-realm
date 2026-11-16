@@ -211,3 +211,43 @@ export function throttled(limit = Number(process.env.CLAUDE_BOT_RPM ?? 40)): boo
   stamps.push(now)
   return false
 }
+
+// ---------- a written review of a finished game ----------
+export const REVIEW_PROMPT = `You are reviewing a finished game of the trading card game Sorcery: Contested Realm, played on a simulator by a human ("You" in the log) against a computer opponent ("Computer"). You are given an engine report (tempo by turn, the biggest swings, and what the search engine would have played at those moments) and the game log.
+
+Write a short review for the human player, in plain text (no markdown headings, no tables), at most 280 words:
+1. One sentence on how the game was decided.
+2. "Key moments": the two to four turns that mattered most, each with the turn number, what happened and what the better play was. Say which side erred.
+3. "For you": one concrete thing the human could do better next time.
+4. "For the bot": one or two concrete weaknesses of the computer's play, or anything in the log that looks like a rules mistake by the simulator. If there is nothing, say so.
+Only state what the report and log support. If the log is too thin to judge a moment, say that rather than guess.`
+
+export interface GameReviewReply { text: string; model: string; ms: number; usage: ClaudeBotUsage }
+
+/** check a review request: one block of text (the report and the log) */
+export function parseReviewRequest(body: unknown): { summary: string } | string {
+  const summary = (body as { summary?: unknown } | null)?.summary
+  if (typeof summary !== 'string' || summary.trim().length < 200) return 'Nothing to review.'
+  if (summary.length > 80_000) return 'The game summary is too long.'
+  return { summary }
+}
+
+export async function reviewGame(summary: string, fetchImpl: Fetch = fetch as unknown as Fetch): Promise<GameReviewReply> {
+  const key = process.env.ANTHROPIC_API_KEY
+  if (!key) throw new Error('Claude is not configured on this server (no ANTHROPIC_API_KEY).')
+  const t0 = Date.now()
+  const res = await fetchImpl('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model: claudeModel(), max_tokens: 900, system: REVIEW_PROMPT, messages: [{ role: 'user', content: summary }] }),
+    signal: AbortSignal.timeout(45_000),
+  })
+  if (!res.ok) throw new Error(`Anthropic API ${res.status}: ${(await res.text().catch(() => '')).slice(0, 300)}`)
+  const resp: any = await res.json()
+  const text = (Array.isArray(resp?.content) ? resp.content : []).filter((b: any) => b?.type === 'text').map((b: any) => String(b.text ?? '')).join('\n').trim()
+  if (!text) throw new Error('Claude wrote no review.')
+  const u = resp?.usage ?? {}
+  const usage: ClaudeBotUsage = { input: Number(u.input_tokens ?? 0), output: Number(u.output_tokens ?? 0), cacheRead: Number(u.cache_read_input_tokens ?? 0), cacheWrite: Number(u.cache_creation_input_tokens ?? 0) }
+  console.log(`[game-review] ${claudeModel()} ${Date.now() - t0}ms  in ${usage.input}  out ${usage.output}`)
+  return { text: text.slice(0, 6000), model: claudeModel(), ms: Date.now() - t0, usage }
+}
