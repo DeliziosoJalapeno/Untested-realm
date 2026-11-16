@@ -109,6 +109,7 @@ describe('new bot — decision tests', () => {
     g.units[bk].enteredTurn = -5
     // an enemy minion nearby (within 1) to hit
     for (const u of Object.values(g.units)) if (u.controller === 1 && !u.isAvatar) delete g.units[u.id]
+    if (!Object.values(g.sites).some((s) => s.x === 1 && s.y === 2)) place(g, 1, 'Rustic Village', 1, 2) // a location, not the void
     usummon(g, 1, 'Foot Soldier', 1, 2)
     // move enemy avatar away so lethal/melee doesn't preempt the ability
     const ea = avatarOf(g, 1); ea.x = 4; ea.y = 3

@@ -6,7 +6,7 @@ import { describe, it, expect } from 'vitest'
 import {
   newGame, act, actFail, keepBoth, answer, fetchToHand, giveMana,
   injectToHand, summonCard, giveArtifact, castMagic, castMagicFail, placeSite, waiveThreshold,
-  settlePrompts,
+  settlePrompts, fillSites,
 } from './helpers'
 import {
   avatarOf, siteAt, summonToken, effAttack, effKeywords, effDefence,
@@ -1355,7 +1355,7 @@ describe('Corpse Catapult: the player chooses BOTH the ally and the corpse (eith
     return id
   }
   it('prompts for the helper ally, then the corpse (both cemeteries listed), then flings it', () => {
-    const g = board()
+    const g = board(); fillSites(g) // the target location must be a surface, not the void
     const bearer = summonCard(g, 0, 'Foot Soldier', 1, 1); bearer.enteredTurn = -1
     const ally1 = summonCard(g, 0, 'Foot Soldier', 1, 1)
     const ally2 = summonCard(g, 0, 'Foot Soldier', 1, 1)
@@ -3531,24 +3531,19 @@ describe('effect-cast: Chaos Twister copy + luck on the copy chain', () => {
 })
 
 describe('Auto-pick → player-choice conversions (prompt only on a real tie)', () => {
-  it('Fireball: co-located units → the caster chooses who takes 4 (others take 2)', () => {
+  it('Fireball (Frost Mage vs Lavamancer text): co-located units → no choice, the explosion deals 4 to each', () => {
     const g = board()
     const av = avatarOf(g, 0)
     av.x = 0; av.y = 1
     for (const x of [1, 2, 3]) placeSite(g, 0, 'Rustic Village', x, 1)
-    // two enemies share (1,1) → the caster must choose which one eats the 4
     const a = summonCard(g, 1, 'Escyllion Cyclops', 1, 1) // defence 6 — survives 4
     const b = summonCard(g, 1, 'Escyllion Cyclops', 1, 1)
     waiveThreshold(g, 0)
     castMagic(g, 0, 'Fireball', { extra: { direction: 'e' } })
 
-    expect(g.prompts[0]?.kind).toBe('chooseTargets')
-    const cands = (g.prompts[0] as any).data.candidates
-    expect([...cands].sort()).toEqual([a.id, b.id].sort())
-    answer(g, [a.id]) // a takes 4, b takes 2
-
+    expect(g.prompts.length).toBe(0)
     expect(g.units[a.id]?.damage).toBe(4)
-    expect(g.units[b.id]?.damage).toBe(2)
+    expect(g.units[b.id]?.damage).toBe(4)
   })
 
   it('Fireball: a lone unit → no prompt, it takes 4 directly', () => {

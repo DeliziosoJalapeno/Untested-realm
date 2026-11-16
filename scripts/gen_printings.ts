@@ -4,6 +4,9 @@
 // distinct ARTWORKS, so:
 //   • the art is identified by the slug's art-code — `<num>-<name>-<ARTCODE>-<finish>` — NOT the set number
 //     or the finish. Alpha and Beta share art-code `b`, so they collapse to one entry.
+//   • EXCEPT for Beast minions: their ALPHA printing (set 001) is its own entry, set "Alpha" — Ancient Thaw
+//     casts only "an Alpha Beast" (FAQ: the copy must carry the Alpha set symbol), and the deck's chosen
+//     printing is how a player marks a copy as Alpha (engine: setup.ts alphaNames).
 //   • per art-code we keep ONE printing, preferring a Standard finish (`-s`) over Foil/Rainbow — so the
 //     picker offers real alternative arts, not shiny duplicates. A promo that only exists as foil is still
 //     kept (it's the sole representative of its art).
@@ -31,13 +34,17 @@ function parseSlug(slug: string): { num: string; art: string; finish: string } |
 }
 
 async function main() {
-  const cards = JSON.parse(readFileSync(CARDS, 'utf-8')) as { name: string; img?: string }[]
-  // our card name → default art-code (from cards.json img)
+  const cards = JSON.parse(readFileSync(CARDS, 'utf-8')) as { name: string; img?: string; type?: string; subtypes?: string[] }[]
+  // Beast minions keep their Alpha printing apart from the Beta one that shares its art-code
+  const alphaApart = new Set(cards.filter((c) => c.type === 'Minion' && c.subtypes?.includes('Beast')).map((c) => c.name))
+  const artKey = (name: string, parsed: { num: string; art: string }) =>
+    parsed.num === '001' && alphaApart.has(name) ? `alpha:${parsed.art}` : parsed.art
+  // our card name → default art key (from cards.json img)
   const defaultArt = new Map<string, string>()
   for (const c of cards) {
     const slug = c.img?.split('/').pop()?.replace(/\.png$/, '')
     const parsed = slug ? parseSlug(slug) : null
-    if (parsed) defaultArt.set(c.name, parsed.art)
+    if (parsed) defaultArt.set(c.name, artKey(c.name, parsed))
   }
   const ourNames = new Set(cards.map((c) => c.name))
 
@@ -60,8 +67,9 @@ async function main() {
       const parsed = parseSlug(p.slug)
       if (!parsed) continue
       const rank = finishRank(p.meta?.finish)
-      const cur = byArt.get(parsed.art)
-      if (!cur || rank < cur.rank) byArt.set(parsed.art, { slug: p.slug, set: p.set?.name ?? '', artist: p.meta?.artist?.name, rank })
+      const key = artKey(c.name, parsed)
+      const cur = byArt.get(key)
+      if (!cur || rank < cur.rank) byArt.set(key, { slug: p.slug, set: p.set?.name ?? '', artist: p.meta?.artist?.name, rank })
     }
     if (!byArt.size) continue
     const def = defaultArt.get(c.name)

@@ -328,7 +328,7 @@ function hash53(str: string): number {
  *  happened in, so leaving them in the key would make every transposition miss. */
 const COSMETIC_FLOW = [
   'areaReveal', 'battleReveal', 'manaGains', 'manaGainSeq', 'levelUps', 'levelUpSeq', 'ticks', 'tickSeq',
-  'moveAnim', 'moveSeq', 'teleportAnim', 'teleSeq', 'rip', 'ripSeq', 'reveals', 'revealN',
+  'moveAnim', 'moveSeq', 'teleportAnim', 'teleSeq', 'rip', 'ripSeq', 'reveals', 'revealN', 'unitDamage', 'unitDamageSeq', 'lifeGains', 'lifeGainSeq', 'dmgPending', 'dmgTargets', 'dmgRevBase', 'revOpenedSeq',
 ] as const
 
 /** The position key. Everything in the state can steer the rest of the turn EXCEPT the message log (only

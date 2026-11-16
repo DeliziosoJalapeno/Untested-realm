@@ -25,7 +25,7 @@ describe('Minor/Major Explosion: client-blockable step-range via targetOptions',
     })
 
     it(`${name} refuses a cast on a too-far location (no wasted spell)`, () => {
-      const g = newGame(42, 0) as GameState; keepBoth(g); waiveThreshold(g, 0)
+      const g = newGame(42, 0) as GameState; keepBoth(g); fillSites(g); waiveThreshold(g, 0)
       const av = avatarOf(g, 0); av.x = 0; av.y = 0
       const err = castMagicFail(g, 0, name, { targets: ['sq:4,0,surface'] }) // 4 steps away
       expect(err).toMatch(/not a legal target/i)

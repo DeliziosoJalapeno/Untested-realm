@@ -18,6 +18,7 @@ import {
   type PlayerId,
   type PlayerView,
   migrateLegacyKeywords,
+  sanitizeCustomArt,
 } from '@sorcery/shared'
 import { Net, type ServerMsg, type SealedStateMsg, type SealedConfig } from './net'
 import { botAction, botNeedsToAct, botActionKey } from './bot'
@@ -32,6 +33,7 @@ import Game from './components/Game'
 import ReplayViewer from './components/ReplayViewer'
 import ReplaysPage from './components/ReplaysPage'
 import BugsAdminPage from './components/BugsAdminPage'
+import TokenArtAdminPage from './components/TokenArtAdminPage'
 import { startReplay, type ReplayRecord } from './replay'
 import { loadCollection, ownedCopies, ripEriksCuriosa, syncCollectionOnSignIn, clearCollectionOnLogout, keepSealedPool } from './collection'
 import { markUnlocked, syncAchievementsOnSignIn, clearAchievementsOnLogout } from './achievements'
@@ -206,6 +208,11 @@ export async function syncDecksOnSignIn(): Promise<void> {
 /** a deck built in collection mode fetches from the player's owned pool; wire that
  *  owned pool into the deck's `collection` so in-game fetch effects (Silver Bullet,
  *  Toolbox…) draw from it. Other decks keep whatever collection they define. */
+/** the custom token arts this account may use in a LOCAL game (online, the server decides by account) */
+function grantedArtIds(): Set<string> { return new Set(auth.myTokenArtsCached().map((a) => a.id)) }
+/** a deck for a local game (hotseat / vs Computer): its collection pool, and only arts this account may use */
+function forLocalGame(deck: DeckList): DeckList { return withCollection(sanitizeCustomArt(deck, grantedArtIds())) }
+
 function withCollection(deck: DeckList): DeckList {
   if (!deck.fromCollection) return deck
   const col = loadCollection()
@@ -225,7 +232,7 @@ function fmtRestart(ms: number): string {
 }
 
 export default function App() {
-  const [page, setPage] = useState<'home' | 'decks' | 'game' | 'collection' | 'scenarios' | 'replays' | 'replay' | 'bugs'>('home')
+  const [page, setPage] = useState<'home' | 'decks' | 'game' | 'collection' | 'scenarios' | 'replays' | 'replay' | 'bugs' | 'tokenArt'>('home')
   const [replayData, setReplayData] = useState<ReplayRecord | null>(null)
   // where the full-screen replay viewer returns on leave — the replay list, or the admin bugs panel
   const [replayReturn, setReplayReturn] = useState<'replays' | 'bugs'>('replays')
@@ -588,7 +595,7 @@ export default function App() {
     myDeckFromCollection.current = !!deckA.fromCollection || !!deckB.fromCollection
     const seed = Math.floor(Math.random() * 0xffffffff)
     const first: PlayerId = Math.random() < 0.5 ? 0 : 1
-    const decks: [DeckList, DeckList] = [withCollection(deckA), withCollection(deckB)]
+    const decks: [DeckList, DeckList] = [forLocalGame(deckA), forLocalGame(deckB)]
     const state = createGame(decks, ['Player 1', 'Player 2'], seed, first, clock, { secondSeer })
     beginHotseatState(state)
     recordingRef.current = startReplay('hotseat', decks, ['Player 1', 'Player 2'], seed, first, clock, secondSeer)
@@ -601,6 +608,14 @@ export default function App() {
     // scenarios are sandboxes (any board is constructible) → no achievements here
     const copy = JSON.parse(JSON.stringify(state)) as GameState
     migrateLegacyKeywords(copy) // scenarios saved before typed keywords hold them as text
+    // a scenario may carry someone else's custom token art (saved from their game): new tokens made here
+    // only use the arts this account is granted (tokens already on the board keep theirs, as an opponent's would)
+    const granted = grantedArtIds()
+    for (const p of copy.players) {
+      if (!p.tokenArt) continue
+      p.tokenArt = sanitizeCustomArt({ art: p.tokenArt }, granted).art
+      if (!p.tokenArt) delete p.tokenArt
+    }
     beginHotseatState(copy, true)
   }
 
@@ -713,7 +728,7 @@ export default function App() {
     disposeBotWorker() // fresh worker (and plan cache) for the new game
     const seed = Math.floor(Math.random() * 0xffffffff)
     const first: PlayerId = Math.random() < 0.5 ? 0 : 1
-    const decks: [DeckList, DeckList] = [withCollection(myDeck), withCollection(botDeck)]
+    const decks: [DeckList, DeckList] = [forLocalGame(myDeck), forLocalGame(botDeck)]
     const state = createGame(decks, ['You', 'Computer'], seed, first, clock, { secondSeer })
     localClockTick.current = Date.now()
     const sess: Session = {
@@ -1236,6 +1251,7 @@ export default function App() {
           onWatchReplay={() => setPage('replays')}
           isAdmin={auth.isAdminUser()}
           onOpenBugs={() => setPage('bugs')}
+          onOpenTokenArt={() => setPage('tokenArt')}
           initialRoomCode={pendingJoin}
         />
       )}
@@ -1260,6 +1276,7 @@ export default function App() {
           onOpenScenario={(state) => startScenario(state)}
         />
       )}
+      {page === 'tokenArt' && <TokenArtAdminPage onBack={() => setPage('home')} />}
       {page === 'decks' && <DeckBuilder onBack={() => setPage('home')} />}
       {page === 'collection' && <CollectionPage onBack={() => setPage('home')} />}
       {page === 'scenarios' && (

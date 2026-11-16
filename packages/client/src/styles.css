@@ -445,6 +445,8 @@ h1, h2, h3 { font-weight: 600; }
 .da-elem.elem-water { color: #6bc6ff; }
 .da-elem.elem-none { color: #b9c0d8; }
 .art-thumb { width: 100%; border-radius: 6px; display: block; }
+/* admin token-art panel: a card-shaped preview of each uploaded art */
+.tokenart-thumb { width: 64px; height: 89px; object-fit: cover; border-radius: 4px; flex: 0 0 auto; }
 
 /* card rendering */
 .cardimg { display: block; border-radius: 6px; }
@@ -487,7 +489,7 @@ h1, h2, h3 { font-weight: 600; }
 .game.scaled > .table { grid-column: 2; grid-row: 2; min-height: 0; overflow-y: scroll; }
 .game.scaled > .sidebar { grid-column: 3; grid-row: 2; min-height: 0; }
 
-/* left action rail — SQUARE icon+label tiles stacked vertically (desktop counterpart of
+/* left action rail — icon+label tiles (a little shorter than square) stacked vertically (desktop counterpart of
    .m-leftmenu). Extra padding-left insets the tiles from the edge; the grid column-gap adds the
    breathing room between the rail and the board. */
 .d-leftmenu {
@@ -495,7 +497,7 @@ h1, h2, h3 { font-weight: 600; }
   padding: 10px 6px 10px 12px; border-right: 1px solid #303752; overflow-y: auto;
 }
 .railbtn {
-  width: 74px; height: 74px; flex: 0 0 auto; display: flex; flex-direction: column;
+  width: 74px; height: 67px; flex: 0 0 auto; display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 3px; padding: 4px; text-align: center;
 }
 .railbtn .ri { font-size: 24px; line-height: 1; }
@@ -1158,7 +1160,8 @@ button.autobattle:hover:not(:disabled) { background: #4a5cc0; }
    • a mid-walk card is the live UnitChip relocated square-by-square with .anim-move. */
 .unit.anim-ghost { pointer-events: none; }
 /* death / removal — the departed card greys out immediately and fades away over ~2.8s in its own tile. */
-.unit.anim-death { filter: grayscale(1) brightness(0.85); animation: death-fade-anim 2.8s ease forwards; }
+.unit.anim-death { animation: death-fade-anim 2.8s ease forwards; }
+.unit.anim-death > .unitimg { filter: grayscale(1) brightness(0.85); } /* the art only: its damage number stays red */
 @keyframes death-fade-anim { 0% { opacity: 0.95; } 55% { opacity: 0.8; } 100% { opacity: 0; } }
 /* teleport — the card 'zaps' out of its old tile (0.5s); the destination square glows via .tele-glow. */
 .unit.anim-teleout { z-index: 4; animation: tele-zap-anim 0.5s ease-out forwards; }
@@ -1348,6 +1351,57 @@ button.autobattle:hover:not(:disabled) { background: #4a5cc0; }
 .castpanel-sub { margin-bottom: 2px; font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: #8a92b0; }
 .castpanel-line { padding: 1px 0; }
 @keyframes castfxfade { 0%, 40% { opacity: 1; } 100% { opacity: 0; } }
+/* minion damage number (ranged shots, Balor, single-target spells…): drawn inside the hit card and
+   sized off it via container-query units, so it fits any tile; pops in, holds, fades (~1.6s). */
+.unitdmg-fx {
+  position: absolute; inset: 0; z-index: 9; pointer-events: none;
+  container-type: size;
+  display: flex; align-items: center; justify-content: center;
+}
+.unitdmg-num {
+  font-size: 62cqmin; font-weight: 900; line-height: 1; color: #ff4b3e;
+  text-shadow: 0 0 6px #000, 0 0 3px #000, 0 2px 4px rgba(0, 0, 0, .9);
+  -webkit-text-stroke: max(1px, 1.5cqmin) rgba(0, 0, 0, .85);
+  animation: unitdmgpop 1.6s ease-out forwards;
+}
+.unit.tapped .unitdmg-num { rotate: -90deg; } /* stay upright on a tapped (sideways) card */
+@keyframes unitdmgpop {
+  0% { opacity: 0; transform: scale(.4); }
+  12% { opacity: 1; transform: scale(1.25); }
+  24%, 65% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1); }
+}
+/* life gained by an Avatar: a green "+N" that rises up and out of the top of its card, then fades (~1.6s) */
+.lifegain-fx {
+  position: absolute; inset: 0; z-index: 9; pointer-events: none;
+  container-type: size;
+  display: flex; align-items: flex-start; justify-content: center;
+}
+.lifegain-num {
+  font-size: 48cqmin; font-weight: 900; line-height: 1; color: #3ee86b;
+  text-shadow: 0 0 6px #000, 0 0 3px #000, 0 2px 4px rgba(0, 0, 0, .9);
+  -webkit-text-stroke: max(1px, 1.5cqmin) rgba(0, 0, 0, .85);
+  animation: lifegainrise 1.6s ease-out forwards;
+}
+/* while the number rises, the card lets it out above its top edge and draws over its neighbours */
+.unit.lifegaining { overflow: visible; z-index: 12; }
+.unit.tapped .lifegain-fx { rotate: -90deg; } /* rise above the card as the player sees it, even tapped */
+@keyframes lifegainrise {
+  0% { opacity: 0; transform: translateY(-20%) scale(.5); }
+  15% { opacity: 1; transform: translateY(-55%) scale(1.15); }
+  65% { opacity: 1; transform: translateY(-80%) scale(1); }
+  100% { opacity: 0; transform: translateY(-105%) scale(1); }
+}
+/* a minion encased in ice by the Frost Mage: a frosty tint over the card, cracked like ice */
+.encased-ice {
+  position: absolute; inset: 0; z-index: 3; pointer-events: none; border-radius: inherit; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(160deg, rgba(200,235,255,.42), rgba(120,190,240,.22));
+  box-shadow: inset 0 0 0 2px rgba(190,230,255,.85), inset 0 0 8px rgba(160,215,255,.9);
+}
+.encased-ice-cracks { position: absolute; inset: 0; width: 100%; height: 100%; }
+.encased-ice-cracks path { fill: none; stroke: rgba(235,248,255,.45); stroke-width: 1.4; stroke-linejoin: bevel; stroke-linecap: round;
+  vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 1px rgba(40,110,170,.4)); }
 /* the caster UNIT chip glows gold (rendered inside UnitChip, not a square tile) */
 .castfx-unitglow {
   position: absolute; inset: -3px; z-index: 6; pointer-events: none; border-radius: 9px;
@@ -1728,7 +1782,11 @@ button.autobattle:hover:not(:disabled) { background: #4a5cc0; }
 .unit.theirs { border-color: #ff7a7a; }
 /* rotating a portrait chip 90° around its centre makes it ~9px wider each side;
    nudge right so the left edge doesn't clip past the site boundary */
-.unit.tapped { transform: translateX(9px) rotate(90deg); filter: brightness(0.65); }
+.unit.tapped { transform: translateX(9px) rotate(90deg); }
+/* dim a tapped card's parts, not the card box itself, so its damage number keeps its full red */
+.unit.tapped > :not(.unitdmg-fx) { filter: brightness(0.65); }
+.board.subview .units .unit.tapped:not(.anim-death) > :not(.unitdmg-fx) { filter: none; }
+.unit.anim-death.tapped > .unitimg { filter: grayscale(1) brightness(0.55); }
 .unit.selected { outline: 2px solid #ffd257; }
 .unit.avatar { border-width: 3px; box-shadow: 0 0 8px rgba(255, 210, 87, .6); }
 .unit.small { width: 44px; height: 58px; }
@@ -1900,6 +1958,11 @@ button.autobattle:hover:not(:disabled) { background: #4a5cc0; }
 .square.portent-p0.portent-p1.void { box-shadow: inset 0 0 0 2px rgba(86, 183, 255, .5), inset 0 0 0 4px rgba(255, 122, 122, .45); }
 .sitecard .siteward { top: 2px; left: 2px; right: auto; font-size: 14px; padding: 1px 2px; z-index: 2; }
 .sitecard .siteflood { top: 2px; right: 2px; font-size: 12px; padding: 1px 2px; z-index: 2; }
+/* Sir Perceval's quest 🚩 — bottom-centre, clear of the four corner badges (ward, flood, silenced, trap) */
+.sitecard .sitequest { bottom: 2px; left: 50%; top: auto; right: auto; transform: translateX(-50%); font-size: 13px; padding: 1px 2px; z-index: 2; filter: drop-shadow(0 0 2px rgba(0,0,0,.85)); }
+/* its Sir Perceval is hovered/selected: the flag glows gold and pulses */
+.sitecard .sitequest.quest-active { z-index: 3; background: rgba(60, 40, 0, .75); filter: drop-shadow(0 0 4px #ffd54a) drop-shadow(0 0 9px #ffb300); animation: questPulse 1s ease-in-out infinite alternate; }
+@keyframes questPulse { from { transform: translateX(-50%) scale(1); } to { transform: translateX(-50%) scale(1.3); } }
 /* scorched 🔥 — sits just left of the flood symbol (top-right), for a site a roaming Wildfire has burned */
 .sitecard .sitescorched { top: 2px; right: 22px; font-size: 12px; padding: 1px 2px; z-index: 2; }
 /* kindled 🔥 — the same flame shifted more YELLOW, for a site the Flame of the First Ones has visited;

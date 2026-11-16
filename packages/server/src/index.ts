@@ -6,7 +6,7 @@ import { readFileSync, existsSync, statSync } from 'node:fs'
 import { join, extname, resolve } from 'node:path'
 import { WebSocketServer, WebSocket } from 'ws'
 import { saveLocalReplay, isLoopback } from './localReplays'
-import { users, sessions, decks as deckStore, collections as collectionStore, scenarios as scenarioStore, replays as replayStore, achievements as achievementStore, bugs as bugStore, type UserRow } from './db'
+import { users, sessions, decks as deckStore, collections as collectionStore, scenarios as scenarioStore, replays as replayStore, achievements as achievementStore, bugs as bugStore, tokenArts, type UserRow } from './db'
 import {
   hashPassword, verifyPassword, newSessionToken, sha256,
   validateUsername, validatePassword, rateAllow, rateReset, SESSION_TTL_MS,
@@ -39,6 +39,8 @@ import {
   type ClockConfig,
   type CuriosaEntry,
   type SorceryDeckRaw,
+  CUSTOM_ART_TOKENS,
+  sanitizeCustomArt,
   type DeckList,
   type GameState,
   type PackEditionChoice,
@@ -373,8 +375,10 @@ function maybeStart(room: Room): void {
   if (a?.deck && b?.deck) {
     const seed = Math.floor(Math.random() * 0xffffffff)
     const first = Math.random() < 0.5 ? 0 : 1
-    room.game = createGame([a.deck, b.deck], [a.name, b.name], seed, first as PlayerId, room.clock, { secondSeer: room.secondSeer })
-    beginReplay(room, [a.deck, b.deck], [a.name, b.name], seed, first as PlayerId)
+    // a custom token art only plays for an account it's granted to
+    const decks: [DeckList, DeckList] = [sanitizeCustomArt(a.deck, customArtAllowed(a.account)), sanitizeCustomArt(b.deck, customArtAllowed(b.account))]
+    room.game = createGame(decks, [a.name, b.name], seed, first as PlayerId, room.clock, { secondSeer: room.secondSeer })
+    beginReplay(room, decks, [a.name, b.name], seed, first as PlayerId)
     room.lastTick = Date.now()
     room.rematchLobby = false // a game is running again — leave the rematch deck-select lobby
     dequeueRoomPlayers(room) // the room is live → its players leave the find-a-battle queue
@@ -498,7 +502,7 @@ function finalizeSealed(room: Room): void {
   const s = room.sealed
   const [a, b] = room.seats
   if (!a || !b) return
-  const build = (i: PlayerId) => autofillSealedDeck(s.decks[i] ?? { name: `${room.seats[i]!.name}'s sealed`, avatar: '', spellbook: {}, atlas: {} }, aggregatePool(s.packs[i] ?? []))
+  const build = (i: PlayerId) => sanitizeCustomArt(autofillSealedDeck(s.decks[i] ?? { name: `${room.seats[i]!.name}'s sealed`, avatar: '', spellbook: {}, atlas: {} }, aggregatePool(s.packs[i] ?? [])), customArtAllowed(room.seats[i]!.account))
   const built: [DeckList, DeckList] = [build(0), build(1)]
   const seed = rndSeed()
   const first = Math.random() < 0.5 ? 0 : 1
@@ -1209,6 +1213,46 @@ function userFromReq(req: IncomingMessage): UserRow | null {
   if (!sess || sess.expires_at < Date.now()) return null
   return users.byId(sess.user_id) ?? null
 }
+// --- custom token art helpers ---
+const MAX_TOKEN_ART_BYTES = 2 * 1024 * 1024
+
+/** a base64 image (a data: URL or bare base64) → its bytes + a mime sniffed from the MAGIC BYTES (the
+ *  claimed type is ignored): PNG, JPEG, WebP or GIF only, ≤ 2 MB. */
+function decodeImage(raw: unknown): { mime: string; bytes: Buffer } | { error: string } {
+  if (typeof raw !== 'string' || !raw) return { error: 'Choose an image.' }
+  const bytes = Buffer.from(raw.replace(/^data:[^,]*,/, ''), 'base64')
+  if (!bytes.length) return { error: 'That image is empty.' }
+  if (bytes.length > MAX_TOKEN_ART_BYTES) return { error: 'Images must be 2 MB or smaller.' }
+  const at = (i: number, s: string) => bytes.subarray(i, i + s.length).toString('latin1') === s
+  const mime = at(0, '\x89PNG') ? 'image/png'
+    : bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff ? 'image/jpeg'
+    : at(0, 'RIFF') && at(8, 'WEBP') ? 'image/webp'
+    : at(0, 'GIF8') ? 'image/gif'
+    : null
+  return mime ? { mime, bytes } : { error: 'Use a PNG, JPEG, WebP or GIF image.' }
+}
+
+/** usernames (array or comma/space-separated string) → user ids; an unknown name is an error */
+function resolveUsernames(raw: unknown): { ids: number[] } | { error: string } {
+  const names = (Array.isArray(raw) ? raw : String(raw ?? '').split(/[\s,]+/)).map((n) => String(n).trim()).filter(Boolean)
+  const ids: number[] = []
+  const unknown: string[] = []
+  for (const n of new Set(names)) {
+    const u = users.byName(n)
+    if (u) ids.push(u.id)
+    else unknown.push(n)
+  }
+  return unknown.length ? { error: `No such account: ${unknown.join(', ')}` } : { ids }
+}
+
+/** the custom token arts the seat's account may bring into a game: an admin every one, a granted
+ *  account its grants, a guest none. */
+function customArtAllowed(account: string | null | undefined): ReadonlySet<string> | 'all' {
+  const u = account ? users.byName(account) : undefined
+  if (!u) return new Set()
+  return u.is_admin ? 'all' : tokenArts.idsForUser(u.id)
+}
+
 function publicUser(u: UserRow) { return { username: u.username, isAdmin: !!u.is_admin } }
 
 /** a deck must have a stable id + name and the two card maps (public-facing) */
@@ -1533,9 +1577,65 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, path: string
       return sendJson(res, 200, { ok: true })
     }
 
+    // --- custom token art image: PUBLIC by its unguessable id, so the opponent (even a guest) sees the token.
+    // Only granted accounts can put it in a game (customArtFor at game start); seeing it needs nothing.
+    if (path.startsWith('/api/token-art/') && method === 'GET') {
+      const img = tokenArts.image(decodeURIComponent(path.slice('/api/token-art/'.length)))
+      if (!img) return sendJson(res, 404, { error: 'No such art.' })
+      res.writeHead(200, {
+        'content-type': img.mime,
+        'cache-control': 'private, max-age=3600', // a deleted/replaced art fades from caches within the hour
+        'x-content-type-options': 'nosniff',
+        'content-security-policy': "default-src 'none'; sandbox",
+        'access-control-allow-origin': '*',
+      })
+      res.end(Buffer.from(img.image))
+      return
+    }
+
     if (!user) return sendJson(res, 401, { error: 'Not signed in.' })
 
     if (path === '/api/me' && method === 'GET') return sendJson(res, 200, { user: publicUser(user) })
+
+    // --- custom token art: the arts this account may use (an admin may use every one) ---
+    if (path === '/api/my-token-arts' && method === 'GET') {
+      const list = user.is_admin ? tokenArts.listMeta() : tokenArts.listForUser(user.id)
+      return sendJson(res, 200, { arts: list })
+    }
+    // --- admin-only token art management ---
+    if (path.startsWith('/api/admin/token-arts')) {
+      if (!user.is_admin) return sendJson(res, 403, { error: 'Admins only.' })
+      const id = decodeURIComponent(path.slice('/api/admin/token-arts'.length).replace(/^\//, ''))
+      if (!id && method === 'GET') return sendJson(res, 200, { arts: tokenArts.listAll() })
+      if (!id && method === 'POST') {
+        const body = await readJsonBody(req, 4 * 1024 * 1024)
+        const token = String(body.token ?? '')
+        if (!(CUSTOM_ART_TOKENS as readonly string[]).includes(token)) return sendJson(res, 400, { error: 'Pick a token: Skeleton, Foot Soldier or Frog.' })
+        const img = decodeImage(body.image)
+        if ('error' in img) return sendJson(res, 400, { error: img.error })
+        const userIds = resolveUsernames(body.users)
+        if ('error' in userIds) return sendJson(res, 400, { error: userIds.error })
+        const artId = makeId()
+        tokenArts.create(artId, token, String(body.label ?? '').trim().slice(0, 60) || token, img.mime, img.bytes, userIds.ids)
+        return sendJson(res, 201, { id: artId })
+      }
+      if (id && method === 'PUT') {
+        if (!tokenArts.exists(id)) return sendJson(res, 404, { error: 'No such art.' })
+        const body = await readJsonBody(req)
+        if (body.users !== undefined) {
+          const userIds = resolveUsernames(body.users)
+          if ('error' in userIds) return sendJson(res, 400, { error: userIds.error })
+          tokenArts.setGrants(id, userIds.ids)
+        }
+        if (typeof body.label === 'string' && body.label.trim()) tokenArts.setLabel(id, body.label.trim().slice(0, 60))
+        return sendJson(res, 200, { ok: true })
+      }
+      if (id && method === 'DELETE') {
+        tokenArts.remove(id)
+        return sendJson(res, 200, { ok: true })
+      }
+      return sendJson(res, 404, { error: 'Not found.' })
+    }
 
     // --- a signed-in reporter's own bugs + the admin replies (drives the home notification) ---
     if (path === '/api/my-bugs' && method === 'GET') {

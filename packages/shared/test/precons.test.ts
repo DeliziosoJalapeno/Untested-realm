@@ -1,5 +1,5 @@
 // The 12 official precons (Alpha, Beta, Gothic — four each): complete, fully implemented, and matched
-// EXACTLY by matchPrecon (precon rooms accept nothing else). Plus the two Frost Mage vs Lavamancer WIP lists.
+// EXACTLY by matchPrecon (precon rooms accept nothing else). Plus the two Frost Mage vs Lavamancer decks.
 import { describe, it, expect } from 'vitest'
 import { PRECONS, matchPrecon, getCard, cardSupport, createGame, applyAction } from '../src'
 import '../src/cards/scripts/index'
@@ -7,20 +7,21 @@ import '../src/cards/scripts/index'
 const count = (z: Record<string, number> | undefined) => Object.values(z ?? {}).reduce((a, b) => a + b, 0)
 
 describe('precon decks', () => {
-  it('12 decks: four each from Alpha, Beta and Gothic, plus two WIP Frost Mage vs Lavamancer; unique ids and avatars', () => {
+  it('14 decks: four each from Alpha, Beta and Gothic, plus Frost Mage and Lavamancer; unique ids and avatars', () => {
     expect(PRECONS.length).toBe(14)
-    for (const set of ['Alpha', 'Beta', 'Gothic']) expect(PRECONS.filter((p) => p.set === set && !p.wip).length).toBe(4)
-    expect(PRECONS.filter((p) => p.set === 'Frost Mage vs Lavamancer' && p.wip).map((p) => p.avatar)).toEqual(['Frost Mage', 'Lavamancer'])
+    for (const set of ['Alpha', 'Beta', 'Gothic']) expect(PRECONS.filter((p) => p.set === set).length).toBe(4)
+    expect(PRECONS.filter((p) => p.set === 'Frost Mage vs Lavamancer').map((p) => p.avatar)).toEqual(['Frost Mage', 'Lavamancer'])
+    expect(PRECONS.some((p) => p.wip)).toBe(false)
     expect(new Set(PRECONS.map((p) => p.id)).size).toBe(14)
     expect(new Set(PRECONS.map((p) => p.avatar)).size).toBe(14)
   })
 
-  it('each is an avatar + 36 spells + 16 sites, every card known and implemented', () => {
+  it('each is an avatar + 36 spells + 16 sites (Frost Mage vs Lavamancer: 60 + 30 + a 10-card collection), every card known and implemented', () => {
     for (const p of PRECONS) {
-      if (!p.wip) {
-        expect(count(p.spellbook), p.name).toBe(36)
-        expect(count(p.atlas), p.name).toBe(16)
-      }
+      const fvl = p.set === 'Frost Mage vs Lavamancer'
+      expect(count(p.spellbook), p.name).toBe(fvl ? 60 : 36)
+      expect(count(p.atlas), p.name).toBe(fvl ? 30 : 16)
+      if (fvl) expect(count(p.collection), p.name).toBe(10)
       for (const n of [p.avatar, ...Object.keys(p.spellbook), ...Object.keys(p.atlas), ...Object.keys(p.collection ?? {})]) {
         expect(cardSupport(getCard(n)), `${p.name}: ${n}`).not.toBe('unsupported')
       }

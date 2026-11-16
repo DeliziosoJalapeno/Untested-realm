@@ -26,6 +26,7 @@ export function clearAuth() {
   localStorage.removeItem(TOKEN_KEY)
   localStorage.removeItem(USER_KEY)
   cachedAdmin = false
+  cachedTokenArts = []
 }
 
 async function api(path: string, opts: RequestInit = {}): Promise<any> {
@@ -47,12 +48,14 @@ export async function register(username: string, password: string): Promise<stri
   const r = await api('/api/register', { method: 'POST', body: JSON.stringify({ username, password }) })
   setAuth(r.token, r.user.username)
   cachedAdmin = !!r.user?.isAdmin
+  void fetchMyTokenArts()
   return r.user.username
 }
 export async function login(username: string, password: string): Promise<string> {
   const r = await api('/api/login', { method: 'POST', body: JSON.stringify({ username, password }) })
   setAuth(r.token, r.user.username)
   cachedAdmin = !!r.user?.isAdmin
+  void fetchMyTokenArts()
   return r.user.username
 }
 export async function logout(): Promise<void> {
@@ -62,7 +65,7 @@ export async function logout(): Promise<void> {
 /** verify the stored token is still valid; returns the username or null (and caches isAdmin). */
 export async function fetchMe(): Promise<string | null> {
   if (!getToken()) return null
-  try { const r = await api('/api/me'); cachedAdmin = !!r.user.isAdmin; return r.user.username } catch { clearAuth(); return null }
+  try { const r = await api('/api/me'); cachedAdmin = !!r.user.isAdmin; void fetchMyTokenArts(); return r.user.username } catch { clearAuth(); return null }
 }
 export async function fetchDecks(): Promise<DeckList[]> {
   const r = await api('/api/decks')
@@ -236,4 +239,30 @@ export async function pushAchievements(unlocked: Record<string, number>): Promis
   if (!getToken()) return null
   const r = await api('/api/achievements', { method: 'PUT', body: JSON.stringify({ unlocked }) })
   return r.unlocked ?? null
+}
+
+// --- custom token art (admin-uploaded, granted to chosen accounts) ---
+/** a custom token art this account may use; its deck.art slug is customArtSlug(id) */
+export interface TokenArt { id: string; token: string; label: string }
+export interface AdminTokenArt extends TokenArt { users: string[]; createdAt: number }
+
+let cachedTokenArts: TokenArt[] = []
+/** the custom token arts granted to the signed-in account (all of them for an admin); refreshed on sign-in */
+export function myTokenArtsCached(): TokenArt[] { return cachedTokenArts }
+export async function fetchMyTokenArts(): Promise<TokenArt[]> {
+  if (!getToken()) { cachedTokenArts = []; return [] }
+  try { cachedTokenArts = ((await api('/api/my-token-arts')).arts ?? []) as TokenArt[] } catch { cachedTokenArts = [] }
+  return cachedTokenArts
+}
+export async function fetchAdminTokenArts(): Promise<AdminTokenArt[]> {
+  const r = await api('/api/admin/token-arts'); return (r.arts ?? []) as AdminTokenArt[]
+}
+export async function createTokenArt(payload: { token: string; label: string; image: string; users: string[] }): Promise<void> {
+  await api('/api/admin/token-arts', { method: 'POST', body: JSON.stringify(payload) })
+}
+export async function updateTokenArt(id: string, payload: { label?: string; users?: string[] }): Promise<void> {
+  await api(`/api/admin/token-arts/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(payload) })
+}
+export async function deleteTokenArt(id: string): Promise<void> {
+  await api(`/api/admin/token-arts/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }

@@ -320,3 +320,76 @@ export const replays = {
     q.repUpsert.run(id, ownerId, name, isPublic ? 1 : 0, JSON.stringify(data), Date.now()),
   remove: (ownerId: number, id: string) => q.repDelete.run(id, ownerId),
 }
+
+// --- custom token art (admin-uploaded images granted to chosen accounts) ---
+// The image lives in the row (small, and it travels with the one DB volume). Grants cascade away with the
+// art or the user. See shared cards/tokenArt.ts for how a granted art reaches a game.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS token_arts (
+    id         TEXT PRIMARY KEY,
+    token      TEXT NOT NULL,
+    label      TEXT NOT NULL,
+    mime       TEXT NOT NULL,
+    image      BLOB NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS token_art_grants (
+    art_id  TEXT NOT NULL REFERENCES token_arts(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (art_id, user_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_token_art_grants_user ON token_art_grants(user_id);
+`)
+
+const ta = {
+  insert: db.prepare('INSERT INTO token_arts (id, token, label, mime, image, created_at) VALUES (?, ?, ?, ?, ?, ?)'),
+  image: db.prepare('SELECT mime, image FROM token_arts WHERE id = ?'),
+  exists: db.prepare('SELECT 1 FROM token_arts WHERE id = ?'),
+  listAll: db.prepare('SELECT id, token, label, created_at FROM token_arts ORDER BY created_at DESC'),
+  allGrants: db.prepare('SELECT g.art_id, u.username FROM token_art_grants g JOIN users u ON u.id = g.user_id ORDER BY u.username'),
+  listForUser: db.prepare(`
+    SELECT a.id, a.token, a.label FROM token_arts a JOIN token_art_grants g ON g.art_id = a.id
+    WHERE g.user_id = ? ORDER BY a.created_at DESC`),
+  idsForUser: db.prepare('SELECT art_id FROM token_art_grants WHERE user_id = ?'),
+  setLabel: db.prepare('UPDATE token_arts SET label = ? WHERE id = ?'),
+  clearGrants: db.prepare('DELETE FROM token_art_grants WHERE art_id = ?'),
+  grant: db.prepare('INSERT OR IGNORE INTO token_art_grants (art_id, user_id) VALUES (?, ?)'),
+  remove: db.prepare('DELETE FROM token_arts WHERE id = ?'),
+}
+
+export interface TokenArtMeta { id: string; token: string; label: string }
+
+/** run `fn` in one transaction */
+function inTxn(fn: () => void) {
+  db.prepare('BEGIN').run()
+  try { fn(); db.prepare('COMMIT').run() } catch (e) { db.prepare('ROLLBACK').run(); throw e }
+}
+
+export const tokenArts = {
+  /** a new art and its grants, together or not at all */
+  create: (id: string, token: string, label: string, mime: string, image: Uint8Array, userIds: number[]) => inTxn(() => {
+    ta.insert.run(id, token, label, mime, image, Date.now())
+    for (const uid of userIds) ta.grant.run(id, uid)
+  }),
+  exists: (id: string) => !!ta.exists.get(id),
+  image: (id: string) => ta.image.get(id) as { mime: string; image: Uint8Array } | undefined,
+  /** every art, no grant lists (what an admin may use) */
+  listMeta: () => (ta.listAll.all() as unknown as TokenArtMeta[]).map(({ id, token, label }) => ({ id, token, label })),
+  /** every art with the usernames it's granted to (admin panel) */
+  listAll: () => {
+    const users = new Map<string, string[]>()
+    for (const g of ta.allGrants.all() as { art_id: string; username: string }[]) users.set(g.art_id, [...(users.get(g.art_id) ?? []), g.username])
+    return (ta.listAll.all() as unknown as (TokenArtMeta & { created_at: number })[]).map((a) => ({
+      id: a.id, token: a.token, label: a.label, createdAt: a.created_at, users: users.get(a.id) ?? [],
+    }))
+  },
+  listForUser: (userId: number) => ta.listForUser.all(userId) as unknown as TokenArtMeta[],
+  idsForUser: (userId: number) => new Set((ta.idsForUser.all(userId) as { art_id: string }[]).map((r) => r.art_id)),
+  setLabel: (id: string, label: string) => ta.setLabel.run(label, id),
+  /** replace the art's grant list with these user ids (one transaction) */
+  setGrants: (id: string, userIds: number[]) => inTxn(() => {
+    ta.clearGrants.run(id)
+    for (const uid of userIds) ta.grant.run(id, uid)
+  }),
+  remove: (id: string) => ta.remove.run(id),
+}

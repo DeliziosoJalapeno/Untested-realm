@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   MIN_ATLAS,
   MIN_SPELLBOOK,
@@ -9,6 +9,10 @@ import {
   parseDeckText,
   printingsFor,
   validateDeck,
+  CUSTOM_ART_TOKENS,
+  customArtSlug,
+  sanitizeCustomArt,
+  type Printing,
   type CardDef,
   type DeckList,
 } from '@sorcery/shared'
@@ -16,6 +20,7 @@ import { loadDecks, saveDeck, deleteDeckById, newDeckId } from '../App'
 import { loadCollection, ownedCopies } from '../collection'
 import { ArtProvider, artCtxFromMap } from '../art'
 import { useMobileMode } from '../mobile'
+import * as auth from '../auth'
 import CardImg, { CardHover } from './CardImg'
 import CardSearch from './CardSearch'
 
@@ -57,6 +62,19 @@ export default function DeckBuilder({ onBack }: { onBack: () => void }) {
   const [hover, setHover] = useState<string | null>(null)
   // alternative-art picker: the card name whose printings are being chosen (null = closed)
   const [artPick, setArtPick] = useState<string | null>(null)
+  // custom token arts the admin granted this account (an admin sees all) — nobody else is offered them
+  const [tokenArts, setTokenArts] = useState(auth.myTokenArtsCached())
+  useEffect(() => { void auth.fetchMyTokenArts().then(setTokenArts) }, [])
+  const grantedIds = useMemo(() => new Set(tokenArts.map((a) => a.id)), [tokenArts])
+  // the deck's art as it will play: a custom art this account isn't granted (any more) shows as the default
+  const shownArt = sanitizeCustomArt(current, grantedIds).art
+  /** the arts a card can be shown with: its printings, and for a token its granted custom arts */
+  function artOptions(name: string): Printing[] {
+    const custom = tokenArts.filter((a) => a.token === name).map((a) => ({ slug: customArtSlug(a.id), set: a.label }))
+    const printings = printingsFor(name)
+    if (!custom.length) return printings
+    return [...(printings.length ? printings : [{ slug: '', set: 'Token', default: true }]), ...custom]
+  }
   // set/clear a card's chosen art (slug); null → revert to the default printing (no override)
   function setArt(name: string, slug: string | null) {
     const art = { ...(current.art ?? {}) }
@@ -169,7 +187,7 @@ export default function DeckBuilder({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <ArtProvider value={artCtxFromMap(current.art)}>
+    <ArtProvider value={artCtxFromMap(shownArt)}>
     <div className="deckbuilder">
       <div className="db-toolbar">
         <button onClick={onBack}>← Back</button>
@@ -279,6 +297,17 @@ export default function DeckBuilder({ onBack }: { onBack: () => void }) {
                   <button onClick={() => removeCard('atlas', n)}>−</button>
                 </div>
               ))}
+              {CUSTOM_ART_TOKENS.some((n) => artOptions(n).length > 0) && (
+                <>
+                  <h3>Tokens <i>(art for the tokens you create)</i></h3>
+                  {CUSTOM_ART_TOKENS.filter((n) => artOptions(n).length > 0).map((n) => (
+                    <div key={n} className="db-row" data-token-art={n} onMouseEnter={() => setHover(n)} onMouseLeave={() => setHover(null)}>
+                      <span>{n}</span>
+                      <button title="Choose art" className={shownArt?.[n] ? 'art-on' : ''} onClick={() => setArtPick(n)}>🎨</button>
+                    </div>
+                  ))}
+                </>
+              )}
             </>
           ) : (
             <>
@@ -313,8 +342,8 @@ export default function DeckBuilder({ onBack }: { onBack: () => void }) {
                 <button title="Close" onClick={() => setArtPick(null)}>✕</button>
               </div>
               <div className="art-grid">
-                {printingsFor(artPick).map((p) => {
-                  const cur = current.art?.[artPick]
+                {artOptions(artPick).map((p) => {
+                  const cur = shownArt?.[artPick]
                   const sel = cur ? cur === p.slug : !!p.default
                   return (
                     <button
@@ -323,7 +352,7 @@ export default function DeckBuilder({ onBack }: { onBack: () => void }) {
                       title={p.artist ? `${p.set} — art by ${p.artist}` : p.set}
                       onClick={() => setArt(artPick, p.default ? null : p.slug)}
                     >
-                      <CardImg name={artPick} art={p.slug} className="art-thumb" />
+                      <CardImg name={artPick} art={p.slug || undefined} className="art-thumb" />
                       <span>{p.set}{p.default ? ' · default' : ''}</span>
                     </button>
                   )

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { newGame, keepBoth, summonCard, placeSite, castMagic, waiveThreshold, answer } from './helpers'
+import { newGame, keepBoth, summonCard, placeSite, fillSites, castMagic, waiveThreshold, answer } from './helpers'
 import { getScript } from '../src/cards/scripts/registry'
 import { validateTarget } from '../src/engine/casting'
 import { avatarOf } from '../src'
@@ -24,6 +24,7 @@ describe('Led Astray moves avatars', () => {
   it('drags the enemy avatar a step to an adjacent site', () => {
     const g = newGame(); keepBoth(g)
     placeSite(g, 0, 'Rustic Village', 3, 2) // destination site
+    fillSites(g) // the targeted location (2,2) must be a surface, not the void
     const foeAv = avatarOf(g, 1); foeAv.x = 2; foeAv.y = 2; foeAv.region = 'surface'
     waiveThreshold(g, 0)
     castMagic(g, 0, 'Led Astray', { targets: ['sq:2,2,surface'] })

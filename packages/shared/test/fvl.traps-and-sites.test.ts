@@ -122,7 +122,7 @@ describe('Icicle Dome', () => {
 })
 
 describe('Deep Snow', () => {
-  it('taps the minions at a target adjacent site; they skip their next untap', () => {
+  it('taps the minions at one adjacent site; they skip their next untap', () => {
     const g = board()
     fillSites(g)
     const id = playTrap(g, 0, 'Deep Snow', 2, 1)
@@ -131,6 +131,19 @@ describe('Deep Snow', () => {
     answer(g, [siteAt(g, 2, 2)!.id])
     expect(foe.tapped).toBe(true)
     expect(foe.counters?.skipUntap).toBe(1)
+  })
+
+  it("doesn't target the site (released text: \"one adjacent site\"): a warded site keeps its Ward", () => {
+    const g = board()
+    fillSites(g)
+    const id = playTrap(g, 0, 'Deep Snow', 2, 1)
+    const site = siteAt(g, 2, 2)!
+    site.ward = true
+    const foe = summonCard(g, 1, 'Cave Trolls', 2, 2)
+    spring(g, 0, id)
+    answer(g, [site.id])
+    expect(foe.tapped).toBe(true)
+    expect(site.ward).toBe(true)
   })
 })
 

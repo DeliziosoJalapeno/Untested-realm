@@ -3,7 +3,7 @@
 // missing `where: 'nearby'`, and the engine's square-target validation never enforced `where` at all,
 // so any square (whole board) validated; the effect only rejected far picks at resolve time (wasted tap).
 import { describe, it, expect } from 'vitest'
-import { newGame, keepBoth } from './helpers'
+import { newGame, keepBoth, fillSites } from './helpers'
 import { validateTarget, applyJudge, type GameState, type PlayerId, type UnitState, type TargetSpec } from '../src'
 import { getScript } from '../src/cards/scripts/registry'
 
@@ -12,7 +12,7 @@ const reapSpec = () => getScript('Draconian Bonekite')!.abilities![0].targets![0
 
 describe('Draconian Bonekite reap — nearby only', () => {
   it('accepts a nearby square, rejects a far one', () => {
-    const g = newGame(); keepBoth(g)
+    const g = newGame(); keepBoth(g); fillSites(g) // target locations must exist on the surface
     applyJudge(g, 0, { k: 'summonUnit', name: 'Draconian Bonekite', player: 0, x: 2, y: 1, region: 'surface', noGenesis: true })
     const kite = Object.values(g.units).find((u) => u.name === 'Draconian Bonekite')! as UnitState
     const spec = reapSpec()
@@ -24,7 +24,7 @@ describe('Draconian Bonekite reap — nearby only', () => {
 
 describe('Dragonlord with Draconian Bonekite aspect — reap stays nearby', () => {
   it('the granted reap ability is nearby-locked to the Dragonlord, not the whole board', () => {
-    const g = newGame(); keepBoth(g)
+    const g = newGame(); keepBoth(g); fillSites(g) // target locations must exist on the surface
     const av = g.units[g.players[0].avatarUnitId]! as UnitState // seat 0 avatar at (2,0)
     av.name = 'Dragonlord'; g.cards[av.cardId].name = 'Dragonlord'
     g.flow = g.flow ?? {}

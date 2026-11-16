@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { findCard, printingImageUrl } from '@sorcery/shared'
+import { findCard, printingImageUrl, isCustomArt, customArtUrl, isSafeArtSlug } from '@sorcery/shared'
 import { useMobileMode } from '../mobile'
 import { useArt } from '../art'
 
@@ -19,6 +19,11 @@ export default function CardImg({ name, className, flipped, art }: { name: strin
   const def = findCard(name)
   const ctx = useArt()
   const [stage, setStage] = useState(0)
+  // the same chip can become another card (Vengeful Heir → the avenged Knight, a transform): start the
+  // new card's image fallbacks from the top, not from where the old card's left off
+  const [shown, setShown] = useState(`${name}|${art ?? ''}|${!!flipped}`)
+  const key = `${name}|${art ?? ''}|${!!flipped}`
+  if (shown !== key) { setShown(key); setStage(0) }
   // A card flipped to a face it doesn't have (Vivien borrowing the Druid's flip)
   // shows the generic Sorcery card back — that side carries no rules of its own.
   if (flipped && !def?.flipImg && !def?.flipText) {
@@ -28,10 +33,12 @@ export default function CardImg({ name, className, flipped, art }: { name: strin
   const faceImg = flipped && def?.flipImg ? def.flipImg : def?.img
   const faceText = flipped && def?.flipText ? def.flipText : def?.text
   // alternative art applies to the FRONT face only (double-faced backs have no alternate printings)
-  const chosen = !flipped ? (art ?? ctx.artFor(name)) : undefined
+  const picked = !flipped ? (art ?? ctx.artFor(name)) : undefined
+  const chosen = picked && isSafeArtSlug(picked) ? picked : undefined // never a path ("../api/…") in an image URL
   // candidate image URLs, tried in order: chosen-art local → chosen-art CDN → default local → default CDN
   const candidates: string[] = []
-  if (chosen) candidates.push(`/cards/${chosen}.webp`, printingImageUrl(chosen))
+  // an admin-granted custom token art is served by the game server; a printing is a local/CDN card image
+  if (chosen) candidates.push(...(isCustomArt(chosen) ? [customArtUrl(chosen)] : [`/cards/${chosen}.webp`, printingImageUrl(chosen)]))
   if (faceImg) candidates.push(localUrl(faceImg), faceImg)
   if (candidates.length && stage < candidates.length) {
     return (

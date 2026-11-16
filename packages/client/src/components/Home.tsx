@@ -78,6 +78,7 @@ export default function Home({
   onWatchReplay,
   isAdmin,
   onOpenBugs,
+  onOpenTokenArt,
   initialRoomCode,
 }: {
   username: string | null
@@ -92,6 +93,7 @@ export default function Home({
   onWatchReplay: () => void
   isAdmin?: boolean
   onOpenBugs?: () => void
+  onOpenTokenArt?: () => void
   initialRoomCode?: string | null
 }) {
   const decks = loadDecks()
@@ -291,7 +293,7 @@ export default function Home({
                 <input type="checkbox" checked={makePublic} onChange={(e) => setMakePublic(e.target.checked)} /> <span className="opt-name">public</span>
                 <span className="opt-desc">listed in the lobby for anyone to join or spectate</span>
               </label>
-              <label title="Precon: both players pick one of the official preconstructed decks (Alpha, Beta, Gothic, and Frost Mage vs Lavamancer as work in progress), unedited.">
+              <label title="Precon: both players pick one of the official preconstructed decks (Alpha, Beta, Gothic, and Frost Mage vs Lavamancer), unedited.">
                 <input type="checkbox" data-precon-room checked={preconMode} onChange={(e) => { setPreconMode(e.target.checked); if (e.target.checked) setSealedMode(false) }} /> <span className="opt-name">🃏 precon</span>
                 <span className="opt-desc">precon vs precon — each player picks an official precon</span>
               </label>
@@ -475,6 +477,9 @@ export default function Home({
         {isAdmin && onOpenBugs && (
           <button onClick={onOpenBugs} title="Admin: review reported bugs">🐛 Bug reports</button>
         )}
+        {isAdmin && onOpenTokenArt && (
+          <button onClick={onOpenTokenArt} title="Admin: custom token art for chosen players">🎨 Token art</button>
+        )}
         <div className="clockcfg">
           <label>
             <input type="checkbox" checked={clockOn} onChange={(e) => setClockOn(e.target.checked)} /> ⏱ Clock
@@ -624,7 +629,7 @@ export default function Home({
           data-precon-mode
           className={preconMode ? 'selected' : ''}
           aria-pressed={preconMode}
-          title="Precon mode: play only the official preconstructed decks (Alpha, Beta, Gothic, and Frost Mage vs Lavamancer as work in progress) — vs the Computer, hotseat, and in precon rooms online."
+          title="Precon mode: play only the official preconstructed decks (Alpha, Beta, Gothic, and Frost Mage vs Lavamancer) — vs the Computer, hotseat, and in precon rooms online."
           onClick={() => { setPreconMode(!preconMode); if (!preconMode) setSealedMode(false) }}
         >
           🃏 Precon mode: {preconMode ? 'on' : 'off'}

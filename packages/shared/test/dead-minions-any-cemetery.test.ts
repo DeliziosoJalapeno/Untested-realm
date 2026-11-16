@@ -118,4 +118,29 @@ describe('"a dead minion" reaches into either cemetery', () => {
     expect(g.players[0].banished).not.toContain(knight)
     expect(g.units[heir.id].name).toBe('Blue Knight')
   })
+
+  it('the Heir ENTERS as the copy: the copied Lance, Stealth and Genesis come with it', () => {
+    const g = newGame(); keepBoth(g)
+    placeSite(g, 0, 'Rustic Village', 2, 2)
+    // Blue Knight: Lance → it arrives carrying a Lance
+    const heir = summonCard(g, 0, 'Vengeful Heir', 2, 2)
+    dead(g, 1, 'Blue Knight')
+    getScript('Vengeful Heir')!.genesis!(makeCtx(g, heir.id, 0, []))
+    answer(g, [0])
+    expect(g.units[heir.id].carrying.map((id) => g.artifacts[id]?.name)).toContain('Lance')
+    // Sir Agravaine: Stealth → it arrives Stealthed
+    const heir2 = summonCard(g, 0, 'Vengeful Heir', 2, 2)
+    dead(g, 1, 'Sir Agravaine')
+    getScript('Vengeful Heir')!.genesis!(makeCtx(g, heir2.id, 0, []))
+    answer(g, [0])
+    expect(g.units[heir2.id].stealth).toBe(true)
+    // Sir Perceval: his Genesis fires — the opponent chooses his quest
+    const heir3 = summonCard(g, 0, 'Vengeful Heir', 2, 2)
+    dead(g, 1, 'Sir Perceval')
+    getScript('Vengeful Heir')!.genesis!(makeCtx(g, heir3.id, 0, []))
+    answer(g, [0])
+    expect(g.units[heir3.id].name).toBe('Sir Perceval')
+    expect(g.prompts[0]?.title).toMatch(/Perceval's quest/)
+    expect(g.prompts[0]?.player).toBe(1)
+  })
 })
