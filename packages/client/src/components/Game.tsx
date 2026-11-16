@@ -2572,6 +2572,14 @@ function GameInner({
       if (mode.casters.includes(u.id)) beginCast(mode.cardId, u.id)
       return
     }
+    // a "target location" prompt (Lightning Bolt cast from a Toolbox, Locusts, a summon nearby…): the unit's
+    // chip covers its square, so a click on it must answer with that square — otherwise an enemy minion
+    // standing on the square made the location impossible to pick. Mirrors clickSquare / clickSite.
+    if (prompt && promptIsMine && prompt.kind === 'chooseSquare' && !prompt.data?.area2x2 && !prompt.data?.edgeSelect) {
+      const only = prompt.data?.squares as { x: number; y: number }[] | undefined
+      if (!only || only.some((s) => s.x === u.x && s.y === u.y)) send({ t: 'prompt', promptId: prompt.id, choice: { x: u.x, y: u.y } })
+      return
+    }
     // prompt target picking (damage allocation uses its own modal)
     if (prompt && promptIsMine && prompt.kind === 'chooseTargets') {
       // a unit sitting on a site would otherwise swallow the click — for a SITE prompt,
