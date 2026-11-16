@@ -67,7 +67,7 @@ describe('hosted archive on GitHub', () => {
     expect(file).toMatch(/^games\/2026-11-16_192805_bot_/)
     const put = gh.calls.find((c) => c.method === 'PUT')!
     expect(put.url).toContain('/contents/match-replays/games/')
-    expect(put.body.branch).toBe('match-replays')
+    expect(put.body.branch).toBe('game-archive')
     expect(put.body.sha).toBeUndefined()
     expect(JSON.parse(Buffer.from(put.body.content, 'base64').toString('utf8')).replay.seed).toBe(1)
     expect(gh.calls.every((c) => !JSON.stringify(c.body ?? {}).includes('"main"'))).toBe(true)
@@ -77,7 +77,7 @@ describe('hosted archive on GitHub', () => {
     await saveHostedReplay(built(), gh.f)
     const commit = gh.calls.find((c) => c.url.endsWith('/git/commits'))!
     expect(commit.body.parents).toEqual([])
-    expect(gh.calls.find((c) => c.url.endsWith('/git/refs'))!.body.ref).toBe('refs/heads/match-replays')
+    expect(gh.calls.find((c) => c.url.endsWith('/git/refs'))!.body.ref).toBe('refs/heads/game-archive')
   })
   it('replaces the first save when the report arrives, and moves a game that gets flagged', async () => {
     const gh = fakeGitHub()

@@ -36,7 +36,7 @@ services:
       - key: ANTHROPIC_API_KEY
         sync: false
       # Optional: the game archive. With a GitHub token that may write this repository's contents, every
-      # finished game against the computer is committed to the `match-replays` branch (not main, so it
+      # finished game against the computer is committed to the `game-archive` branch (not main, so it
       # does not redeploy the site). Without it, games are not kept. See packages/server/src/gameArchive.ts.
       - key: GAME_ARCHIVE_TOKEN
         sync: false

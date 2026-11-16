@@ -10,13 +10,13 @@
 //
 //   GAME_ARCHIVE_TOKEN    a GitHub token that may write the repository's contents (required; off without it)
 //   GAME_ARCHIVE_REPO     owner/name (default: BarelyCoded/Untested-realm)
-//   GAME_ARCHIVE_BRANCH   default: match-replays
+//   GAME_ARCHIVE_BRANCH   default: game-archive
 import type { BuiltRecord } from './localReplays'
 
 type Fetch = (url: string, init?: Record<string, unknown>) => Promise<{ ok: boolean; status: number; json(): Promise<any>; text(): Promise<string> }>
 
 const repo = (): string => process.env.GAME_ARCHIVE_REPO || 'BarelyCoded/Untested-realm'
-const branch = (): string => process.env.GAME_ARCHIVE_BRANCH || 'match-replays'
+const branch = (): string => process.env.GAME_ARCHIVE_BRANCH || 'game-archive'
 export const hostedArchiveOn = (): boolean => !!process.env.GAME_ARCHIVE_TOKEN && /^[\w.-]+\/[\w.-]+$/.test(repo())
 
 async function gh(fetchImpl: Fetch, method: string, path: string, body?: unknown): Promise<{ status: number; data: any }> {
