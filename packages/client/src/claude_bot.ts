@@ -12,7 +12,7 @@
 //      still legal and nothing unexpected happened — otherwise Claude is asked again.
 // If Claude can't be reached, answers nonsense, or takes too long, the search bot's move is played.
 import {
-  expandActions, evaluate, DEFAULT_WEIGHTS, getCard, affinity, effAttack, effKeywords, isDisabled, opponent,
+  expandActions, evaluate, DEFAULT_WEIGHTS, getCard, psoCard, affinity, effAttack, effKeywords, isDisabled, opponent,
   GRID_W, GRID_H, type Action, type GameState, type PlayerId, type UnitState,
 } from '@sorcery/shared'
 import { fairView, replyOutcome, type ReplyOutcome } from './bot_search'
@@ -39,7 +39,10 @@ const cardLine = (name: string): string => {
   const c = getCard(name)
   const th = Object.entries(c.thresholds ?? {}).filter(([, n]) => (n as number) > 0).map(([e, n]) => `${n} ${e}`).join(', ')
   const stats = c.type === 'Minion' ? ` ${c.attack ?? 0} power.` : ''
-  return `${name} — ${c.type}${c.subtypes?.length ? ` (${c.subtypes.join(' ')})` : ''}, cost ${c.cost ?? 0}${th ? `, needs ${th}` : ''}.${stats} ${String(c.text ?? '').replace(/\s*\n\s*/g, ' / ') || '(no text)'}`
+  // measured on real games (Play Sorcery Online): only shown when it says something
+  const pso = psoCard(name)
+  const impact = pso && Math.abs(pso.impact) >= 1.5 ? ` [impact ${pso.impact > 0 ? '+' : ''}${pso.impact}]` : ''
+  return `${name} — ${c.type}${c.subtypes?.length ? ` (${c.subtypes.join(' ')})` : ''}, cost ${c.cost ?? 0}${th ? `, needs ${th}` : ''}.${stats} ${String(c.text ?? '').replace(/\s*\n\s*/g, ' / ') || '(no text)'}${impact}`
 }
 
 function unitLine(s: GameState, me: PlayerId, u: UnitState): string {

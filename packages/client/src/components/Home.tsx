@@ -375,6 +375,10 @@ export default function Home({
           All card names, artwork, game rules, and related marks are the property of Erik's
           Curiosa Ltd and used under nominative fair use to enable community play.
         </p>
+        <p>
+          Card statistics used by the computer opponents: data from{' '}
+          <a href="https://playsorceryonline.com/" target="_blank" rel="noreferrer noopener">Play Sorcery Online</a>.
+        </p>
       </div>
 
       <div className="panel account">

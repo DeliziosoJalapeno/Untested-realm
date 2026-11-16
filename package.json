@@ -19,6 +19,7 @@
     "fetch:images": "python scripts/fetch_images.py",
     "botmatch": "tsx scripts/botmatch.ts",
     "arena": "tsx scripts/bot_arena.ts",
+    "pso:sync": "tsx scripts/pso_sync.ts",
     "replay:review": "tsx scripts/replay_review.ts",
     "replays:push": "node scripts/replays_push.mjs",
     "census": "tsx scripts/census.ts",

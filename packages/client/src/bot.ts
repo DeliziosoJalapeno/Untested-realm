@@ -22,6 +22,7 @@
 
 import {
   affinity,
+  openingLift,
   applyAction,
   avatarOf,
   canCast,
@@ -310,6 +311,27 @@ function actionMakesProgress(state: GameState, me: PlayerId, action: Action): bo
     return false
   }
   return progressSig(clone) !== progressSig(state)
+}
+
+/** Would this ability only hurt its own side? Played out on a copy: it costs me sites or minions and
+ *  takes nothing from the opponent (no site, no minion, no life). Catches a "destroy a nearby site"
+ *  aimed at my own ground because no enemy site was in reach (Sinkhole on turn 2). */
+function abilityOnlyHurtsMe(state: GameState, me: PlayerId, action: Action): boolean {
+  let clone: GameState
+  try { clone = cloneState(state) } catch { return false }
+  try { if (!applyAction(clone, me, action).ok) return false } catch { return false }
+  const foe = enemyOf(me)
+  const tally = (s: GameState, p: PlayerId) => ({
+    sites: Object.values(s.sites).filter((x) => x.controller === p && !x.isRubble).length,
+    units: Object.values(s.units).filter((u) => u.controller === p && !u.isAvatar).length,
+    life: avatarOf(s, p)?.life ?? 0,
+  })
+  const m0 = tally(state, me), m1 = tally(clone, me), f0 = tally(state, foe), f1 = tally(clone, foe)
+  const iLose = m1.sites < m0.sites || m1.units < m0.units
+  const theyLose = f1.sites < f0.sites || f1.units < f0.units || f1.life < f0.life
+  // a sacrifice that buys nothing on the board is only acceptable when it is the cost of a card or mana
+  const iGain = clone.players[me].hand.length > state.players[me].hand.length || clone.players[me].mana > state.players[me].mana || m1.life > m0.life || m1.units > m0.units
+  return iLose && !theyLose && !iGain
 }
 
 /** The bot must develop mana: draw a SITE at least once in its first 3 turns (≤ turn 6). If it reaches
@@ -640,11 +662,20 @@ function mulliganChoice(state: GameState, me: PlayerId): Action {
     return { t: 'mulligan', back: spells.slice(0, 3) }
   }
   const expensive = spells.filter((id) => (getCard(state.cards[id].name).cost ?? 0) >= 6)
-  if (sites.length >= 2 && expensive.length >= 2) {
-    return { t: 'mulligan', back: expensive.slice(0, 2) }
-  }
-  return { t: 'keepHand' }
+  const back = new Set<string>(sites.length >= 2 && expensive.length >= 2 ? expensive.slice(0, 2) : [])
+  // measured opening hands (Play Sorcery Online): a card whose presence in the opening hand costs win
+  // rate — a reactive spell with nothing to answer yet, a site that slows the start — goes back, worst
+  // first. A returned site is replaced from the atlas and a spell from the spellbook, so the hand keeps
+  // its shape.
+  const weak = p.hand
+    .map((id) => ({ id, lift: openingLift(state.cards[id].name) }))
+    .filter((c) => c.lift <= MULLIGAN_LIFT && !back.has(c.id))
+    .sort((a, b) => a.lift - b.lift)
+  for (const c of weak) { if (back.size >= 3) break; back.add(c.id) }
+  return back.size ? { t: 'mulligan', back: [...back] } : { t: 'keepHand' }
 }
+/** opening-hand win-rate difference (percentage points, shrunk) at or below which a card is sent back */
+const MULLIGAN_LIFT = -1.4
 
 // ---------- main phase ----------
 
@@ -1507,7 +1538,7 @@ function tryActivateAbilities(state: GameState, me: PlayerId): Action | null {
       // ability (e.g. Corpse Catapult's fling with no second untapped ally here to
       // tap) is legal yet does nothing, so the ~550ms driver would re-pick it
       // forever. Skip it and try the next source/ability instead.
-      if (action && actionMakesProgress(state, me, action)) return action
+      if (action && actionMakesProgress(state, me, action) && !abilityOnlyHurtsMe(state, me, action)) return action
     }
   }
   return null

@@ -18,6 +18,7 @@ import { effAttack, effDefence, effKeywords, siteSilenced, siteDisabledByArtifac
 import { affinity, baseSiteSquares } from '../engine/casting'
 import { stepDistance } from '../engine/movement'
 import { getCard } from '../cards/db'
+import { cardImpact } from '../cards/pso'
 import { getScript } from '../cards/scripts/registry'
 import { DEFAULT_WEIGHTS, type EvalWeights } from './eval.weights'
 
@@ -215,6 +216,9 @@ export function unitValue(state: GameState, u: UnitState, w: EvalWeights): numbe
   if (u.silenced || isDisabled(state, u)) v -= w.disabledPenalty
   // summoning-sick: entered this turn and can't attack yet
   if (u.enteredTurn === state.turn) v -= w.summonSickPenalty
+  // measured card quality (Play Sorcery Online: win rate when drawn minus when not, in points): a
+  // minion that wins more games than its stats suggest is worth more to keep — and to kill
+  if (w.cardImpact) v *= 1 + Math.max(-0.3, Math.min(0.3, w.cardImpact * cardImpact(u.name)))
   return v
 }
 

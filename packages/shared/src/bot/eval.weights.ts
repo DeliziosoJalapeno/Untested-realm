@@ -98,6 +98,10 @@ export interface EvalWeights {
   tappedPenalty: number
   /** small penalty for a summoning-sick unit (can't attack yet). */
   summonSickPenalty: number
+  /** how much measured card quality scales a minion's worth: value × (1 + cardImpact × PSO impact in
+   *  points), clamped to ±30%. Off (0) by default: at 0.04 it lost 14–22 to the
+   *  unscaled bot in a 40-game head-to-head, so it stays an experiment. */
+  cardImpact: number
   /** penalty for a disabled or silenced unit (abilities off). */
   disabledPenalty: number
   /** multiplier on the value of an ENEMY minion (mine × 1, foe × this). >1 makes killing enemy minions
@@ -197,6 +201,7 @@ export const DEFAULT_WEIGHTS: EvalWeights = {
   supportAbility: 8,
   tappedPenalty: 4,
   summonSickPenalty: 2,
+  cardImpact: 0,
   disabledPenalty: 12,
 
   kwAirborne: 4,
