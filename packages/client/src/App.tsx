@@ -95,6 +95,8 @@ export interface Session {
   /** bot only: 'fast' = the instant procedural opponent; 'thinking' = the strong search bot, which
    *  plans in a Web Worker (see bot.worker.ts) while a "computer is thinking" indicator shows. */
   botDifficulty?: 'fast' | 'thinking' | 'claude'
+  /** what the button on the game-over panel says (default: Back to menu) */
+  leaveLabel?: string
   // ---- rematch (online): the post-game "play again?" offer + the deck-selection lobby ----
   /** answer the offer (both seats yes → rematch starts from deck selection) */
   rematchVote?: (yes: boolean) => void
@@ -380,7 +382,7 @@ export default function App() {
   const [gameReview, setGameReview] = useState<{ text: string; pending: boolean } | null>(null)
   const postGameRef = useRef<{ report?: GameReport; review?: string }>({})
   // sealed practice against the computer: the deck-building screen (see startSealedSolo)
-  const [soloSealed, setSoloSealed] = useState<{ cfg: SoloSealedCfg; seed: number; packs: string[][]; pool: Record<string, number>; botDeck: DeckList } | null>(null)
+  const [soloSealed, setSoloSealed] = useState<{ cfg: SoloSealedCfg; seed: number; botSeed: number; packs: string[][]; pool: Record<string, number>; botDeck: DeckList; deck: DeckList | null } | null>(null)
   /** the worker request whose answer is the search bot's SUGGESTION for Claude (not a move to play) */
   const claudeWaitRef = useRef<number | null>(null)
 
@@ -877,15 +879,30 @@ export default function App() {
   // You open boosters and build; the computer opens its own boosters and builds with
   // buildSealedDeck (shared/cards/sealedBuilder.ts). Everything comes from two seeds, kept in
   // localStorage so the same pool can be built again.
-  function startSealedSolo(cfg: SoloSealedCfg, again?: { seed: number; botSeed: number }) {
+  // The deck you are building is saved with them on every change, so it survives a reload, and after a
+  // match you come back to the same deck to edit it and play again (sealedReturnRef).
+  const sealedReturnRef = useRef(false)
+  const saveSoloSealed = (rec: { cfg: SoloSealedCfg; seed: number; botSeed: number; deck?: DeckList | null }) => {
+    try { localStorage.setItem(SOLO_SEALED_KEY, JSON.stringify(rec)) } catch { /* private mode */ }
+  }
+  function startSealedSolo(cfg: SoloSealedCfg, again?: { seed: number; botSeed: number; deck?: DeckList | null }) {
     const seed = again?.seed ?? Math.floor(Math.random() * 0xffffffff)
     const botSeed = again?.botSeed ?? Math.floor(Math.random() * 0xffffffff)
     const edition = cfg.edition as PackEditionChoice
     const packs = generateSealedPacks(edition, cfg.numPacks, seed)
     const bot = buildSealedDeck(aggregatePool(generateSealedPacks(edition, cfg.numPacks, botSeed)), "Computer's sealed deck")
-    try { localStorage.setItem(SOLO_SEALED_KEY, JSON.stringify({ cfg, seed, botSeed })) } catch { /* private mode */ }
-    setSoloSealed({ cfg, seed, packs, pool: aggregatePool(packs), botDeck: bot.deck })
+    const deck = again?.deck ?? null
+    saveSoloSealed({ cfg, seed, botSeed, deck })
+    setSoloSealed({ cfg, seed, botSeed, packs, pool: aggregatePool(packs), botDeck: bot.deck, deck })
     setPage('sealed-solo')
+  }
+  /** every change to the deck on the sealed build screen: keep it */
+  function keepSealedDeck(deck: DeckList) {
+    setSoloSealed((s) => {
+      if (!s) return s
+      saveSoloSealed({ cfg: s.cfg, seed: s.seed, botSeed: s.botSeed, deck })
+      return { ...s, deck }
+    })
   }
   function playSealedSolo(deck: DeckList) {
     const s = soloSealed
@@ -893,12 +910,15 @@ export default function App() {
     if (validateSealedDeck(deck, s.pool).some((p) => p.level === 'error')) return
     // the cards left in the pool are the deck's collection (Toolbox and the like fetch from it)
     const mine = autofillSealedDeck({ ...deck, name: 'Your sealed deck' }, s.pool)
-    setSoloSealed(null)
+    keepSealedDeck(deck)
     startVsBot(mine, s.botDeck, s.cfg.clock, s.cfg.stepBot, s.cfg.difficulty, s.cfg.secondSeer)
+    sealedReturnRef.current = true // leaving this game goes back to the deck, not the home page
+    setSession((cur) => (cur ? { ...cur, leaveLabel: '✎ Edit deck and play again' } : cur))
   }
 
   function startVsBot(myDeck: DeckList, botDeck: DeckList, clock: ClockConfig | null = null, stepBot = false, difficulty: 'fast' | 'thinking' | 'claude' = 'fast', secondSeer = false) {
     myDeckFromCollection.current = !!myDeck.fromCollection
+    sealedReturnRef.current = false
     localHistory.current = []
     savedReplayIdRef.current = null
     disposeBotWorker() // fresh worker (and plan cache) for the new game
@@ -1495,10 +1515,10 @@ export default function App() {
           oppReady
           oppPresent
           youReady={false}
-          initialDeck={null}
+          initialDeck={soloSealed.deck}
           spectator={false}
           roomKey={`solo-${soloSealed.seed}`}
-          onSubmit={(deck, ready) => { if (ready) playSealedSolo(deck) }}
+          onSubmit={(deck, ready) => { if (ready) playSealedSolo(deck); else keepSealedDeck(deck) }}
           onLeave={() => { setSoloSealed(null); setPage('home') }}
         />
       )}
@@ -1568,7 +1588,10 @@ export default function App() {
               const wasPuzzle = !!coachRef.current?.lesson.puzzle
               coachRef.current = null
               setSession(null)
-              setPage(!wasLesson ? 'home' : wasPuzzle ? 'puzzles' : 'tutorial')
+              // a sealed practice game: back to your deck, to edit it and play again
+              const toSealed = sealedReturnRef.current && !!soloSealed
+              sealedReturnRef.current = false
+              setPage(toSealed ? 'sealed-solo' : !wasLesson ? 'home' : wasPuzzle ? 'puzzles' : 'tutorial')
             }}
             // keep the online session alive and just switch pages, so a player waiting for an
             // opponent (created room / matchmaking) can browse the rest of the site meanwhile.

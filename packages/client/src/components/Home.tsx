@@ -91,7 +91,7 @@ export default function Home({
   onSealed: (mode: 'create' | 'join', name: string, opts: { cfg?: SealedConfig; code?: string; clock?: ClockConfig | null; isPublic?: boolean; secondSeer?: boolean }) => void
   onVsBot: (mine: DeckList, bot: DeckList, clock: ClockConfig | null, stepBot: boolean, difficulty: 'fast' | 'thinking' | 'claude', secondSeer?: boolean) => void
   /** sealed practice: open boosters, build, and play the computer, which builds from its own boosters */
-  onSealedSolo: (cfg: SoloSealedCfg, again?: { seed: number; botSeed: number }) => void
+  onSealedSolo: (cfg: SoloSealedCfg, again?: { seed: number; botSeed: number; deck?: DeckList | null }) => void
   onDecks: () => void
   onCollection: () => void
   onScenarios: () => void
@@ -188,7 +188,7 @@ export default function Home({
   const lastSoloSealed = useMemo(() => {
     try {
       const v = JSON.parse(localStorage.getItem(SOLO_SEALED_KEY) ?? 'null')
-      return v && typeof v.seed === 'number' && typeof v.botSeed === 'number' && v.cfg?.edition ? (v as { cfg: SoloSealedCfg; seed: number; botSeed: number }) : null
+      return v && typeof v.seed === 'number' && typeof v.botSeed === 'number' && v.cfg?.edition ? (v as { cfg: SoloSealedCfg; seed: number; botSeed: number; deck?: DeckList | null }) : null
     } catch { return null }
   }, [])
   const sealedCfg = (): SealedConfig => ({ edition: sealEdition, numPacks: sealPacks, deckbuildMin: sealBuildMin })
@@ -689,8 +689,8 @@ export default function Home({
           <label>×<input type="number" min={1} max={12} value={sealPacks} onChange={(e) => setSealPacks(Math.min(12, Math.max(1, Number(e.target.value) || 6)))} style={{ width: '3.5em' }} /> boosters</label>
           <button data-solo-sealed onClick={() => onSealedSolo(soloSealedCfg())}>🎴 Open boosters and build</button>
           {lastSoloSealed && (
-            <button title="Build again from the boosters of your last sealed practice, against the same computer deck" onClick={() => onSealedSolo({ ...soloSealedCfg(), edition: lastSoloSealed.cfg.edition, numPacks: lastSoloSealed.cfg.numPacks }, lastSoloSealed)}>
-              ↺ Same boosters again ({lastSoloSealed.cfg.edition} ×{lastSoloSealed.cfg.numPacks})
+            <button data-solo-sealed-continue title="Back to your last sealed pool and the deck you built from it, against the same computer deck. Uses the difficulty and options above." onClick={() => onSealedSolo({ ...soloSealedCfg(), edition: lastSoloSealed.cfg.edition, numPacks: lastSoloSealed.cfg.numPacks }, lastSoloSealed)}>
+              ↺ Continue my sealed deck ({lastSoloSealed.cfg.edition} ×{lastSoloSealed.cfg.numPacks})
             </button>
           )}
         </div>

@@ -3523,7 +3523,7 @@ function GameInner({
             )
           )}
           {replayMsg && <p className="replay-savemsg">{replayMsg}</p>}
-          <button onClick={onLeave}>Back to menu</button>
+          <button onClick={onLeave}>{session.leaveLabel ?? 'Back to menu'}</button>
         </div>
       )}
 
