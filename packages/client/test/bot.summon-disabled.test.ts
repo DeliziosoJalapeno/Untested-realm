@@ -26,10 +26,33 @@ function boundSpiritBoard(): GameState {
   return g
 }
 
-/** would a Bound Spirit summoned at the action's square start out disabled? */
-function arrivesDisabled(g: GameState, at: { x: number; y: number }): boolean {
-  const probe = { ...avatarOf(g, 1 as PlayerId), id: 'probe', name: 'Bound Spirit', isAvatar: false, x: at.x, y: at.y } as UnitState
-  return isDisabled(g, probe)
+/** would `name` summoned at the action's square start out disabled? The probe has to be IN the realm
+ *  for the question to mean anything: isDisabled judges only units in state.units (disabledByEffect),
+ *  so an off-board probe always read "not disabled" — and this test passed whatever the bot did. */
+function arrivesDisabled(g: GameState, at: { x: number; y: number }, name = 'Bound Spirit'): boolean {
+  const probe = { ...avatarOf(g, 1 as PlayerId), id: 'probe', name, isAvatar: false, x: at.x, y: at.y } as UnitState
+  return isDisabled({ ...g, units: { ...g.units, [probe.id]: probe } }, probe)
+}
+
+/** Outerbound: "disabled while not occupying at least one location on the outside of the realm".
+ *  Bob's sites: his home square (an edge) and a block of interior squares nearer Alice. */
+function yetiBoard(): GameState {
+  const g = createGame([starterDecks[0], starterDecks[1]], ['Alice', 'Bob'], 7, 1)
+  g.prompts = []
+  g.phase = 'main'
+  g.activePlayer = 1
+  const me = avatarOf(g, 1 as PlayerId)
+  const squares: [number, number][] = [[me.x, me.y], [1, 1], [2, 1], [3, 1], [1, 2], [2, 2], [3, 2]]
+  for (const [i, [x, y]] of squares.entries()) {
+    const id = `s${i}`
+    g.cards[`c${id}`] = { id: `c${id}`, name: 'Spire', owner: 1 }
+    g.sites[id] = { id, cardId: `c${id}`, name: 'Spire', owner: 1, controller: 1, x, y, tapped: false, isRubble: false }
+  }
+  me.tapped = true // nothing to do but cast
+  g.cards['yeti'] = { id: 'yeti', name: 'A Yeti So Shy', owner: 1 }
+  g.players[1].hand = ['yeti']
+  g.players[1].mana = 9
+  return g
 }
 
 describe('bot summons a minion where it is not disabled on arrival', () => {
@@ -42,6 +65,16 @@ describe('bot summons a minion where it is not disabled on arrival', () => {
       expect(action.cardId).toBe('bound')
       expect(action.at, 'a summon carries its square').toBeTruthy()
       expect(arrivesDisabled(g, action.at!), `summoned disabled at ${JSON.stringify(action.at)}`).toBe(false)
+    })
+
+    it(`${label}: an Outerbound minion goes to the outside of the realm, not an inner square`, () => {
+      const g = yetiBoard()
+      const action = choose(g, 1 as PlayerId)
+      expect(action.t).toBe('castSpell')
+      if (action.t !== 'castSpell') return
+      expect(action.cardId).toBe('yeti')
+      expect(arrivesDisabled(g, { x: 1, y: 1 }, 'A Yeti So Shy'), 'an inner square disables it').toBe(true)
+      expect(arrivesDisabled(g, action.at!, 'A Yeti So Shy'), `summoned disabled at ${JSON.stringify(action.at)}`).toBe(false)
     })
   }
 })
