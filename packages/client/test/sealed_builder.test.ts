@@ -1,10 +1,23 @@
 // The computer's Sealed deck builder (also behind "Suggest a build" in sealed practice).
 import { describe, it, expect } from 'vitest'
-import { generateSealedPool, buildSealedDeck, validateSealedDeck, findCard, cardSupport, sealedRating, createGame, applyAction, SEALED_BOT_SITES, SEALED_BOT_SPELLS, type PlayerId } from '@sorcery/shared'
+import { generateSealedPool, isPackCard, buildSealedDeck, validateSealedDeck, findCard, cardSupport, sealedRating, createGame, applyAction, SEALED_BOT_SITES, SEALED_BOT_SPELLS, type PlayerId } from '@sorcery/shared'
 import { botAction, botNeedsToAct } from '../src/bot'
 
 const EDITIONS = ['Alpha', 'Beta', 'Arthurian Legends', 'Gothic', 'Random'] as const
 const total = (m: Record<string, number>) => Object.values(m).reduce((a, b) => a + b, 0)
+
+describe('boosters', () => {
+  it('never contain tokens (Skeleton, Frog, Foot Soldier, Bruin, Tawny, Rubble), but do contain X-cost spells', () => {
+    const seen = new Set<string>()
+    for (const ed of EDITIONS) for (let seed = 0; seed < 150; seed++) for (const n of Object.keys(generateSealedPool(ed, 6, seed))) seen.add(n)
+    for (const n of seen) {
+      expect(isPackCard(findCard(n)!), n).toBe(true)
+      expect(/^(Skeleton|Frog( \(\w+\))?|Foot Soldiers?( \d| \(\w+\))?|Rubble|Bruin|Tawny|Lance)$/.test(n), n).toBe(false)
+    }
+    for (const x of ['Arcane Barrage', 'Assorted Animals', 'Twist of Fate']) expect(isPackCard(findCard(x)!), x).toBe(true)
+    expect(seen.has('Assorted Animals') || seen.has('Twist of Fate') || seen.has('Arcane Barrage')).toBe(true)
+  })
+})
 
 describe('sealed deck builder', () => {
   it('builds a legal 24-spell, 15-site deck from any pool, using only cards it opened', () => {

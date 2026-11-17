@@ -37,10 +37,22 @@ export function mulberry32(seed: number): () => number {
 
 // Avatars ARE in real boosters, at their edition, at their rarity — their rarities are
 // filled in at DB load (see UNIQUE_AVATARS in db.ts), so they flow through the rare slot
-// naturally. No card type is excluded from the pool.
+// naturally. No card type is excluded from the pool, but tokens are (see isPackCard).
+/** Does this card come in boosters? Tokens do not: they are printed (so the card list has them, with a
+ *  rarity), but they are only ever made by other cards. A printed token is a card with no mana cost and
+ *  no threshold that is not a site or an Avatar (Skeleton, Frog, Foot Soldier, Bruin, Tawny, Lance);
+ *  a spell that costs X has no fixed cost either, but it has a threshold. Rubble is the token site. */
+export function isPackCard(c: CardDef): boolean {
+  if (c.token || c.name === 'Rubble') return false
+  if (c.type === 'Site' || c.type === 'Avatar') return true
+  const th = c.thresholds as unknown as Record<string, number> | undefined
+  const anyThreshold = !!th && Object.values(th).some((v) => v > 0)
+  return c.cost != null || anyThreshold
+}
+
 function poolOf(edition: PackEdition, rarity: CardDef['rarity']): string[] {
   return allCards
-    .filter((c) => c.sets.includes(edition) && c.rarity === rarity)
+    .filter((c) => c.sets.includes(edition) && c.rarity === rarity && isPackCard(c))
     .map((c) => c.name)
 }
 
