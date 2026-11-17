@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { ClockConfig, DeckList } from '@sorcery/shared'
 import type { SealedConfig } from '../net'
-import { loadDecks } from '../App'
+import { loadDecks, SOLO_SEALED_KEY, type SoloSealedCfg } from '../App'
 import * as auth from '../auth'
 import { claudeStatus, type ClaudeStatus } from '../claude_bot'
 import type { RoomInfo } from '../auth'
@@ -73,6 +73,7 @@ export default function Home({
   onOnline,
   onSealed,
   onVsBot,
+  onSealedSolo,
   onDecks,
   onCollection,
   onScenarios,
@@ -89,6 +90,8 @@ export default function Home({
   onOnline: (mode: 'create' | 'join' | 'spectate' | 'matchmake' | 'rejoin', name: string, deck: DeckList | null, code?: string, clock?: ClockConfig | null, isPublic?: boolean, secondSeer?: boolean, precon?: boolean) => void
   onSealed: (mode: 'create' | 'join', name: string, opts: { cfg?: SealedConfig; code?: string; clock?: ClockConfig | null; isPublic?: boolean; secondSeer?: boolean }) => void
   onVsBot: (mine: DeckList, bot: DeckList, clock: ClockConfig | null, stepBot: boolean, difficulty: 'fast' | 'thinking' | 'claude', secondSeer?: boolean) => void
+  /** sealed practice: open boosters, build, and play the computer, which builds from its own boosters */
+  onSealedSolo: (cfg: SoloSealedCfg, again?: { seed: number; botSeed: number }) => void
   onDecks: () => void
   onCollection: () => void
   onScenarios: () => void
@@ -180,6 +183,14 @@ export default function Home({
   const [sealEdition, setSealEdition] = useState('Random')
   const [sealPacks, setSealPacks] = useState(6)
   const [sealBuildMin, setSealBuildMin] = useState(20)
+  const soloSealedCfg = (): SoloSealedCfg => ({ edition: sealEdition, numPacks: sealPacks, difficulty: botDifficulty, clock: clockConfig(), stepBot, secondSeer })
+  // the boosters of the last sealed practice, to build from them again
+  const lastSoloSealed = useMemo(() => {
+    try {
+      const v = JSON.parse(localStorage.getItem(SOLO_SEALED_KEY) ?? 'null')
+      return v && typeof v.seed === 'number' && typeof v.botSeed === 'number' && v.cfg?.edition ? (v as { cfg: SoloSealedCfg; seed: number; botSeed: number }) : null
+    } catch { return null }
+  }, [])
   const sealedCfg = (): SealedConfig => ({ edition: sealEdition, numPacks: sealPacks, deckbuildMin: sealBuildMin })
 
   // 🃏 Precon mode: every deck picker (yours, the computer's, Player 2's) offers only the 12 official
@@ -666,6 +677,23 @@ export default function Home({
         <button disabled={!deck || !deck2} onClick={() => confirmStart(deck, (d) => onVsBot(d, deck2!, clockConfig(), stepBot, botDifficulty, secondSeer))}>
           Start game vs Computer
         </button>
+        <div className="solo-sealed">
+          <h3>Sealed practice</h3>
+          <p className="claude-hint">Open boosters and build a 24-spell, 12-site deck. The computer opens its own boosters and builds a deck too. Uses the difficulty and options above.</p>
+          <label>
+            Set{' '}
+            <select value={sealEdition} onChange={(e) => setSealEdition(e.target.value)}>
+              {['Random', 'Alpha', 'Beta', 'Arthurian Legends', 'Gothic'].map((s) => <option key={s}>{s}</option>)}
+            </select>
+          </label>
+          <label>×<input type="number" min={1} max={12} value={sealPacks} onChange={(e) => setSealPacks(Math.min(12, Math.max(1, Number(e.target.value) || 6)))} style={{ width: '3.5em' }} /> boosters</label>
+          <button data-solo-sealed onClick={() => onSealedSolo(soloSealedCfg())}>🎴 Open boosters and build</button>
+          {lastSoloSealed && (
+            <button title="Build again from the boosters of your last sealed practice, against the same computer deck" onClick={() => onSealedSolo({ ...soloSealedCfg(), edition: lastSoloSealed.cfg.edition, numPacks: lastSoloSealed.cfg.numPacks }, lastSoloSealed)}>
+              ↺ Same boosters again ({lastSoloSealed.cfg.edition} ×{lastSoloSealed.cfg.numPacks})
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="panel">

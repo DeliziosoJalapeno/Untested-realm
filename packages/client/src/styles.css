@@ -2741,3 +2741,9 @@ button.autobattle:hover:not(:disabled) { background: #4a5cc0; }
 .game-review-text { white-space: pre-wrap; margin-top: 4px; }
 .game-review-wait { opacity: 0.8; }
 .game-review-close { position: absolute; top: 4px; right: 6px; background: none; border: 0; color: inherit; font-size: 18px; line-height: 1; cursor: pointer; padding: 2px 6px; }
+
+/* ---- sealed practice against the computer ---- */
+.solo-sealed { margin-top: 12px; padding-top: 10px; border-top: 1px solid #ffffff22; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.solo-sealed h3 { margin: 0; flex-basis: 100%; }
+.solo-sealed p { margin: 0; flex-basis: 100%; }
+.sealed-suggestion { margin: 8px 0; padding: 6px 8px; border-left: 3px solid #c98a5a; background: #ffffff10; font-size: 12.5px; line-height: 1.4; }

@@ -18,6 +18,12 @@ import {
   type PlayerId,
   type PlayerView,
   migrateLegacyKeywords,
+  generateSealedPacks,
+  aggregatePool,
+  buildSealedDeck,
+  validateSealedDeck,
+  autofillSealedDeck,
+  type PackEditionChoice,
 } from '@sorcery/shared'
 import { Net, type ServerMsg, type SealedStateMsg, type SealedConfig } from './net'
 import { botAction, botNeedsToAct, botActionKey } from './bot'
@@ -235,8 +241,12 @@ function fmtRestart(ms: number): string {
   return m > 0 ? `${m}m ${String(s % 60).padStart(2, '0')}s` : `${s}s`
 }
 
+/** sealed practice against the computer: what was asked for on the home page */
+export interface SoloSealedCfg { edition: string; numPacks: number; difficulty: 'fast' | 'thinking' | 'claude'; clock: ClockConfig | null; stepBot: boolean; secondSeer: boolean }
+export const SOLO_SEALED_KEY = 'sealed-solo:last'
+
 export default function App() {
-  const [page, setPage] = useState<'home' | 'decks' | 'game' | 'collection' | 'scenarios' | 'replays' | 'replay' | 'bugs' | 'tutorial' | 'puzzles'>('home')
+  const [page, setPage] = useState<'home' | 'decks' | 'game' | 'collection' | 'scenarios' | 'replays' | 'replay' | 'bugs' | 'tutorial' | 'puzzles' | 'sealed-solo'>('home')
   const [replayData, setReplayData] = useState<ReplayRecord | null>(null)
   // where the full-screen replay viewer returns on leave — the replay list, or the admin bugs panel
   const [replayReturn, setReplayReturn] = useState<'replays' | 'bugs'>('replays')
@@ -369,6 +379,8 @@ export default function App() {
   // after a game against the computer: the engine report and Claude's written review (see afterGame)
   const [gameReview, setGameReview] = useState<{ text: string; pending: boolean } | null>(null)
   const postGameRef = useRef<{ report?: GameReport; review?: string }>({})
+  // sealed practice against the computer: the deck-building screen (see startSealedSolo)
+  const [soloSealed, setSoloSealed] = useState<{ cfg: SoloSealedCfg; seed: number; packs: string[][]; pool: Record<string, number>; botDeck: DeckList } | null>(null)
   /** the worker request whose answer is the search bot's SUGGESTION for Claude (not a move to play) */
   const claudeWaitRef = useRef<number | null>(null)
 
@@ -859,6 +871,30 @@ export default function App() {
     c.nope = null
     coachSettle()
     bumpSession()
+  }
+
+  // ── Sealed practice against the computer ─────────────────────────────────────
+  // You open boosters and build; the computer opens its own boosters and builds with
+  // buildSealedDeck (shared/cards/sealedBuilder.ts). Everything comes from two seeds, kept in
+  // localStorage so the same pool can be built again.
+  function startSealedSolo(cfg: SoloSealedCfg, again?: { seed: number; botSeed: number }) {
+    const seed = again?.seed ?? Math.floor(Math.random() * 0xffffffff)
+    const botSeed = again?.botSeed ?? Math.floor(Math.random() * 0xffffffff)
+    const edition = cfg.edition as PackEditionChoice
+    const packs = generateSealedPacks(edition, cfg.numPacks, seed)
+    const bot = buildSealedDeck(aggregatePool(generateSealedPacks(edition, cfg.numPacks, botSeed)), "Computer's sealed deck")
+    try { localStorage.setItem(SOLO_SEALED_KEY, JSON.stringify({ cfg, seed, botSeed })) } catch { /* private mode */ }
+    setSoloSealed({ cfg, seed, packs, pool: aggregatePool(packs), botDeck: bot.deck })
+    setPage('sealed-solo')
+  }
+  function playSealedSolo(deck: DeckList) {
+    const s = soloSealed
+    if (!s) return
+    if (validateSealedDeck(deck, s.pool).some((p) => p.level === 'error')) return
+    // the cards left in the pool are the deck's collection (Toolbox and the like fetch from it)
+    const mine = autofillSealedDeck({ ...deck, name: 'Your sealed deck' }, s.pool)
+    setSoloSealed(null)
+    startVsBot(mine, s.botDeck, s.cfg.clock, s.cfg.stepBot, s.cfg.difficulty, s.cfg.secondSeer)
   }
 
   function startVsBot(myDeck: DeckList, botDeck: DeckList, clock: ClockConfig | null = null, stepBot = false, difficulty: 'fast' | 'thinking' | 'claude' = 'fast', secondSeer = false) {
@@ -1415,6 +1451,7 @@ export default function App() {
           onOnline={startOnline}
           onSealed={startSealed}
           onVsBot={startVsBot}
+          onSealedSolo={startSealedSolo}
           onDecks={() => setPage('decks')}
           onCollection={() => setPage('collection')}
           onScenarios={() => setPage('scenarios')}
@@ -1445,6 +1482,24 @@ export default function App() {
           onBack={() => setPage('home')}
           onOpenReplay={(r) => { setReplayReturn('bugs'); setReplayData(r); setPage('replay') }}
           onOpenScenario={(state) => startScenario(state)}
+        />
+      )}
+      {page === 'sealed-solo' && soloSealed && (
+        <SealedDeckbuild
+          solo
+          pool={soloSealed.pool}
+          packs={soloSealed.packs}
+          edition={soloSealed.cfg.edition}
+          numPacks={soloSealed.cfg.numPacks}
+          deadline={null}
+          oppReady
+          oppPresent
+          youReady={false}
+          initialDeck={null}
+          spectator={false}
+          roomKey={`solo-${soloSealed.seed}`}
+          onSubmit={(deck, ready) => { if (ready) playSealedSolo(deck) }}
+          onLeave={() => { setSoloSealed(null); setPage('home') }}
         />
       )}
       {page === 'decks' && <DeckBuilder onBack={() => setPage('home')} />}

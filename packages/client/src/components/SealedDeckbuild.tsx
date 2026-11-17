@@ -17,6 +17,7 @@ import {
   SEALED_SUPPLIED_AVATAR,
   SEALED_SUPPLIED_SITES,
   getScript,
+  buildSealedDeck,
   type CardDef,
   type DeckList,
 } from '@sorcery/shared'
@@ -32,8 +33,10 @@ function fmt(ms: number): string {
 const total = (m: Record<string, number>) => Object.values(m).reduce((a, b) => a + b, 0)
 
 export default function SealedDeckbuild({
-  pool, packs, edition, numPacks, deadline, oppReady, oppPresent, youReady, initialDeck, spectator, roomKey, onSubmit, onLeave,
+  pool, packs, edition, numPacks, deadline, oppReady, oppPresent, youReady, initialDeck, spectator, roomKey, onSubmit, onLeave, solo,
 }: {
+  /** practice against the computer: no timer, no waiting, and a "Suggest a build" button */
+  solo?: boolean
   pool: Record<string, number>
   packs: string[][]
   edition: string
@@ -140,6 +143,12 @@ export default function SealedDeckbuild({
     const setter = zone === 'spellbook' ? setSpellbook : setAtlas
     setter((m) => { const n = { ...m }; n[name] = (n[name] ?? 1) - 1; if (n[name] <= 0) delete n[name]; return n })
   }
+  // "Suggest a build": the computer's own deck builder, run on YOUR pool (see sealedBuilder.ts)
+  const [suggestion, setSuggestion] = useState<string[] | null>(null)
+  function suggestBuild() {
+    const b = buildSealedDeck(pool, 'Sealed')
+    setAvatar(b.deck.avatar); setSpellbook(b.deck.spellbook); setAtlas(b.deck.atlas); setSuggestion(b.notes)
+  }
   function openAll() { setPackIdx(Math.max(0, packs.length - 1)); setRevealed(packs[packs.length - 1]?.length ?? 0); setBoosterHidden(true) }
   function nextBooster() { setPackIdx((i) => i + 1); setRevealed(0) }
 
@@ -178,16 +187,21 @@ export default function SealedDeckbuild({
         <span className="db-hint">{numPacks}× {edition} · pool of {total(pool)} · Spellbook ≥{MIN_SEALED_SPELLBOOK}, Atlas ≥{MIN_SEALED_ATLAS}, no rarity limits</span>
         <span className="spacer" />
         <span className={`sealed-timer${timeLeft != null && timeLeft < 60_000 ? ' low' : ''}`}>
-          {timeLeft != null ? `⏳ ${fmt(timeLeft)}` : 'waiting for opponent…'}
+          {solo ? 'practice: no timer' : timeLeft != null ? `⏳ ${fmt(timeLeft)}` : 'waiting for opponent…'}
         </span>
-        <span className="sealed-opp">{oppPresent ? (oppReady ? '✅ opponent ready' : '⌛ opponent building') : 'opponent not here'}</span>
+        <span className="sealed-opp">{solo ? '✅ the computer has built its deck' : oppPresent ? (oppReady ? '✅ opponent ready' : '⌛ opponent building') : 'opponent not here'}</span>
+        {solo && (
+          <button disabled={!allOpened} title={allOpened ? 'Fill the deck with the build the computer would make from this pool. You can change it afterwards.' : 'Open all your boosters first'} onClick={suggestBuild}>
+            💡 Suggest a build
+          </button>
+        )}
         <button
           className={`sealed-ready${youReady ? ' on' : ''}`}
           disabled={!youReady && errors.length > 0}
           title={errors.length ? errors.map((p) => p.msg).join('\n') : ''}
           onClick={() => onSubmit(deck, !youReady)}
         >
-          {youReady ? '✓ Ready — click to edit' : errors.length ? `Not legal (${errors.length})` : 'Ready ▶'}
+          {youReady ? '✓ Ready — click to edit' : errors.length ? `Not legal (${errors.length})` : solo ? 'Play ▶' : 'Ready ▶'}
         </button>
       </div>
 
@@ -258,6 +272,7 @@ export default function SealedDeckbuild({
         </div>
 
         <div className="db-deck">
+          {suggestion && <div className="sealed-suggestion"><b>Suggested build</b>{suggestion.map((l, i) => <div key={i}>{l}</div>)}</div>}
           <h3>Avatar: {avatar ? avatar : <i>none</i>}</h3>
           <h3>Spellbook ({spellCount}/{MIN_SEALED_SPELLBOOK}+)</h3>
           {Object.entries(spellbook).sort(([a], [b]) => a.localeCompare(b)).map(([n, c]) => (
