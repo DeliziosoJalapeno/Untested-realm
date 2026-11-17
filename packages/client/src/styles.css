@@ -2747,3 +2747,17 @@ button.autobattle:hover:not(:disabled) { background: #4a5cc0; }
 .solo-sealed h3 { margin: 0; flex-basis: 100%; }
 .solo-sealed p { margin: 0; flex-basis: 100%; }
 .sealed-suggestion { margin: 8px 0; padding: 6px 8px; border-left: 3px solid #c98a5a; background: #ffffff10; font-size: 12.5px; line-height: 1.4; }
+
+/* Sealed deck building: the hovered card is shown LARGE in the middle of the screen (it used to sit in
+   a narrow column at the right edge). It never takes the mouse, so the card under it stays hovered. */
+.app:not(.mobile) .sealed-build .db-columns { grid-template-columns: 1fr 340px; }
+.app:not(.mobile) .sealed-build .db-preview {
+  position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 80; pointer-events: none;
+  width: min(460px, 42vw); max-height: 94vh;
+}
+.app:not(.mobile) .sealed-build .db-preview:empty { display: none; }
+.app:not(.mobile) .sealed-build .db-preview .hovercard { box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7); background: #1d2130f7; }
+.app:not(.mobile) .sealed-build .db-preview .hoverimg { max-width: none; max-height: 66vh; width: auto; max-inline-size: 100%; }
+.app:not(.mobile) .sealed-build .db-preview .hovercard.landscape .hoverimg { width: 100%; }
+.app:not(.mobile) .sealed-build .db-preview:has(.landscape) { width: min(640px, 56vw); }
+.app:not(.mobile) .sealed-build .db-preview .hoverinfo { font-size: 14px; }

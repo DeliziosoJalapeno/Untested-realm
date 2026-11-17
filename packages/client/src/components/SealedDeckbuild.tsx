@@ -167,7 +167,7 @@ export default function SealedDeckbuild({
 
   if (spectator) {
     return (
-      <div className="deckbuilder">
+      <div className="deckbuilder sealed-build">
         <div className="db-toolbar">
           <button onClick={onLeave}>← Leave</button>
           <b>Sealed — deck construction</b>
@@ -180,7 +180,7 @@ export default function SealedDeckbuild({
   }
 
   return (
-    <div className="deckbuilder">
+    <div className="deckbuilder sealed-build">
       <div className="db-toolbar">
         <button onClick={onLeave}>← Leave</button>
         <b>Sealed deckbuild</b>
@@ -228,6 +228,7 @@ export default function SealedDeckbuild({
                 className={`packcard ${i < revealed ? 'revealed' : 'facedown'}`}
                 onClick={() => reveal(i + 1)}
                 onMouseEnter={() => i < revealed && setHover(name)}
+                onMouseLeave={() => setHover(null)}
               >
                 {i < revealed ? <CardImg name={name} className="handimg" /> : <CardBack kind={backKindFor(name)} className="cardback" />}
               </div>
