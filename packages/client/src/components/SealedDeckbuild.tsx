@@ -4,7 +4,7 @@
 // (same db-* graphics as the standard Deck Builder). Once every booster is opened you can
 // HIDE the opener to give the builder the whole screen. The deck + Ready flag are pushed
 // to the server; on timeout the server auto-fills whatever you have.
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   cardSupport,
   findCard,
@@ -23,6 +23,7 @@ import {
 } from '@sorcery/shared'
 import CardImg, { CardHover, CardBack, backKindFor } from './CardImg'
 import DeckStats from './DeckStats'
+import Splitter from './Splitter'
 import { CARD_SORTS, compareCards, loadCardSort, saveCardSort, type CardSort } from '../cardSort'
 
 const ELEMENTS = ['air', 'earth', 'fire', 'water', 'none'] as const
@@ -33,6 +34,23 @@ function fmt(ms: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 }
 const total = (m: Record<string, number>) => Object.values(m).reduce((a, b) => a + b, 0)
+
+/** the sizes of the screen's sections, as the player dragged them (null: the default) */
+interface SealedLayout { boosterH: number | null; poolH: number | null; deckW: number; charts: boolean }
+const LAYOUT_KEY = 'sealed:layout'
+const DEFAULT_LAYOUT: SealedLayout = { boosterH: null, poolH: null, deckW: 340, charts: true }
+function loadLayout(): SealedLayout {
+  try {
+    const v = JSON.parse(localStorage.getItem(LAYOUT_KEY) ?? 'null')
+    if (v && typeof v === 'object') return {
+      boosterH: Number.isFinite(v.boosterH) ? v.boosterH : null,
+      poolH: Number.isFinite(v.poolH) ? v.poolH : null,
+      deckW: Number.isFinite(v.deckW) ? Math.max(220, v.deckW) : DEFAULT_LAYOUT.deckW,
+      charts: v.charts !== false,
+    }
+  } catch { /* private mode or bad data */ }
+  return { ...DEFAULT_LAYOUT }
+}
 
 export default function SealedDeckbuild({
   pool, packs, edition, numPacks, deadline, oppReady, oppPresent, youReady, initialDeck, spectator, roomKey, onSubmit, onLeave, solo,
@@ -157,6 +175,14 @@ export default function SealedDeckbuild({
     const b = buildSealedDeck(pool, 'Sealed')
     setAvatar(b.deck.avatar); setSpellbook(b.deck.spellbook); setAtlas(b.deck.atlas); setSuggestion(b.notes)
   }
+  // ── resizable sections (remembered): the booster opener's height, the height of the pool and deck
+  //    lists, the width of the deck list, and whether the charts are shown. null = the default size.
+  const [layout, setLayoutState] = useState<SealedLayout>(loadLayout)
+  const setLayout = (patch: Partial<SealedLayout>) => setLayoutState((l) => { const next = { ...l, ...patch }; try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(next)) } catch { /* private mode */ } return next })
+  const boosterRef = useRef<HTMLDivElement>(null)
+  const poolRef = useRef<HTMLDivElement>(null)
+  const dragFrom = useRef(0)
+  const clamp = (v: number, lo: number, hi: number) => Math.round(Math.max(lo, Math.min(hi, v)))
   function openAll() { setPackIdx(Math.max(0, packs.length - 1)); setRevealed(packs[packs.length - 1]?.length ?? 0); setBoosterHidden(true) }
   function nextBooster() { setPackIdx((i) => i + 1); setRevealed(0) }
 
@@ -217,7 +243,7 @@ export default function SealedDeckbuild({
       {boosterHidden ? (
         <button className="sealed-showboosters" onClick={() => setBoosterHidden(false)}>🎴 Show booster opening ▼</button>
       ) : (
-        <div className="panel sealed-reveal">
+        <div className="panel sealed-reveal" ref={boosterRef} style={layout.boosterH != null ? { height: layout.boosterH, maxHeight: 'none' } : undefined}>
           <div className="sealed-reveal-head">
             <h3>
               Booster {packIdx + 1} of {packs.length} — {revealed}/{currentPack.length} revealed
@@ -244,11 +270,17 @@ export default function SealedDeckbuild({
           </div>
         </div>
       )}
+      {!boosterHidden && (
+        <Splitter dir="h" title="Drag to make the booster area taller or shorter. Double-click to fit all its cards."
+          onStart={() => { dragFrom.current = boosterRef.current?.offsetHeight ?? 300 }}
+          onDrag={(d) => setLayout({ boosterH: clamp(dragFrom.current + d, 90, window.innerHeight - 80) })}
+          onReset={() => setLayout({ boosterH: null })} />
+      )}
 
       {/* BELOW: the deck-builder grid, filling with the cards you've opened */}
       {/* the deck at a glance: totals, mana curve, card types, thresholds */}
-      <DeckStats deck={deck} layout="dashboard" minSpells={MIN_SEALED_SPELLBOOK} minSites={MIN_SEALED_ATLAS} />
-      <div className="db-columns">
+      {layout.charts && <DeckStats deck={deck} layout="dashboard" minSpells={MIN_SEALED_SPELLBOOK} minSites={MIN_SEALED_ATLAS} />}
+      <div className="db-columns" ref={poolRef} style={{ '--deck-w': `${layout.deckW}px`, ...(layout.poolH != null ? { '--pool-h': `${layout.poolH}px` } : {}) } as React.CSSProperties}>
         <div className="db-search">
           <div className="db-filters">
             <input placeholder="search your pool…" value={query} onChange={(e) => setQuery(e.target.value)} />
@@ -263,6 +295,7 @@ export default function SealedDeckbuild({
             <select value={sort} onChange={(e) => { const v = e.target.value as CardSort; setSort(v); saveCardSort(v) }} title="Order of the cards below and of your deck list" data-card-sort>
               {CARD_SORTS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
+            <button className="sealed-charts-toggle" onClick={() => setLayout({ charts: !layout.charts })} title="Show or hide the deck charts">{layout.charts ? '📊 Hide charts' : '📊 Show charts'}</button>
             <span className="db-hint">click a card to add it{total(openedPool) === 0 ? ' — open a booster above to fill this' : ''} · supplied cards are unlimited (∞)</span>
           </div>
           <div className="db-results">
@@ -285,6 +318,10 @@ export default function SealedDeckbuild({
           </div>
         </div>
 
+        <Splitter dir="v" title="Drag to make your deck list wider or narrower. Double-click to reset."
+          onStart={() => { dragFrom.current = layout.deckW }}
+          onDrag={(d) => setLayout({ deckW: clamp(dragFrom.current - d, 220, Math.max(260, window.innerWidth - 420)) })}
+          onReset={() => setLayout({ deckW: DEFAULT_LAYOUT.deckW })} />
         <div className="db-deck">
           {suggestion && <div className="sealed-suggestion"><b>Suggested build</b>{suggestion.map((l, i) => <div key={i}>{l}</div>)}</div>}
           <h3>Avatar: {avatar ? avatar : <i>none</i>}</h3>
@@ -310,6 +347,10 @@ export default function SealedDeckbuild({
 
         <div className="db-preview">{hover && <CardHover name={hover} />}</div>
       </div>
+      <Splitter dir="h" title="Drag to make the card pool and deck list taller or shorter. Double-click to reset."
+        onStart={() => { dragFrom.current = poolRef.current?.offsetHeight ?? 500 }}
+        onDrag={(d) => setLayout({ poolH: clamp(dragFrom.current + d, 160, 4000) })}
+        onReset={() => setLayout({ poolH: null })} />
     </div>
   )
 }

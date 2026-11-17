@@ -2750,7 +2750,23 @@ button.autobattle:hover:not(:disabled) { background: #4a5cc0; }
 
 /* Sealed deck building: the hovered card is shown LARGE in the middle of the screen (it used to sit in
    a narrow column at the right edge). It never takes the mouse, so the card under it stays hovered. */
-.app:not(.mobile) .sealed-build .db-columns { grid-template-columns: 1fr 340px; }
+/* resizable sections (Splitter.tsx): the booster opener fits all its cards unless dragged smaller;
+   the pool and the deck list share one height; the deck list's width is dragged at its left edge */
+.app:not(.mobile) .sealed-build .sealed-reveal { max-height: none; margin-bottom: 0; }
+.app:not(.mobile) .sealed-build .db-columns { grid-template-columns: minmax(0, 1fr) 8px var(--deck-w, 340px); gap: 4px; }
+.app:not(.mobile) .sealed-build .db-results { max-height: var(--pool-h, calc(100vh - 150px)); align-content: start; }
+.app:not(.mobile) .sealed-build .db-deck { max-height: var(--pool-h, calc(100vh - 110px)); }
+.app:not(.mobile) .sealed-build .db-columns[style*="--pool-h"] .db-results { height: calc(var(--pool-h) - 44px); max-height: none; }
+.app:not(.mobile) .sealed-build .db-columns[style*="--pool-h"] .db-deck { height: var(--pool-h); max-height: none; box-sizing: border-box; }
+.splitter { display: flex; align-items: center; justify-content: center; touch-action: none; user-select: none; flex: none; }
+.splitter span { background: #3a4058; border-radius: 3px; transition: background .12s; }
+.splitter:hover span, .splitter:active span { background: #c98a5a; }
+.splitter-h { height: 12px; cursor: row-resize; margin: 2px 0; }
+.splitter-h span { width: 64px; height: 4px; }
+.splitter-v { width: 8px; cursor: col-resize; }
+.splitter-v span { width: 4px; height: 64px; }
+.app.mobile .splitter { display: none; }
+.sealed-charts-toggle { font-size: 12px; }
 .app:not(.mobile) .sealed-build .db-preview {
   position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 80; pointer-events: none;
   width: min(460px, 42vw); max-height: 94vh;
