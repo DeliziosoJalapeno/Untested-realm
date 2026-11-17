@@ -211,27 +211,52 @@ export function autofillSealedDeck(deck: DeckList, pool: Record<string, number>)
   return { ...deck, avatar, spellbook, atlas, collection }
 }
 
-/** "3 Wild Boars" or "3x Wild Boars" lines; sections '# Avatar' / '# Spellbook' / '# Atlas' optional */
+/** A card line's name, without what people (and chat tables) put after it: "Bosk Troll | Alpha/Beta |
+ *  Ordinary", "Bosk Troll (Beta, Ordinary)", "Bosk Troll - Ordinary". The longest prefix that is a real
+ *  card wins, so a name with its own comma or dash ("Hamlet's Ablaze!", "Màzuj Ifrit") is left alone. */
+function cleanCardName(raw: string): string {
+  const name = raw.replace(/\*\*/g, '').replace(/^[\s|*_`>-]+|[\s|*_`]+$/g, '').trim()
+  if (findCard(name)) return name
+  const cuts = [...name.matchAll(/\s*(\||\(|\[|\s[-–—]\s|,|:|\t)/g)].map((m) => m.index!).filter((i) => i > 0).sort((x, y) => y - x)
+  for (const i of cuts) { const head = name.slice(0, i).trim(); if (findCard(head)) return head }
+  return (name.split(/\s*\|/)[0] ?? name).trim()
+}
+
+/** "3 Wild Boars" or "3x Wild Boars" lines; sections '# Avatar' / '# Spellbook' / '# Atlas' optional.
+ *  Also reads a list pasted from a chat or a web page: table rows ("| 4 | Bosk Troll | Alpha/Beta |
+ *  Ordinary |"), bold headings ("**Minions (49)**", "Atlas (30)"), "Avatar: Lavamancer", and set or rarity
+ *  notes after a name. Of several decks in one paste ("===== name =====" between them) the first is read. */
 export function parseDeckText(name: string, text: string): DeckList {
   const deck: DeckList = { name, avatar: '', spellbook: {}, atlas: {} }
   let section: 'spellbook' | 'atlas' | 'avatar' | 'collection' | null = null
+  let cards = 0
   for (const rawLine of text.split('\n')) {
-    const line = rawLine.trim()
+    let line = rawLine.trim()
     if (!line) continue
-    const header = line.match(/^#+\s*(.+)$/) ?? line.match(/^(avatar|spellbook|atlas|sites?|collection)\s*:?\s*$/i)
-    if (header) {
+    if (/^={3,}/.test(line)) { if (cards > 0) break; continue } // the next deck of a multi-deck paste
+    if (/^\|?[\s:|-]+\|?$/.test(line) && line.includes('-')) continue // a table's |---|---| row
+    if (/^\|?\s*(qty|quantity|count|#)\s*\|/i.test(line)) continue // a table's header row
+    line = line.replace(/^\|\s*/, '').replace(/\s*\|$/, '').replace(/\*\*/g, '').trim()
+    if (!line) continue
+    const avatarLine = line.match(/^avatar\s*[:=]\s*(.+)$/i)
+    if (avatarLine) { const d = findCard(cleanCardName(avatarLine[1].replace(/[.;].*$/, ''))); if (d?.type === 'Avatar') { deck.avatar = d.name; continue } }
+    const header = line.match(/^#+\s*(.+)$/)
+      ?? line.match(/^_?(avatar|spellbook|spells?|minions?|magics?|auras?|artifacts?|atlas|sites?|collection|sideboard)\b[^|]*$/i)
+    if (header && !/^\d/.test(line)) {
       const h = header[1].toLowerCase()
       section = h.startsWith('avatar') ? 'avatar'
-        : h.startsWith('collection') ? 'collection'
+        : h.startsWith('collection') || h.startsWith('sideboard') ? 'collection'
         : h.startsWith('atlas') || h.startsWith('site') ? 'atlas'
         : 'spellbook'
       continue
     }
-    const m = line.match(/^(\d+)\s*x?\s+(.+)$/)
+    const m = line.match(/^(\d+)\s*[x×]?\s*\|?\s+(.+)$/i) ?? line.match(/^(\d+)\s*[x×]?\s*\|\s*(.+)$/i)
     const copies = m ? Number(m[1]) : 1
-    const cardName = (m ? m[2] : line).trim()
+    const cardName = cleanCardName(m ? m[2] : line)
+    if (!cardName) continue
     const def = findCard(cardName)
     const type = def?.type
+    cards++
     if (section === 'collection') {
       // the collection may hold ANY card type, avatars included
       deck.collection = deck.collection ?? {}
