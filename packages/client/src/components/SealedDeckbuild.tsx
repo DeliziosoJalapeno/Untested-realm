@@ -23,6 +23,7 @@ import {
 } from '@sorcery/shared'
 import CardImg, { CardHover, CardBack, backKindFor } from './CardImg'
 import DeckStats from './DeckStats'
+import { CARD_SORTS, compareCards, loadCardSort, saveCardSort, type CardSort } from '../cardSort'
 
 const ELEMENTS = ['air', 'earth', 'fire', 'water', 'none'] as const
 const TYPES = ['Avatar', 'Site', 'Minion', 'Magic', 'Aura', 'Artifact'] as const
@@ -122,6 +123,7 @@ export default function SealedDeckbuild({
     return [...names].map((n) => findCard(n)).filter((d): d is CardDef => !!d).sort((a, b) => a.name.localeCompare(b.name))
   }, [openedPool])
 
+  const [sort, setSort] = useState<CardSort>(loadCardSort)
   const results = useMemo(() => {
     const q = query.toLowerCase()
     return gridDefs.filter((c) => {
@@ -130,8 +132,13 @@ export default function SealedDeckbuild({
       if (elemFilter && elemFilter !== 'none' && !c.elements.map((e) => e.toLowerCase()).includes(elemFilter)) return false
       if (q && !c.name.toLowerCase().includes(q) && !c.text.toLowerCase().includes(q)) return false
       return true
-    })
-  }, [gridDefs, query, typeFilter, elemFilter])
+    }).sort(compareCards(sort))
+  }, [gridDefs, query, typeFilter, elemFilter, sort])
+  // the deck list follows the same order (by name: as before)
+  const deckOrder = (names: [string, number][]) => {
+    const cmp = compareCards(sort)
+    return [...names].sort(([a], [b]) => { const da = findCard(a), db = findCard(b); return da && db ? cmp(da, db) : a.localeCompare(b) })
+  }
 
   function addCard(c: CardDef) {
     if (spectator) return
@@ -253,6 +260,9 @@ export default function SealedDeckbuild({
               <option value="">any element</option>
               {ELEMENTS.map((t) => <option key={t}>{t}</option>)}
             </select>
+            <select value={sort} onChange={(e) => { const v = e.target.value as CardSort; setSort(v); saveCardSort(v) }} title="Order of the cards below and of your deck list" data-card-sort>
+              {CARD_SORTS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+            </select>
             <span className="db-hint">click a card to add it{total(openedPool) === 0 ? ' — open a booster above to fill this' : ''} · supplied cards are unlimited (∞)</span>
           </div>
           <div className="db-results">
@@ -279,14 +289,14 @@ export default function SealedDeckbuild({
           {suggestion && <div className="sealed-suggestion"><b>Suggested build</b>{suggestion.map((l, i) => <div key={i}>{l}</div>)}</div>}
           <h3>Avatar: {avatar ? avatar : <i>none</i>}</h3>
           <h3>Spellbook ({spellCount}/{MIN_SEALED_SPELLBOOK}+)</h3>
-          {Object.entries(spellbook).sort(([a], [b]) => a.localeCompare(b)).map(([n, c]) => (
+          {deckOrder(Object.entries(spellbook)).map(([n, c]) => (
             <div key={n} className="db-row" onMouseEnter={() => setHover(n)} onMouseLeave={() => setHover(null)}>
-              <span>{c}× {n}</span>
+              <span>{sort !== 'name' && <i className="db-row-cost" title="mana cost">{findCard(n)?.cost ?? 'X'}</i>}{c}× {n}</span>
               <button onClick={() => removeCard('spellbook', n)}>−</button>
             </div>
           ))}
           <h3>Atlas ({siteCount}/{MIN_SEALED_ATLAS}+)</h3>
-          {Object.entries(atlas).sort(([a], [b]) => a.localeCompare(b)).map(([n, c]) => (
+          {deckOrder(Object.entries(atlas)).map(([n, c]) => (
             <div key={n} className="db-row" onMouseEnter={() => setHover(n)} onMouseLeave={() => setHover(null)}>
               <span>{c}× {n}{isSuppliedSite(n) ? ' ∞' : ''}</span>
               <button onClick={() => removeCard('atlas', n)}>−</button>

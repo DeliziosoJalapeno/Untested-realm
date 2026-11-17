@@ -2826,3 +2826,5 @@ button.autobattle:hover:not(:disabled) { background: #4a5cc0; }
 .app.mobile .deck-stats.ds-dashboard { grid-template-columns: 1fr 1fr; }
 .app.mobile .ds-th-tile, .app.mobile .ds-curve-tile { grid-column: 1 / -1; }
 @media (max-width: 1100px) { .deck-stats.ds-dashboard { grid-template-columns: 1fr 1fr; } }
+
+.db-row-cost { display: inline-block; min-width: 18px; margin-right: 6px; padding: 0 4px; border-radius: 9px; background: #2a3044; color: #dfe4f5; font-style: normal; font-size: 11px; text-align: center; font-variant-numeric: tabular-nums; }
