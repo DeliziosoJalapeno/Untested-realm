@@ -239,6 +239,8 @@ export default function SealedDeckbuild({
       )}
 
       {/* BELOW: the deck-builder grid, filling with the cards you've opened */}
+      {/* the deck at a glance: totals, mana curve, card types, thresholds */}
+      <DeckStats deck={deck} layout="dashboard" minSpells={MIN_SEALED_SPELLBOOK} minSites={MIN_SEALED_ATLAS} />
       <div className="db-columns">
         <div className="db-search">
           <div className="db-filters">
@@ -275,7 +277,6 @@ export default function SealedDeckbuild({
 
         <div className="db-deck">
           {suggestion && <div className="sealed-suggestion"><b>Suggested build</b>{suggestion.map((l, i) => <div key={i}>{l}</div>)}</div>}
-          <DeckStats deck={deck} />
           <h3>Avatar: {avatar ? avatar : <i>none</i>}</h3>
           <h3>Spellbook ({spellCount}/{MIN_SEALED_SPELLBOOK}+)</h3>
           {Object.entries(spellbook).sort(([a], [b]) => a.localeCompare(b)).map(([n, c]) => (

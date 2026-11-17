@@ -2762,23 +2762,67 @@ button.autobattle:hover:not(:disabled) { background: #4a5cc0; }
 .app:not(.mobile) .sealed-build .db-preview:has(.landscape) { width: min(640px, 56vw); }
 .app:not(.mobile) .sealed-build .db-preview .hoverinfo { font-size: 14px; }
 
-/* ---- deck statistics (DeckStats.tsx): curve by minion/other, card types, thresholds ---- */
-.deck-stats { margin-top: 10px; }
-.db-analysis .deck-stats { margin-top: 0; padding: 0; background: none; border: 0; }
-.ds-note { text-transform: none; letter-spacing: 0; color: #9aa2bd; font-size: 11px; margin-left: 6px; }
-.ds-stack { width: 70%; min-height: 2px; display: flex; flex-direction: column; border-radius: 3px 3px 0 0; overflow: hidden; background: #232838; }
-.ds-minion { background: #7d5ad6; }
-.ds-other { background: #d98a3d; }
-.ds-legend { font-size: 11px; color: #9aa2bd; margin-top: 6px; }
-.ds-key { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin: 0 3px 0 8px; vertical-align: baseline; }
-.ds-key:first-child { margin-left: 0; }
-.ds-split { display: flex; height: 20px; border-radius: 4px; overflow: hidden; gap: 2px; font-size: 12px; font-weight: 600; color: #fff; }
-.ds-split span { display: flex; align-items: center; justify-content: center; min-width: 22px; }
-.ds-types { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; font-size: 12px; color: #b7bed6; }
-.ds-types b { color: #eef2f7; font-variant-numeric: tabular-nums; }
-.ds-thresholds { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
-.ds-thresholds th { font-weight: 400; color: #8a92ad; font-size: 10.5px; text-align: right; padding: 0 0 3px 6px; }
-.ds-thresholds td { text-align: right; padding: 2px 0 2px 6px; color: #dfe4f5; }
-.ds-thresholds td:first-child { text-align: left; padding-left: 0; white-space: nowrap; }
-.ds-thresholds tr.ds-short td:last-child { color: #ff8a80; font-weight: 600; }
-.ds-thresholds tr.ds-thin td:last-child { color: #ffd257; }
+/* ---- deck statistics (DeckStats.tsx): a small dashboard of tiles ----
+   Series colours are checked for colour-blind separation and contrast on this surface (#1d2130):
+   minions violet, other spells orange, spells needing a threshold blue, sites providing it green. */
+.deck-stats { --ds-minion: #9085e9; --ds-other: #d95926; --ds-needs: #3987e5; --ds-gives: #199e70; --ds-track: #2a3044;
+  color: #c3c9dd; font-size: 12px; font-variant-numeric: tabular-nums; }
+.deck-stats.ds-dashboard { display: grid; grid-template-columns: minmax(120px, 0.6fr) minmax(220px, 1.3fr) minmax(210px, 1.1fr) minmax(280px, 1.5fr); gap: 10px; margin: 0 0 12px; }
+.deck-stats.ds-panel { display: grid; gap: 10px; margin-top: 10px; }
+.ds-tile { background: #1d2130; border-radius: 10px; padding: 10px 12px; min-width: 0; }
+.ds-panel .ds-tile { background: none; padding: 0; }
+.ds-title { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #8a92ad; margin-bottom: 8px; }
+.ds-none { color: #8a92ad; font-style: italic; }
+/* stat tiles */
+.ds-summary { display: flex; flex-direction: column; }
+.ds-stat { display: flex; align-items: baseline; gap: 5px; margin-bottom: 6px; }
+.ds-stat b { font-size: 22px; line-height: 1; color: #eef2f7; font-weight: 600; }
+.ds-stat i { font-style: normal; color: #8a92ad; font-size: 12px; }
+.ds-stat span { color: #a3abc4; margin-left: 2px; }
+/* marks */
+.ds-minion { background: var(--ds-minion); }
+.ds-other { background: var(--ds-other); }
+.ds-needs { background: var(--ds-needs); }
+.ds-gives { background: var(--ds-gives); }
+/* mana curve: columns grow from one baseline, 2px gap between stacked parts, rounded top only */
+.ds-curve { display: flex; align-items: flex-end; gap: 6px; height: 96px; border-bottom: 1px solid #3a4058; }
+.ds-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; min-width: 0; }
+.ds-col-n { font-size: 11px; color: #dfe4f5; height: 15px; }
+.ds-stack { width: 100%; max-width: 24px; display: flex; flex-direction: column; gap: 2px; border-radius: 4px 4px 0 0; overflow: hidden; }
+.ds-col:hover .ds-stack { filter: brightness(1.2); }
+.ds-col-x { font-size: 11px; color: #8a92ad; height: 0; transform: translateY(5px); }
+.ds-curve + .ds-legend { margin-top: 22px; }
+.ds-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11px; color: #a3abc4; margin-top: 8px; }
+.ds-key { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; }
+/* minions against other spells: one whole split in two, then a bar per card type */
+.ds-split { display: flex; gap: 2px; height: 8px; border-radius: 4px; overflow: hidden; }
+.ds-split-labels { display: flex; justify-content: space-between; gap: 8px; margin: 4px 0 10px; color: #dfe4f5; font-size: 11.5px; }
+.ds-rows { display: grid; gap: 5px; }
+.ds-row { display: grid; grid-template-columns: 62px 1fr 22px; gap: 8px; align-items: center; }
+.ds-row-label { color: #a3abc4; }
+.ds-row-n { text-align: right; color: #dfe4f5; }
+.ds-track { position: relative; display: block; height: 8px; background: var(--ds-track); border-radius: 0 4px 4px 0; }
+.ds-track > span { display: block; height: 100%; border-radius: 0 4px 4px 0; min-width: 0; }
+.ds-row:hover .ds-track > span, .ds-th-row:hover .ds-track > span { filter: brightness(1.2); }
+/* thresholds: per element, spells that need it over what the sites provide, on one scale */
+.ds-th { display: grid; gap: 12px; }
+.ds-th-row { display: grid; grid-template-columns: 62px 1fr 52px 96px; gap: 8px; align-items: center; }
+.ds-th-name { color: #dfe4f5; white-space: nowrap; }
+.ds-glyph { font-style: normal; margin-right: 5px; }
+.ds-glyph.elem-air { color: #cfd8ff; } .ds-glyph.elem-earth { color: #c9a86b; } .ds-glyph.elem-fire { color: #ff9a5a; } .ds-glyph.elem-water { color: #6bc6ff; }
+.ds-th-bars { display: grid; gap: 6px; padding-right: 22px; }
+.ds-th-bars .ds-track { background: none; }
+.ds-th-bars em { position: absolute; left: 100%; top: -4px; margin-left: 5px; font-style: normal; font-size: 11px; color: #dfe4f5; }
+.ds-th-bars .ds-track > span { position: relative; min-width: 2px; }
+.ds-th-bars .ds-track { display: flex; align-items: center; }
+.ds-th-bars .ds-track em { position: static; margin-left: 5px; font-size: 10.5px; line-height: 8px; height: 8px; }
+.ds-th-peak { color: #a3abc4; font-size: 11px; white-space: nowrap; }
+.ds-flag { font-size: 11px; white-space: nowrap; color: #a3abc4; }
+.ds-flag.ds-short { color: #ff8a80; font-weight: 600; }
+.ds-flag.ds-thin { color: #ffd257; }
+.ds-panel .ds-th-row { grid-template-columns: 62px 1fr 48px; }
+.ds-panel .ds-flag { grid-column: 2 / -1; }
+.ds-panel .ds-flag:empty { display: none; }
+.app.mobile .deck-stats.ds-dashboard { grid-template-columns: 1fr 1fr; }
+.app.mobile .ds-th-tile, .app.mobile .ds-curve-tile { grid-column: 1 / -1; }
+@media (max-width: 1100px) { .deck-stats.ds-dashboard { grid-template-columns: 1fr 1fr; } }
