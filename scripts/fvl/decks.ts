@@ -148,6 +148,23 @@ export const DECKS: Record<string, DeckList> = {
   },
 }
 
+// F8: Frost Mage in Earth/Water. The Avatar's freeze needs two Air and two Water, and this deck plays no Air
+// spells to speak of: Tundra makes Air equal Water, and Lighthouse, Windmill and Icicle Dome carry the rest.
+// Earth brings the bodies and its own disables (Gargantula's cocoon, Root Spider); Permafrost makes any of
+// them permanent; Shatter and Icicle Dome kill what is frozen.
+DECKS['F8 Frost Earth-Water'] = {
+  name: 'F8 Frost Earth-Water', avatar: 'Frost Mage',
+  collection: { Drown: 1, 'Ice Shards': 1, 'Tufted Turtles': 1, Bury: 1, Dispel: 1, 'Gift of the Serpent': 1, 'Amazon Warriors': 1, Disenchant: 1, Blizzard: 1, Displace: 1 },
+  atlas: { Tundra: 2, Lighthouse: 3, Windmill: 3, Aqueduct: 3, 'Icicle Dome': 2, Permafrost: 2, 'Troll Bridge': 3, 'Fertile Earth': 3, 'Gnome Hollows': 3, 'Common Village': 2, Stream: 2, Valley: 2 },
+  spellbook: {
+    'Kettletop Leprechaun': 4, 'Bosk Troll': 3, 'Root Spider': 3, 'Autumn Unicorn': 3, 'Lugbog Cat': 3, 'Coy Nixie': 3, 'Order of the Sacred Oak': 3,
+    'Order of the White Wing': 3, 'Pudge Butcher': 3, 'Stomping Mammoth': 3, 'Abaddon Succubus': 2, 'Sacred Stag': 2, Gargantula: 2, 'Southpaw Dyrodor': 2,
+    'Ruler of Thul': 1, 'Sister Stefánia': 1, 'Hibernal Legion': 1, 'The Green Knight': 1,
+    Shatter: 3, 'Frost Breath': 2, Landmass: 3, Overflow: 2, 'Common Sense': 3, Earthquake: 2, Riptide: 2,
+    Toolbox: 3,
+  },
+}
+
 // L6 (control): the Fire Necromancer list with the Avatar swapped, to see what the Lavamancer costs a proven shell.
 import { featuredDecks } from '../../packages/shared/src'
 const necro = (featuredDecks as DeckList[]).find((d) => d.name === 'Fire Necromancer')
