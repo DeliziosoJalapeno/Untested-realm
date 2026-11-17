@@ -22,6 +22,7 @@ import {
   type DeckList,
 } from '@sorcery/shared'
 import CardImg, { CardHover, CardBack, backKindFor } from './CardImg'
+import DeckStats from './DeckStats'
 
 const ELEMENTS = ['air', 'earth', 'fire', 'water', 'none'] as const
 const TYPES = ['Avatar', 'Site', 'Minion', 'Magic', 'Aura', 'Artifact'] as const
@@ -274,6 +275,7 @@ export default function SealedDeckbuild({
 
         <div className="db-deck">
           {suggestion && <div className="sealed-suggestion"><b>Suggested build</b>{suggestion.map((l, i) => <div key={i}>{l}</div>)}</div>}
+          <DeckStats deck={deck} />
           <h3>Avatar: {avatar ? avatar : <i>none</i>}</h3>
           <h3>Spellbook ({spellCount}/{MIN_SEALED_SPELLBOOK}+)</h3>
           {Object.entries(spellbook).sort(([a], [b]) => a.localeCompare(b)).map(([n, c]) => (
@@ -291,7 +293,7 @@ export default function SealedDeckbuild({
           ))}
           <div className="db-problems">
             {problems.map((p, i) => <div key={i} className={p.level}>{p.msg}</div>)}
-            {errors.length === 0 && <div className="okmsg">Deck is legal ✓ — click Ready</div>}
+            {errors.length === 0 && <div className="okmsg">Deck is legal ✓ — click {solo ? 'Play' : 'Ready'}</div>}
           </div>
         </div>
 

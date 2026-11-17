@@ -2761,3 +2761,24 @@ button.autobattle:hover:not(:disabled) { background: #4a5cc0; }
 .app:not(.mobile) .sealed-build .db-preview .hovercard.landscape .hoverimg { width: 100%; }
 .app:not(.mobile) .sealed-build .db-preview:has(.landscape) { width: min(640px, 56vw); }
 .app:not(.mobile) .sealed-build .db-preview .hoverinfo { font-size: 14px; }
+
+/* ---- deck statistics (DeckStats.tsx): curve by minion/other, card types, thresholds ---- */
+.deck-stats { margin-top: 10px; }
+.db-analysis .deck-stats { margin-top: 0; padding: 0; background: none; border: 0; }
+.ds-note { text-transform: none; letter-spacing: 0; color: #9aa2bd; font-size: 11px; margin-left: 6px; }
+.ds-stack { width: 70%; min-height: 2px; display: flex; flex-direction: column; border-radius: 3px 3px 0 0; overflow: hidden; background: #232838; }
+.ds-minion { background: #7d5ad6; }
+.ds-other { background: #d98a3d; }
+.ds-legend { font-size: 11px; color: #9aa2bd; margin-top: 6px; }
+.ds-key { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin: 0 3px 0 8px; vertical-align: baseline; }
+.ds-key:first-child { margin-left: 0; }
+.ds-split { display: flex; height: 20px; border-radius: 4px; overflow: hidden; gap: 2px; font-size: 12px; font-weight: 600; color: #fff; }
+.ds-split span { display: flex; align-items: center; justify-content: center; min-width: 22px; }
+.ds-types { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; font-size: 12px; color: #b7bed6; }
+.ds-types b { color: #eef2f7; font-variant-numeric: tabular-nums; }
+.ds-thresholds { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.ds-thresholds th { font-weight: 400; color: #8a92ad; font-size: 10.5px; text-align: right; padding: 0 0 3px 6px; }
+.ds-thresholds td { text-align: right; padding: 2px 0 2px 6px; color: #dfe4f5; }
+.ds-thresholds td:first-child { text-align: left; padding-left: 0; white-space: nowrap; }
+.ds-thresholds tr.ds-short td:last-child { color: #ff8a80; font-weight: 600; }
+.ds-thresholds tr.ds-thin td:last-child { color: #ffd257; }

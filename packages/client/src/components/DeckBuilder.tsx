@@ -17,6 +17,7 @@ import { loadCollection, ownedCopies } from '../collection'
 import { ArtProvider, artCtxFromMap } from '../art'
 import { useMobileMode } from '../mobile'
 import CardImg, { CardHover } from './CardImg'
+import DeckStats from './DeckStats'
 import CardSearch from './CardSearch'
 
 // Roles shown in the deck-analysis coverage readout (label → tag). No warnings —
@@ -429,6 +430,8 @@ function DeckAnalysis({ deck }: { deck: DeckList }) {
           )}
         </div>
       </div>
+
+      <DeckStats deck={deck} sections={['types', 'thresholds']} />
     </div>
   )
 }
