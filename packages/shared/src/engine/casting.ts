@@ -1228,6 +1228,12 @@ function resolveArtifactCast(state: GameState, cardId: string, castName: string,
   const script = getScript(castName)
   const artId = newId(state, 'a')
   const holder = extra?.giveTo ? state.units[extra.giveTo] : null
+  // The unit it was handed to can be gone by now (the cast waited on a reaction that killed it): the
+  // artifact then lands where it was cast, or failing that at its caster's Avatar. This used to crash.
+  if (!holder && !at) {
+    const av = Object.values(state.units).find((u) => u.isAvatar && u.controller === player)
+    at = av ? { x: av.x, y: av.y, region: av.region } : { x: 0, y: 0, region: 'surface' }
+  }
   state.artifacts[artId] = {
     id: artId, cardId, name: card.name, conjuredBy: player,
     x: holder ? holder.x : at!.x, y: holder ? holder.y : at!.y,
