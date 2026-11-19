@@ -242,13 +242,14 @@ export async function reviewGame(summary: string, fetchImpl: Fetch = fetch as un
   const res = await fetchImpl('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: claudeModel(), max_tokens: 900, system: REVIEW_PROMPT, messages: [{ role: 'user', content: summary }] }),
+    body: JSON.stringify({ model: claudeModel(), max_tokens: 6000, system: REVIEW_PROMPT, messages: [{ role: 'user', content: summary }] }),
     signal: AbortSignal.timeout(90_000),
   })
   if (!res.ok) throw new Error(`Anthropic API ${res.status}: ${(await res.text().catch(() => '')).slice(0, 300)}`)
   const resp: any = await res.json()
   const text = (Array.isArray(resp?.content) ? resp.content : []).filter((b: any) => b?.type === 'text').map((b: any) => String(b.text ?? '')).join('\n').trim()
-  if (!text) throw new Error('Claude wrote no review.')
+  // no text at all: say what did come back, so the cause (out of tokens while reasoning, a refusal…) is visible
+  if (!text) throw new Error(`Claude wrote no review (stop reason: ${String(resp?.stop_reason ?? 'unknown')}; blocks: ${(Array.isArray(resp?.content) ? resp.content : []).map((b: any) => String(b?.type)).join(', ') || 'none'}; output tokens: ${Number(resp?.usage?.output_tokens ?? 0)}).`)
   const u = resp?.usage ?? {}
   const usage: ClaudeBotUsage = { input: Number(u.input_tokens ?? 0), output: Number(u.output_tokens ?? 0), cacheRead: Number(u.cache_read_input_tokens ?? 0), cacheWrite: Number(u.cache_creation_input_tokens ?? 0) }
   console.log(`[game-review] ${claudeModel()} ${Date.now() - t0}ms  in ${usage.input}  out ${usage.output}`)
