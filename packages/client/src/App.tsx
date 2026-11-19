@@ -27,7 +27,8 @@ import {
 } from '@sorcery/shared'
 import { Net, type ServerMsg, type SealedStateMsg, type SealedConfig } from './net'
 import { botAction, botNeedsToAct, botActionKey } from './bot'
-import type { BotReply } from './bot.worker'
+import { searchBotAction, DEFAULT_SEARCH } from './bot_search'
+import type { BotReply, BotRequest } from './bot.worker'
 import { useMobileMode } from './mobile'
 import Home from './components/Home'
 import DeckBuilder from './components/DeckBuilder'
@@ -368,6 +369,10 @@ export default function App() {
   // ── "Thinking" bot: the strong search runs in a Web Worker so its (up to 30s) planning never blocks
   //    the UI. A persistent worker keeps the search's turn-plan cache warm across messages. ──
   const botWorkerRef = useRef<Worker | null>(null)
+  const botWorkerDeadRef = useRef(false) // the worker failed once: answer on the page from now on
+  const botPendingRef = useRef<BotRequest | null>(null) // the request the worker has not answered yet
+  const botWatchdogRef = useRef<number | null>(null)
+  const [botNote, setBotNote] = useState<string | null>(null)
   const botBusyRef = useRef(false) // a request is out to the worker; don't dispatch another
   const botReqIdRef = useRef(0) // stamps each request; a reply with a stale id (undo/leave) is ignored
   const botThinkTimerRef = useRef<number | null>(null) // delays the spinner so instant plan-replays don't flash it
@@ -404,7 +409,53 @@ export default function App() {
   function ensureBotWorker(): Worker {
     if (!botWorkerRef.current) {
       const w = new Worker(new URL('./bot.worker.ts', import.meta.url), { type: 'module' })
-      w.onmessage = (e: MessageEvent<BotReply>) => {
+      w.onmessage = (e: MessageEvent<BotReply>) => onBotReply(e.data)
+      // the worker's file could not be loaded (most often: the site was updated while this tab was open,
+      // so the file this page asks for is gone) or it crashed — without this the game waited for ever
+      w.onerror = (ev) => { ev.preventDefault?.(); botWorkerDown('could not start') }
+      botWorkerRef.current = w
+    }
+    return botWorkerRef.current
+  }
+
+  /** Hand a position to the search worker, with a watchdog in case no answer ever comes. */
+  function askBotWorker(req: BotRequest) {
+    if (botWatchdogRef.current !== null) clearTimeout(botWatchdogRef.current)
+    botPendingRef.current = req
+    if (botWorkerDeadRef.current) { window.setTimeout(() => botInline(req), 0); return }
+    botWatchdogRef.current = window.setTimeout(() => botWorkerDown('stopped answering'), req.timeBudgetMs + 20000)
+    try { ensureBotWorker().postMessage(req) } catch { botWorkerDown('could not start') }
+  }
+
+  /** The worker is unusable: answer the waiting request (and every later one) on the page itself. */
+  function botWorkerDown(why: string) {
+    if (botWatchdogRef.current !== null) { clearTimeout(botWatchdogRef.current); botWatchdogRef.current = null }
+    botWorkerRef.current?.terminate()
+    botWorkerRef.current = null
+    botWorkerDeadRef.current = true
+    setBotNote(`The computer's planner ${why}, so it is running in a simpler mode. This usually means the site was updated while this tab was open: reload the page when convenient (a reload ends the current game).`)
+    const req = botPendingRef.current
+    if (req) botInline(req)
+  }
+
+  /** The worker's job done on the page: a short search (the page freezes while it runs, so keep it brief). */
+  function botInline(req: BotRequest) {
+    if (botPendingRef.current !== req) return
+    let action: Action | undefined
+    try {
+      const g = JSON.parse(req.state) as GameState
+      try { action = searchBotAction(g, req.seat, { ...DEFAULT_SEARCH, timeBudgetMs: 1200, banned: req.banned?.length ? new Set(req.banned) : undefined }) }
+      catch { action = botAction(g, req.seat) }
+    } catch { /* answered below as "no action" */ }
+    onBotReply({ id: req.id, action })
+  }
+
+  function onBotReply(data: BotReply) {
+    {
+      {
+        const e = { data }
+        if (botWatchdogRef.current !== null) { clearTimeout(botWatchdogRef.current); botWatchdogRef.current = null }
+        botPendingRef.current = null
         const { id, action, error } = e.data
         // Claude difficulty: this is the search bot's suggestion — pass it on to Claude, stay busy
         if (claudeWaitRef.current === id) {
@@ -420,9 +471,7 @@ export default function App() {
         if (!local || !botNeedsToAct(local, 1)) return
         applyBotAction(local, error || !action ? { t: 'endTurn' } : action)
       }
-      botWorkerRef.current = w
     }
-    return botWorkerRef.current
   }
 
   /** Claude difficulty, second half: with the search bot's suggestion in hand, ask Claude (through the
@@ -464,6 +513,8 @@ export default function App() {
 
   /** invalidate any in-flight worker computation (its reply will be dropped) and clear the spinner. */
   function invalidateBotThink() {
+    if (botWatchdogRef.current !== null) { clearTimeout(botWatchdogRef.current); botWatchdogRef.current = null }
+    botPendingRef.current = null
     claudeWaitRef.current = null
     dropClaudePlan() // an undo makes Claude's queued plan stale
     botReqIdRef.current++
@@ -989,7 +1040,7 @@ export default function App() {
       claudeWaitRef.current = id
       if (botThinkTimerRef.current !== null) clearTimeout(botThinkTimerRef.current)
       botThinkTimerRef.current = window.setTimeout(() => setBotThinking(true), 350)
-      ensureBotWorker().postMessage({ id, state: JSON.stringify(local), seat: 1, timeBudgetMs: 4000, banned: [...botBannedRef.current], analyze: true })
+      askBotWorker({ id, state: JSON.stringify(local), seat: 1, timeBudgetMs: 4000, banned: [...botBannedRef.current], analyze: true })
       return
     }
     if (session?.botDifficulty === 'thinking' || session?.botDifficulty === 'claude') {
@@ -998,7 +1049,7 @@ export default function App() {
       const id = ++botReqIdRef.current
       if (botThinkTimerRef.current !== null) clearTimeout(botThinkTimerRef.current)
       botThinkTimerRef.current = window.setTimeout(() => setBotThinking(true), 350)
-      ensureBotWorker().postMessage({ id, state: JSON.stringify(local), seat: 1, timeBudgetMs: 30000, banned: [...botBannedRef.current] })
+      askBotWorker({ id, state: JSON.stringify(local), seat: 1, timeBudgetMs: 30000, banned: [...botBannedRef.current] })
       return
     }
     // "Fast" difficulty: the instant procedural bot, computed inline. Score-neutral actions taken
@@ -1638,6 +1689,12 @@ export default function App() {
             <div className="bot-thinking" role="status" aria-live="polite">
               <span className="bot-thinking-spinner" aria-hidden="true" />
               <span>{session.botDifficulty === 'claude' ? 'Claude is thinking…' : 'Computer is thinking…'}</span>
+            </div>
+          )}
+          {botNote && (
+            <div className="archive-note" role="alert">
+              <button className="game-review-close" onClick={() => setBotNote(null)} aria-label="Close">×</button>
+              <b>⚠ Computer opponent</b> {botNote}
             </div>
           )}
           {archiveNote && (
