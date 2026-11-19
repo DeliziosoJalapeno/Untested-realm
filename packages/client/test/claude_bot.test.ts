@@ -3,7 +3,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { applyAction, type Action } from '@sorcery/shared'
 import { scene } from '../src/tutorial/scene'
-import { candidates, describePosition, deckReference, buildRequest, claudeBotAction, claudeQuick, claudeDefers, claudeUsage, claudeJournal, resetClaudeBot, lastClaudeNote, MAX_CANDIDATES, analyze, outcomeText, objection, BLUNDER_MARGIN, type AskClaude, type ClaudeAnalysis } from '../src/claude_bot'
+import { candidates, describePosition, deckReference, buildRequest, claudeBotAction, claudeQuick, claudeDefers, claudeSpent, setClaudeEconomy, claudeUsage, claudeJournal, resetClaudeBot, lastClaudeNote, MAX_CANDIDATES, analyze, outcomeText, objection, BLUNDER_MARGIN, type AskClaude, type ClaudeAnalysis } from '../src/claude_bot'
 import { botActionKey } from '../src/bot'
 import type { ReplyOutcome } from '../src/bot_search'
 import { fairView } from '../src/bot_search'
@@ -188,9 +188,38 @@ describe('Claude opponent — looking ahead', () => {
     const seen: string[] = []
     const ask: AskClaude = async (req) => { seen.push(req.notes); return { picks: [1], plan: 'Tempo.', strategy: 'Race in the air; hold the Bolt for a Spellcaster.' } }
     await claudeBotAction(t.g, 0, null, ask)
+    t.g.turn += 2 // a later turn: Claude is asked once per turn
     await claudeBotAction(t.g, 0, null, ask)
     expect(seen[0]).toBe('')
     expect(seen[1]).toMatch(/Your game plan — Race in the air; hold the Bolt for a Spellcaster\./)
+  })
+})
+
+describe('Claude opponent — economy', () => {
+  it('asks Claude once per turn; the rest of the turn and every follow-up question go to the search bot', async () => {
+    const t = board()
+    let calls = 0
+    const ask: AskClaude = async () => { calls++; return { picks: [1], plan: 'One move.' } }
+    const suggestion = candidates(t.g, 0)[1].action
+    expect(claudeSpent(t.g, 0)).toBe(false)
+    expect((await claudeBotAction(t.g, 0, suggestion, ask)).source).toBe('claude')
+    expect(claudeSpent(t.g, 0)).toBe(true)
+    const again = await claudeBotAction(t.g, 0, suggestion, ask)
+    expect(calls).toBe(1)
+    expect(again).toMatchObject({ source: 'fallback', action: suggestion, note: '' })
+    // a newly drawn card earns one more question
+    t.g.players[0].hand.push('never-seen')
+    expect(claudeSpent(t.g, 0)).toBe(false)
+    t.g.players[0].hand.pop()
+    // next turn: asked again
+    t.g.turn += 2
+    expect(claudeSpent(t.g, 0)).toBe(false)
+    // a question (targets, a block) is the search bot's in economy mode, Claude's in full mode
+    t.g.prompts.unshift({ id: 'px', kind: 'chooseOption', player: 0, title: 'x', data: { options: ['a', 'b'] } } as never)
+    expect(claudeDefers(t.g)).toBe(true)
+    setClaudeEconomy(false)
+    expect(claudeDefers(t.g)).toBe(false)
+    setClaudeEconomy(true)
   })
 })
 

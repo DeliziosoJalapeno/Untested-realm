@@ -3,7 +3,7 @@ import type { ClockConfig, DeckList } from '@sorcery/shared'
 import type { SealedConfig } from '../net'
 import { loadDecks, SOLO_SEALED_KEY, type SoloSealedCfg } from '../App'
 import * as auth from '../auth'
-import { claudeStatus, type ClaudeStatus } from '../claude_bot'
+import { claudeStatus, claudeEconomy, setClaudeEconomy, type ClaudeStatus } from '../claude_bot'
 import type { RoomInfo } from '../auth'
 import DeckPreview from './DeckPreview'
 import CardImg from './CardImg'
@@ -166,6 +166,7 @@ export default function Home({
 
   // optional chess clock (off by default; enabling defaults to 15 + 30)
   const [stepBot, setStepBot] = useState(false) // pause the computer after each action
+  const [economy, setEconomy] = useState(claudeEconomy)
   const [botDifficulty, setBotDifficulty] = useState<'fast' | 'thinking' | 'claude'>('thinking') // 'thinking' = strong search bot
   // the Claude opponent needs the server to hold an Anthropic API key — ask once whether it does
   const [claude, setClaude] = useState<ClaudeStatus | null>(null)
@@ -663,7 +664,12 @@ export default function Home({
           </select>
         </label>
         {botDifficulty === 'claude' && claude?.enabled && (
-          <p className="claude-hint">Claude ({claude.model}) chooses the computer's moves, with the search bot as its adviser and fallback. Expect 10–20 seconds on its turn; each turn uses your Anthropic API credit.</p>
+          <>
+            <p className="claude-hint">Claude ({claude.model}) chooses the computer's moves, with the search bot as its adviser and fallback. Expect 10–20 seconds on its turn; each turn uses your Anthropic API credit.</p>
+            <label title="On: Claude is asked once per turn for the plan of the whole turn; targets, blocks and anything left over go to the search bot (about a quarter of the calls). Off: Claude is asked about everything.">
+              <input type="checkbox" checked={economy} onChange={(e) => { setClaudeEconomy(e.target.checked); setEconomy(e.target.checked) }} /> 💲 Economy: ask Claude once per turn
+            </label>
+          </>
         )}
         {claude && !claude.enabled && (
           <p className="claude-hint">Claude opponent: {claude.reason ?? 'not available'}</p>

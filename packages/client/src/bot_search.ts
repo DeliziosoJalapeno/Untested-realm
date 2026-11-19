@@ -1004,6 +1004,14 @@ export function searchBotAction(state: GameState, me: PlayerId, cfg: SearchConfi
   return botAction(view(), me, cfg.banned) // generator offered nothing legal → base policy (ban-aware)
 }
 
+/** How far the last root search's best first move was ahead of its second best (in evaluation points);
+ *  Infinity when only one move was looked at. Small = a close decision. */
+export function lastRootGap(): number {
+  if (ROOT_ALTS.length < 2) return Infinity
+  const v = ROOT_ALTS.map((x) => x.val).sort((x, y) => y - x)
+  return v[0] - v[1]
+}
+
 // ── DEEP mode: play the best few lines out several turns ────────────────────
 let ROLL_KEY = ''
 let ROLL_SPENT = 0

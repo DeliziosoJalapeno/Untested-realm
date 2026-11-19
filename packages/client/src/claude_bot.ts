@@ -375,7 +375,7 @@ export const claudeUsage = () => ({ ...USAGE })
 /** forget the queued plan (an undo makes it stale); the game's memo and usage are kept */
 export function dropClaudePlan(): void { PLAN = null }
 /** a new game */
-export function resetClaudeBot(): void { JOURNAL = []; PLAN = null; LAST_NOTE = ''; MEMO = []; STRATEGY = ''; USAGE = { calls: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }
+export function resetClaudeBot(): void { ASKED = null; JOURNAL = []; PLAN = null; LAST_NOTE = ''; MEMO = []; STRATEGY = ''; USAGE = { calls: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }
 
 function notesFor(real: GameState): string {
   const earlier = MEMO.filter((m) => m.turn < real.turn).slice(-2).map((m) => `turn ${m.turn}: ${m.plan}`)
@@ -413,8 +413,24 @@ export function claudeQuick(real: GameState, me: PlayerId): Action | null {
 /** Questions worth a model call. Everything else the game asks (which deck to draw from, the first
  *  site, ordering cards, dividing damage, the opening hand) stays with the search bot: cheap, and tuned. */
 const CLAUDE_PROMPTS = new Set(['defend', 'intercept', 'chooseTargets', 'chooseSquare', 'chooseOption', 'chooseCards', 'yesNo', 'siteOrSpell'])
+/** ECONOMY (the default): Claude is asked ONCE per turn of its own, for the plan of the whole turn; every
+ *  follow-up question (targets, blocks, options) and anything left after its plan runs out goes to the search
+ *  bot. In two reviewed games that is about 11 calls a game instead of 45, and Claude's answers to those
+ *  follow-ups matched the search bot's three times in four anyway. Full mode asks Claude everything.
+ *  Switch: localStorage 'claude:economy' = '0' for full. */
+let ECONOMY = ((): boolean => { try { return localStorage.getItem('claude:economy') !== '0' } catch { return true } })()
+export function setClaudeEconomy(on: boolean): void { ECONOMY = on; try { localStorage.setItem('claude:economy', on ? '1' : '0') } catch { /* not kept */ } }
+export const claudeEconomy = (): boolean => ECONOMY
+/** the turn Claude was last asked for a plan, and the hand it saw */
+let ASKED: { seat: PlayerId; turn: number; hand: Set<string> } | null = null
 export const claudeDefers = (real: GameState): boolean =>
-  real.phase === 'mulligan' || (!!real.prompts[0] && !CLAUDE_PROMPTS.has(real.prompts[0].kind))
+  real.phase === 'mulligan' || (!!real.prompts[0] && (ECONOMY || !CLAUDE_PROMPTS.has(real.prompts[0].kind)))
+/** Economy: Claude has already planned this turn and nothing new has been drawn since, so the rest of the
+ *  turn is the search bot's. (A newly drawn card earns one more question.) */
+export function claudeSpent(real: GameState, me: PlayerId): boolean {
+  if (!ECONOMY || !ASKED || ASKED.seat !== me || ASKED.turn !== real.turn) return false
+  return real.players[me].hand.every((id) => ASKED!.hand.has(id))
+}
 
 /** One consultation, kept so a finished game can be reviewed: exactly what Claude was shown, what it
  *  chose, what the engine would have played, and whether the engine objected. */
@@ -455,6 +471,7 @@ export async function claudeBotAction(real: GameState, me: PlayerId, suggested: 
   if (cands.length === 1) return { action: cands[0].action, source: 'queue', note: LAST_NOTE }
   const queued = fromQueue(real, me, cands)
   if (queued) return { action: queued, source: 'queue', note: LAST_NOTE }
+  if (claudeSpent(real, me)) return fallback('')
   // nothing to decide: no spell, attack, ability, site or question on offer — don't pay to be told to pass
   if (!cands.some((c) => meaningful(c.action))) return fallback('')
 
@@ -499,6 +516,7 @@ export async function claudeBotAction(real: GameState, me: PlayerId, suggested: 
     if (reply.strategy) STRATEGY = String(reply.strategy).slice(0, 300)
     if (LAST_NOTE && real.activePlayer === me && !real.prompts[0]) { MEMO = MEMO.filter((m) => m.turn !== real.turn); MEMO.push({ turn: real.turn, plan: LAST_NOTE }) }
     PLAN = { seat: me, turn: real.turn, queue: keys.slice(1), hand: handKey(real, me), notes: LAST_NOTE }
+    if (!real.prompts[0] && real.activePlayer === me) ASKED = { seat: me, turn: real.turn, hand: new Set(real.players[me].hand) }
     entry.result = 'claude'; entry.picked = picks.map((n) => cands[n - 1].text); entry.plan = LAST_NOTE; entry.strategy = reply.strategy || undefined
     return { action: cands[picks[0] - 1].action, source: 'claude', note: LAST_NOTE }
   } catch (e) {

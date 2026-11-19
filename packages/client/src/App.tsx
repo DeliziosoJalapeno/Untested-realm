@@ -41,7 +41,7 @@ import { puzzleById, PUZZLES } from './puzzle/puzzles'
 import PuzzlePage from './components/PuzzlePage'
 import { gate, advance, next as tutNext, runFoe, coachToAct } from './tutorial/runner'
 import { markLessonDone, markPuzzleSolved } from './tutorial/progress'
-import { claudeBotAction, claudeQuick, claudeDefers, askServer, resetClaudeBot, dropClaudePlan, claudeUsage, claudeJournal, claudeStatus, askGameReview, type ClaudeAnalysis } from './claude_bot'
+import { claudeBotAction, claudeQuick, claudeDefers, claudeSpent, askServer, resetClaudeBot, dropClaudePlan, claudeUsage, claudeJournal, claudeStatus, askGameReview, type ClaudeAnalysis } from './claude_bot'
 import { buildReport, reportText, type GameReport } from './game_report'
 import SealedDeckbuild from './components/SealedDeckbuild'
 import Game from './components/Game'
@@ -1042,13 +1042,16 @@ export default function App() {
       if (botBusyRef.current) return
       const quick = claudeQuick(local, 1)
       if (quick) { applyBotAction(local, quick); return }
-      botBusyRef.current = true
-      const id = ++botReqIdRef.current
-      claudeWaitRef.current = id
-      if (botThinkTimerRef.current !== null) clearTimeout(botThinkTimerRef.current)
-      botThinkTimerRef.current = window.setTimeout(() => setBotThinking(true), 350)
-      askBotWorker({ id, state: JSON.stringify(local), seat: 1, timeBudgetMs: 4000, banned: [...botBannedRef.current], analyze: true })
-      return
+      // economy: Claude has planned this turn already — the search bot finishes it (below)
+      if (!claudeSpent(local, 1)) {
+        botBusyRef.current = true
+        const id = ++botReqIdRef.current
+        claudeWaitRef.current = id
+        if (botThinkTimerRef.current !== null) clearTimeout(botThinkTimerRef.current)
+        botThinkTimerRef.current = window.setTimeout(() => setBotThinking(true), 350)
+        askBotWorker({ id, state: JSON.stringify(local), seat: 1, timeBudgetMs: 4000, banned: [...botBannedRef.current], analyze: true })
+        return
+      }
     }
     if (session?.botDifficulty === 'thinking' || session?.botDifficulty === 'claude') {
       if (botBusyRef.current) return // already waiting on the worker
