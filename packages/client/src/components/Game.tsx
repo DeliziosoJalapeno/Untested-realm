@@ -2136,6 +2136,7 @@ function GameInner({
     }
     // a location-picking Genesis (Hailstriker): an empty square or void next to the summoning square
     if (castGenesisAtSquare(x, y)) return
+    if (pickGenesisUnitAt(x, y)) return
     // square-target picking for spells (magic) AND activated abilities (Ancient
     // Dragon's breath, Ignis Rex's roar, Midland Army's bombard, Sparkmage's spark…)
     if ((mode.m === 'magic' || mode.m === 'abilityTargets') && currentSpec()?.what === 'square') {
@@ -2774,7 +2775,7 @@ function GameInner({
       return
     }
     // a unit-picking Genesis: a click on the site itself is no pick (the units are their own chips)
-    if (mode.m === 'genesisTargets' && genesisSpec()?.what !== 'square') { ev.stopPropagation(); return }
+    if (mode.m === 'genesisTargets' && genesisSpec()?.what !== 'square') { ev.stopPropagation(); pickGenesisUnitAt(siteObj.x, siteObj.y); return }
     // a location-picking Genesis (Hailstriker): the site's square is the pick
     if (castGenesisAtSquare(siteObj.x, siteObj.y)) { ev.stopPropagation(); return }
     // Editor open: a plain click selects ANY site for editing (either player's, any turn),
@@ -3207,6 +3208,25 @@ function GameInner({
     setMode({ m: 'idle' })
     return true
   }
+  // A Genesis that targets a unit (Lacuna Entity's drag): a click on the SITE or square under the target
+  // counts as picking it when exactly one unit there can be picked, so you need not hit the small chip.
+  function pickGenesisUnitAt(x: number, y: number): boolean {
+    if (mode.m !== 'genesisTargets') return false
+    const spec: any = genesisSpec()
+    if (!spec || spec.what === 'square' || spec.what === 'site') return false
+    const m = mode
+    const summoner = view.units[m.casterId] as UnitState | undefined
+    const caster = { ...(summoner ?? {}), controller: me, x: m.at.x, y: m.at.y, region: m.at.region ?? 'surface' } as UnitState
+    const here = (Object.values(view.units) as UnitState[]).filter((u) => {
+      if (u.x !== x || u.y !== y) return false
+      if (spec.what === 'minion' && u.isAvatar) return false
+      if (spec.what === 'avatar' && !u.isAvatar) return false
+      try { return !spec.filter || !!spec.filter(st, u, caster) } catch { return false }
+    })
+    if (here.length !== 1) return false
+    return clickUnitForGenesis(here[0])
+  }
+
   // genesis target flow: click a unit while in genesisTargets mode
   function clickUnitForGenesis(u: UnitState) {
     if (mode.m !== 'genesisTargets') return false

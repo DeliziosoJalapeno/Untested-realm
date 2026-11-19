@@ -105,10 +105,27 @@ export interface SearchConfig {
    *  position at the same depth (A-then-B ≡ B-then-A). Exact — see `ttKey`. ON; off only for A/B checks. */
   transpositions?: boolean
   weights: EvalWeights
+  /** DEEP mode. After the turn search, the few best first moves are each played out several turns ahead
+   *  (both sides piloted by the fast bot, over several shuffles of the cards nobody has seen) and the move
+   *  with the best average result is played. Off when absent. See `rolloutPick`. */
+  rollouts?: RolloutConfig
   /** anti-loop ward (driver-fed): action keys (botActionKey) that already proved score-neutral this
    *  turn. They're excluded from the ROOT of the search + the plan replay, so the bot can't re-pick a
    *  score-neutral action in a loop (esp. after a timeout re-plan). */
   banned?: Set<string>
+}
+
+export interface RolloutConfig {
+  /** how many of the search's best first moves compete */
+  lines: number
+  /** shuffles of the unseen cards each line is played against (the same shuffles for every line) */
+  samples: number
+  /** how many turn ends to play past my own (2 = the opponent's turn and my next one) */
+  turns: number
+  /** only first moves the search scored within this much of its best are worth the playouts */
+  margin: number
+  /** playout time allowed per turn of mine (ms), across every re-plan of that turn */
+  budgetMs: number
 }
 
 export const DEFAULT_SEARCH: SearchConfig = {
@@ -350,6 +367,8 @@ const CONTS: (Continuation | null)[] = [null, null]
 /** depth of the current search's root (0 for a fresh turn plan; deeper when continuing a cut-off tree). */
 let ROOT_DEPTH = 0
 let ROOT_PICK: { path: string; state: GameState; bonus: number } | null = null
+/** the first moves the last root search went into, with the value and plan found under each */
+let ROOT_ALTS: { action: Action; val: number; plan: PlanNode }[] = []
 
 /** True while `me` is the one to act: my open prompt, or my main phase with no pending prompt. */
 function controlMine(state: GameState, me: PlayerId): boolean {
@@ -743,6 +762,7 @@ function searchNode(state: GameState, me: PlayerId, cfg: SearchConfig, deadline:
     }
     const childPath = `${path}|${JSON.stringify(r.c.action)}`
     const sub = search(next, me, cfg, deadline, depth + 1, childBonus, childPath)
+    if (depth === ROOT_DEPTH) { if (r === chosen[0]) ROOT_ALTS = []; ROOT_ALTS.push({ action: r.c.action, val: sub.val, plan: sub.plan }) }
     if (sub.val > bestVal) { bestVal = sub.val; bestAction = r.c.action; bestNext = sub.plan; bestPick = { path: childPath, state: next, bonus: childBonus } }
   }
   if (depth === ROOT_DEPTH) ROOT_PICK = bestPick
@@ -964,6 +984,10 @@ export function searchBotAction(state: GameState, me: PlayerId, cfg: SearchConfi
     ? search(clone(cont.state), me, cfg, deadline, cont.depth, cont.bonus, cont.path)
     : search(view(), me, cfg, deadline, 0)
   PLAN = plan; PLAN_SEAT = me; PLAN_TURN = state.turn; PLAN_KNOWN = new Set(state.players[me].hand)
+  if (cfg.rollouts && !cont && plan.kind === 'act') {
+    const better = rolloutPick(state, me, cfg, cfg.rollouts, plan.action)
+    if (better) PLAN = { kind: 'act', action: better.action, next: better.plan }
+  }
   if (typeof process !== 'undefined' && process.env.SEARCH_DEBUG) {
     // eslint-disable-next-line no-console
     console.error(`t${state.turn} plan depth=${planDepth(plan)} nodes=${NODES} took=${Date.now() - start}ms budget=${cfg.timeBudgetMs} timedOut=${TIMED_OUT}${cont ? ` continued=d${cont.depth}${cont.answered ? '+answer' : ''}` : ''} cached=${TREE.size} tt=${TT.size}/${TT_HITS}hits`)
@@ -978,6 +1002,101 @@ export function searchBotAction(state: GameState, me: PlayerId, cfg: SearchConfi
   }
   if (a &&!(cfg.banned?.has(botActionKey(a)))) return withCleanup(view, me, cfg, a)
   return botAction(view(), me, cfg.banned) // generator offered nothing legal → base policy (ban-aware)
+}
+
+// ── DEEP mode: play the best few lines out several turns ────────────────────
+let ROLL_KEY = ''
+let ROLL_SPENT = 0
+let ROLL_STATS = { calls: 0, changed: 0, playouts: 0 }
+export const rolloutStats = () => ROLL_STATS
+
+/** A copy of the game in which every card `me` has not seen is reshuffled: the opponent's hand is redealt
+ *  from their hand and decks together (keeping how many spells and sites they hold), and both players'
+ *  decks are put in a new order. What `me` knows stays as it is. */
+function reshuffled(real: GameState, me: PlayerId, rand: () => number): GameState {
+  const s = clone(real)
+  const shuffle = (a: string[]) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [a[i], a[j]] = [a[j], a[i]] } }
+  const foe = s.players[opponent(me)]
+  const unseen = hiddenFrom(s, me).unseen // the opponent's hand cards I have been shown stay where they are
+  for (const deck of ['spellbook', 'atlas'] as const) {
+    const isSite = deck === 'atlas'
+    const held = foe.hand.filter((id) => unseen.has(id) && (getCard(s.cards[id].name)?.type === 'Site') === isSite)
+    const pool = [...held, ...foe[deck]]
+    shuffle(pool)
+    const dealt = new Set(pool.slice(0, held.length))
+    let k = 0
+    const fresh = [...dealt]
+    foe.hand = foe.hand.map((id) => (held.includes(id) ? fresh[k++] : id))
+    foe[deck] = pool.slice(held.length)
+    shuffle(s.players[me][deck])
+  }
+  return s
+}
+
+/** Play `plan` (found by the search) for the rest of my turn on `s`, the fast bot standing in wherever the
+ *  plan has nothing to say; then both sides play on with the fast bot until `turns` more turns have ended. */
+function playOut(s: GameState, me: PlayerId, first: Action, plan: PlanNode | null, turns: number, w: EvalWeights, deadline: number): number {
+  const foe = opponent(me)
+  const startTurn = s.turn
+  const act = (seat: PlayerId, a: Action): boolean => { try { return applyAction(s, seat, a).ok } catch { return false } }
+  if (!act(me, first)) return evaluate(s, me, w)
+  let guard = 0
+  while (s.winner === null && s.phase !== 'over' && s.turn < startTurn + 1 + turns && guard++ < 400 && Date.now() < deadline) {
+    const seat = botNeedsToAct(s, me) ? me : botNeedsToAct(s, foe) ? foe : null
+    if (seat === null) break
+    if (s.turn === startTurn && plan) {
+      // still my turn: follow the searched plan
+      if (seat === foe) {
+        if (!act(foe, botAction(s, foe))) break
+        if (plan.kind === 'branch') plan = plan.byState[sig(s, me)] ?? null
+        continue
+      }
+      if (plan.kind === 'branch') { plan = plan.byState[sig(s, me)] ?? null; continue }
+      if (plan.kind === 'act' && legal(s, me, plan.action)) { act(me, plan.action); plan = plan.next; continue }
+      plan = null
+    }
+    if (!act(seat, botAction(s, seat))) { if (!act(seat, { t: 'endTurn' })) break }
+  }
+  if (s.winner === me) return 1e6
+  if (s.winner === foe) return -1e6
+  return evaluate(s, me, w)
+}
+
+/** Among the search's best first moves, the one whose playouts come out best on average; null to keep the
+ *  search's own choice (nothing close to compare, out of time, or no clear improvement). */
+function rolloutPick(real: GameState, me: PlayerId, cfg: SearchConfig, rc: RolloutConfig, searched: Action): { action: Action; plan: PlanNode } | null {
+  const key = `${me}:${real.turn}`
+  if (key !== ROLL_KEY) { ROLL_KEY = key; ROLL_SPENT = 0 }
+  if (ROLL_SPENT >= rc.budgetMs || real.winner !== null) return null
+  const best = Math.max(...ROOT_ALTS.map((a) => a.val))
+  const alts = ROOT_ALTS.filter((a) => a.val >= best - rc.margin && !(cfg.banned?.has(botActionKey(a.action))) && legal(real, me, a.action))
+    .sort((a, b) => b.val - a.val).slice(0, rc.lines)
+  if (alts.length < 2) return null
+  const t0 = Date.now()
+  const deadline = t0 + (rc.budgetMs - ROLL_SPENT)
+  ROLL_STATS.calls++
+  // the same shuffles for every line, so the lines differ only by the move
+  let seed = (real.seed ^ (real.turn * 2654435761) ^ (real.log.length * 40503)) >>> 0
+  const rand = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296 }
+  const sum = alts.map(() => 0)
+  let done = 0
+  for (let i = 0; i < rc.samples && Date.now() < deadline; i++) {
+    const world = reshuffled(real, me, rand)
+    const row = alts.map((a) => playOut(clone(world), me, a.action, a.plan, rc.turns, cfg.weights, deadline))
+    if (Date.now() >= deadline && i > 0) break // a cut-off row would favour whichever line was played first
+    row.forEach((v, j) => { sum[j] += Math.max(-3000, Math.min(3000, v)) }) // a win or loss counts as a big swing, not an infinite one
+    done++
+    ROLL_STATS.playouts += alts.length
+  }
+  ROLL_SPENT += Date.now() - t0
+  if (!done) return null
+  const mine = alts.findIndex((a) => botActionKey(a.action) === botActionKey(searched))
+  let top = 0
+  for (let j = 1; j < alts.length; j++) if (sum[j] > sum[top]) top = j
+  // keep the search's move unless a different one is clearly better across the playouts
+  if (mine >= 0 && (top === mine || (sum[top] - sum[mine]) / done < 25)) return null
+  ROLL_STATS.changed++
+  return { action: alts[top].action, plan: alts[top].plan }
 }
 
 /** Where in the cut-off tree reality now stands. Usually it's exactly the chosen action's position; but

@@ -5,7 +5,7 @@
 import { createGame, applyAction, featuredDecks, type PlayerId, type DeckList } from '../../packages/shared/src'
 import '../../packages/shared/src/cards/scripts/index'
 import { botAction, botNeedsToAct } from '../../packages/client/src/bot'
-import { searchBotAction, DEFAULT_SEARCH, resetSearchState, type SearchConfig } from '../../packages/client/src/bot_search'
+import { searchBotAction, DEFAULT_SEARCH, resetSearchState, rolloutStats, type SearchConfig } from '../../packages/client/src/bot_search'
 
 const [pArg, sArg, aArg, bArg, partArg] = process.argv.slice(2)
 const PAIRS = Number(pArg ?? 10), SEED = Number(sArg ?? 1)
@@ -37,4 +37,4 @@ for (let p = 0; p < PAIRS; p++) {
     if (g.winner === null) draws++; else wins[(g.winner as number) ^ swap]++
   }
 }
-console.log(JSON.stringify({ a: wins[0], b: wins[1], draws, msA: Math.round(ms[0] / Math.max(1, turnsBy[0])), msB: Math.round(ms[1] / Math.max(1, turnsBy[1])) }))
+console.log(JSON.stringify({ a: wins[0], b: wins[1], draws, msA: Math.round(ms[0] / Math.max(1, turnsBy[0])), msB: Math.round(ms[1] / Math.max(1, turnsBy[1])), rollouts: rolloutStats() }))
