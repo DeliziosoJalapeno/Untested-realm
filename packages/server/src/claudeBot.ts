@@ -243,7 +243,7 @@ export async function reviewGame(summary: string, fetchImpl: Fetch = fetch as un
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
     body: JSON.stringify({ model: claudeModel(), max_tokens: 900, system: REVIEW_PROMPT, messages: [{ role: 'user', content: summary }] }),
-    signal: AbortSignal.timeout(45_000),
+    signal: AbortSignal.timeout(90_000),
   })
   if (!res.ok) throw new Error(`Anthropic API ${res.status}: ${(await res.text().catch(() => '')).slice(0, 300)}`)
   const resp: any = await res.json()

@@ -1411,7 +1411,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, path: string
       if (typeof parsed === 'string') return sendJson(res, 400, { error: parsed })
       if (throttled()) return sendJson(res, 429, { error: 'Too many Claude requests this minute.' })
       try { return sendJson(res, 200, await reviewGame(parsed.summary)) }
-      catch (e) { return sendJson(res, 502, { error: (e as Error).message }) }
+      catch (e) { console.warn(`[game-review] failed: ${(e as Error).message}`); return sendJson(res, 502, { error: (e as Error).message }) }
     }
     // --- register / login (rate-limited per IP) ---
     if (path === '/api/register' && method === 'POST') {

@@ -821,8 +821,15 @@ export default function App() {
       postGameRef.current.review = text
       setGameReview({ text, pending: false })
       await save()
-    } catch {
-      if (still()) setGameReview(null) // the review is a bonus: never in the way of the game
+    } catch (e) {
+      // the review is a bonus, never in the way of the game — but say why it is missing, and keep the
+      // reason with the saved game so a failure can be traced later
+      const why = String((e as Error)?.message ?? e).slice(0, 300)
+      if (still()) {
+        setGameReview({ text: `Claude's review could not be written: ${why}`, pending: false })
+        postGameRef.current.review = `(no review: ${why})`
+        await save().catch(() => {})
+      }
     }
   }
   /** flag the current moment of a local game for review, with a note, and save the game now */
