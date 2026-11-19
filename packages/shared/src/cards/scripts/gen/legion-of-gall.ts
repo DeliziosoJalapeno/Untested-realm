@@ -1,5 +1,4 @@
 import { registerScript, type EffectAPI } from '../registry'
-import { allCards } from '../../db'
 import { pushLog, opponent } from '../../../engine/effects'
 import { collectionBanned, payZoneToll, collectionNames } from '../../../engine/statics'
 import type { PlayerId } from '../../../engine/types'
@@ -48,7 +47,9 @@ registerScript('Legion of Gall', {
     gall: (ctx, c, name) => {
       const target = c.target as PlayerId
       const taken = c.taken as string[]
-      if (typeof name === 'string' && name && allCards.some((cd) => cd.name === name) && !collectionBanned(ctx.state, target, name)) {
+      // only a card that is actually IN the looked-at collection (and not already taken) can be carried off
+      const open = collectionNames(ctx.state, target).filter((n) => !collectionBanned(ctx.state, target, n) && !taken.includes(n))
+      if (typeof name === 'string' && open.includes(name)) {
         ctx.state.flow = ctx.state.flow ?? {}
         const bans = ctx.state.flow.collectionBans ?? { 0: [], 1: [] }
         bans[target] = [...(bans[target] ?? []), name]

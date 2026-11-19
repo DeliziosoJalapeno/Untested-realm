@@ -51,6 +51,21 @@ describe('Legion of Gall: banish-from-collection shows the collection as a grid'
     expect(g.prompts.length).toBe(0) // nothing left → done
     expect([...(g.flow as any).collectionBans[0]].sort()).toEqual(['Drown', 'Fireball', 'Giant Shark'])
   })
+  it("raids the OPPONENT'S collection when asked to, and only cards that are in it can be named", () => {
+    const g = board()
+    g.players[0].collection = { 'Lightning Bolt': 1, 'Grapple Shot': 1, Displace: 1 }
+    g.players[1].collection = { Blizzard: 1, Displace: 1, 'Lightning Bolt': 1, Sleep: 1 }
+    const legion = summonToken(g, 'Legion of Gall', 0, 2, 0)!
+    getScript('Legion of Gall')!.genesis!(makeCtx(g, legion.id, 0, []))
+    answer(g, "your opponent's")
+    const p: any = g.prompts[0]
+    expect([...p.data.names].sort()).toEqual(['Blizzard', 'Displace', 'Lightning Bolt', 'Sleep'])
+    answer(g, 'Grapple Shot') // a real card, but not in the collection being looked at: refused, asked again
+    expect((g.prompts[0] as any).data.names.length).toBe(4)
+    answer(g, 'Blizzard'); answer(g, 'Displace'); answer(g, 'Sleep')
+    expect([...(g.flow as any).collectionBans[1]].sort()).toEqual(['Blizzard', 'Displace', 'Sleep'])
+    expect((g.flow as any).collectionBans[0] ?? []).toEqual([])
+  })
 })
 
 describe('Pith Imp steals only spells, never a site', () => {

@@ -367,6 +367,15 @@ function oppMustAnswer(state: GameState, me: PlayerId): boolean {
 
 /** is `a` legal for `me` right now? (single clone+apply — cheap; used to validate a cached plan step) */
 function legal(state: GameState, me: PlayerId, a: Action): boolean {
+  // A cached answer must be one the prompt on the table actually offers. Some prompts re-ask instead of
+  // rejecting a bad answer, so "the engine accepted it" is not enough: a stale plan once answered Legion
+  // of Gall with names from the wrong collection.
+  if (a.t === 'prompt') {
+    const p: any = state.prompts[0]
+    if (!p || p.id !== a.promptId) return false
+    const listed: unknown[] | undefined = p.kind === 'nameCard' ? p.data?.names : p.kind === 'chooseOption' ? p.data?.options : undefined
+    if (Array.isArray(listed) && listed.length && !listed.includes(a.choice)) return false
+  }
   const c = clone(state)
   try { return applyAction(c, me, a).ok } catch { return false }
 }

@@ -1918,6 +1918,13 @@ function GameInner({
       if (mode.m === 'placeSite') {
         for (const s of legalSiteSquares(st, me, view.cards[mode.cardId]?.name)) set.set(`${s.x},${s.y}`, 'hl-place')
       }
+      // a location-picking Genesis (Hailstriker): light up the squares next to the summoning square
+      if (mode.m === 'genesisTargets' && genesisSpec()?.what === 'square') {
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const x = mode.at.x + dx, y = mode.at.y + dy
+          if (x >= 0 && y >= 0 && x < GRID_W && y < GRID_H) set.set(`${x},${y}`, 'hl-place')
+        }
+      }
       if (mode.m === 'summon') {
         const name = view.cards[mode.cardId]?.name
         // oversized (2x2) minions occupy four squares — placed via intersection markers
