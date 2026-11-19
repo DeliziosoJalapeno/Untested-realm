@@ -2844,3 +2844,5 @@ button.autobattle:hover:not(:disabled) { background: #4a5cc0; }
 @media (max-width: 1100px) { .deck-stats.ds-dashboard { grid-template-columns: 1fr 1fr; } }
 
 .db-row-cost { display: inline-block; min-width: 18px; margin-right: 6px; padding: 0 4px; border-radius: 9px; background: #2a3044; color: #dfe4f5; font-style: normal; font-size: 11px; text-align: center; font-variant-numeric: tabular-nums; }
+
+.archive-note { position: fixed; left: 8px; top: 56px; z-index: 57; width: min(420px, calc(100vw - 16px)); background: #3a2020f5; color: #ffe1dc; border: 1px solid #ff8a80; border-radius: 10px; padding: 8px 30px 10px 12px; font-size: 13px; line-height: 1.4; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5); }

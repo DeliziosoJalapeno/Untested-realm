@@ -6,7 +6,7 @@ import { readFileSync, existsSync, statSync } from 'node:fs'
 import { join, extname, resolve } from 'node:path'
 import { WebSocketServer, WebSocket } from 'ws'
 import { saveLocalReplay, isLoopback, buildRecord, localArchiveOn } from './localReplays'
-import { hostedArchiveOn, saveHostedReplay, archiveAllowed } from './gameArchive'
+import { hostedArchiveOn, saveHostedReplay, archiveAllowed, hostedArchiveStatus, explain } from './gameArchive'
 import { askClaude, claudeAccess, claudeEnabled, claudeModel, parseRequest, throttled, parseReviewRequest, reviewGame } from './claudeBot'
 import { users, sessions, decks as deckStore, collections as collectionStore, scenarios as scenarioStore, replays as replayStore, achievements as achievementStore, bugs as bugStore, type UserRow } from './db'
 import {
@@ -1390,7 +1390,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, path: string
     // --- local match archive: a game played on this machine is written to <repo>/match-replays ---
     //     On the hosted site (no disk) it is committed to the archive branch on GitHub instead: gameArchive.ts.
     if (path === '/api/local-replay' && method === 'GET')
-      return sendJson(res, 200, { enabled: (isLoopback(req) && localArchiveOn()) || hostedArchiveOn(), hosted: !(isLoopback(req) && localArchiveOn()) && hostedArchiveOn() })
+      return sendJson(res, 200, { enabled: (isLoopback(req) && localArchiveOn()) || hostedArchiveOn(), hosted: !(isLoopback(req) && localArchiveOn()) && hostedArchiveOn(), ...(hostedArchiveOn() ? { last: hostedArchiveStatus() } : {}) })
     if (path === '/api/local-replay' && method === 'POST') {
       if (isLoopback(req) && localArchiveOn()) {
         const out = saveLocalReplay(await readJsonBody(req, 4 * 1024 * 1024))
@@ -1401,7 +1401,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, path: string
       const built = buildRecord(await readJsonBody(req, 4 * 1024 * 1024))
       if ('error' in built) return sendJson(res, built.status, { error: built.error })
       try { return sendJson(res, 200, { ok: true, file: await saveHostedReplay(built), flags: built.flags }) }
-      catch (e) { console.error(`[game-archive] ${(e as Error).message}`); return sendJson(res, 502, { error: 'Could not save the game.' }) }
+      catch (e) { console.error(`[game-archive] ${(e as Error).message}`); return sendJson(res, 502, { error: `The game was not saved. ${explain((e as Error).message)}` }) }
     }
     // --- a written review of a finished game (Claude; same access as the Claude opponent: it costs money) ---
     if (path === '/api/game-review' && method === 'POST') {

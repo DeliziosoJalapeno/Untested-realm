@@ -1,7 +1,7 @@
 // The hosted game archive (finished games committed to a GitHub branch) and the written-review request.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { buildRecord } from '../../server/src/localReplays'
-import { saveHostedReplay, hostedArchiveOn, resetHostedArchive, archiveAllowed } from '../../server/src/gameArchive'
+import { saveHostedReplay, hostedArchiveOn, resetHostedArchive, archiveAllowed, hostedArchiveStatus } from '../../server/src/gameArchive'
 import { parseReviewRequest, reviewGame } from '../../server/src/claudeBot'
 
 const replay = () => ({ replayVersion: 1, createdAt: Date.UTC(2026, 10, 16, 19, 28, 5), mode: 'bot', decks: [{ name: 'Frost Mage (FvL precon)' }, { name: 'Lavamancer / test' }], names: ['You', 'Computer'], seed: 1, firstPlayer: 0, clock: null, actions: [{ seat: 0, action: { t: 'keepHand' } }], winner: 0 })
@@ -92,6 +92,19 @@ describe('hosted archive on GitHub', () => {
   it('reports a failure instead of pretending the game was saved', async () => {
     const f = (async () => ({ ok: false, status: 401, json: async () => ({ message: 'Bad credentials' }), text: async () => '' })) as any
     await expect(saveHostedReplay(built(), f)).rejects.toThrow(/401/)
+  })
+  it('remembers what happened to the last save, with what to do about a refusal', async () => {
+    const gh = fakeGitHub()
+    await saveHostedReplay(built(), gh.f)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(hostedArchiveStatus()).toMatchObject({ ok: true, saved: 1, failed: 0, repo: 'owner/repo', branch: 'game-archive' })
+    const refuse = (async () => ({ ok: false, status: 403, json: async () => ({ message: 'Resource not accessible by personal access token' }), text: async () => '' })) as any
+    await expect(saveHostedReplay(built(), refuse)).rejects.toThrow(/403/)
+    await new Promise((r) => setTimeout(r, 0))
+    const st = hostedArchiveStatus()
+    expect(st).toMatchObject({ ok: false, saved: 1, failed: 1 })
+    expect(st.error).toMatch(/Contents: Read and write/)
+    expect(JSON.stringify(st)).not.toContain('tkn')
   })
   it('limits how many games one address can save in an hour', () => {
     for (let i = 0; i < 5; i++) expect(archiveAllowed('1.2.3.4', 5)).toBe(true)

@@ -381,6 +381,7 @@ export default function App() {
   // after a game against the computer: the engine report and Claude's written review (see afterGame)
   const [gameReview, setGameReview] = useState<{ text: string; pending: boolean } | null>(null)
   const postGameRef = useRef<{ report?: GameReport; review?: string }>({})
+  const [archiveNote, setArchiveNote] = useState<string | null>(null) // why the finished game could not be saved
   // sealed practice against the computer: the deck-building screen (see startSealedSolo)
   const [soloSealed, setSoloSealed] = useState<{ cfg: SoloSealedCfg; seed: number; botSeed: number; packs: string[][]; pool: Record<string, number>; botDeck: DeckList; deck: DeckList | null } | null>(null)
   /** the worker request whose answer is the search bot's SUGGESTION for Claude (not a move to play) */
@@ -624,7 +625,7 @@ export default function App() {
     localHistory.current = []
     recordingRef.current = null // scenarios (which reuse this) don't record; startHotseat sets it after
     reviewFlagsRef.current = []; archiveDifficultyRef.current = null; archivedEndRef.current = false
-    postGameRef.current = {}; setGameReview(null)
+    postGameRef.current = {}; setGameReview(null); setArchiveNote(null)
     savedReplayIdRef.current = null
     localClockTick.current = Date.now()
     const sess: Session = {
@@ -741,7 +742,9 @@ export default function App() {
   function archiveIfOver(local: GameState) {
     if (local.phase !== 'over' || archivedEndRef.current || !recordingRef.current) return
     archivedEndRef.current = true
-    void archiveLocalGame().catch(() => { /* archive off or unreachable: nothing to do */ })
+    // archive off or unreachable: nothing to do. An archive that is ON but failing is worth saying:
+    // otherwise games silently go missing (a token without write access did exactly that).
+    void archiveLocalGame().catch((e) => { const m = String((e as Error)?.message ?? ''); if (/^The game was not saved/.test(m)) setArchiveNote(m) })
     void afterGame(local)
   }
   /** A finished game against the computer: build the engine report from the replay, ask Claude for a
@@ -948,7 +951,7 @@ export default function App() {
     setPage('game')
     recordingRef.current = startReplay('bot', decks, ['You', 'Computer'], seed, first, clock, secondSeer)
     reviewFlagsRef.current = []; archiveDifficultyRef.current = difficulty; archivedEndRef.current = false
-    postGameRef.current = {}; setGameReview(null)
+    postGameRef.current = {}; setGameReview(null); setArchiveNote(null)
     coachRef.current = null
     resetClaudeBot(); setClaudeNote(null)
   }
@@ -1635,6 +1638,12 @@ export default function App() {
             <div className="bot-thinking" role="status" aria-live="polite">
               <span className="bot-thinking-spinner" aria-hidden="true" />
               <span>{session.botDifficulty === 'claude' ? 'Claude is thinking…' : 'Computer is thinking…'}</span>
+            </div>
+          )}
+          {archiveNote && (
+            <div className="archive-note" role="alert">
+              <button className="game-review-close" onClick={() => setArchiveNote(null)} aria-label="Close">×</button>
+              <b>⚠ Game archive</b> {archiveNote}
             </div>
           )}
           {gameReview && (

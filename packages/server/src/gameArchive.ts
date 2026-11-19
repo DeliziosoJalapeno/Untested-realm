@@ -91,12 +91,29 @@ async function put(f: Fetch, b: BuiltRecord): Promise<string> {
 let queue: Promise<unknown> = Promise.resolve()
 export function saveHostedReplay(b: BuiltRecord, fetchImpl: Fetch = fetch as unknown as Fetch): Promise<string> {
   const job = queue.then(() => put(fetchImpl, b))
-  queue = job.catch(() => undefined)
+  queue = job.then(
+    (file) => { last = { at: new Date().toISOString(), ok: true, file, saved: (last.saved ?? 0) + 1, failed: last.failed ?? 0 } },
+    (e) => { last = { at: new Date().toISOString(), ok: false, error: explain(String((e as Error)?.message ?? e)), saved: last.saved ?? 0, failed: (last.failed ?? 0) + 1 } },
+  )
   return job
 }
 
+/** What happened to the most recent save, for the status check (GET /api/local-replay): without it the
+ *  only place a failure showed was the host's log. Never holds the token. */
+export interface ArchiveStatus { at?: string; ok?: boolean; file?: string; error?: string; saved?: number; failed?: number }
+let last: ArchiveStatus = {}
+export const hostedArchiveStatus = (): ArchiveStatus & { repo: string; branch: string } => ({ ...last, repo: repo(), branch: branch() })
+
+/** GitHub's reason, with what to do about the common ones */
+export function explain(message: string): string {
+  if (/\b403\b/.test(message)) return `${message}. The token can read the repository but not write to it: give it "Contents: Read and write" for ${repo()}.`
+  if (/\b401\b/.test(message)) return `${message}. GitHub does not accept the token: it was mistyped, has expired or was revoked.`
+  if (/\b404\b/.test(message)) return `${message}. The token cannot see ${repo()}: check the repository it was created for.`
+  return message
+}
+
 /** for tests */
-export function resetHostedArchive(): void { branchReady = false; queue = Promise.resolve() }
+export function resetHostedArchive(): void { branchReady = false; queue = Promise.resolve(); last = {} }
 
 // a per-address allowance: this endpoint is open to anyone playing on the site and writes to a repository
 const WINDOW_MS = 60 * 60 * 1000
