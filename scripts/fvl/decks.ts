@@ -243,7 +243,7 @@ DECKS['Cold Snap'] = {
     'Sissi Marksmen': 3, 'The White Death': 1, 'Stygian Archers': 3, Hailstriker: 2,
     'Arctic Fox': 2, 'Highland Princess': 1, 'Adept Illusionist': 2, 'Coy Nixie': 3, 'Lugbog Cat': 2, 'Headless Haunt': 2, 'Gibbous Nightgaunts': 3, 'Order of the Sacred Oak': 3, 'Aria Wraith': 2, 'Frost Elemental': 3,
     'Sacred Stag': 1, 'Lacuna Entity': 1, 'Stomping Mammoth': 3, 'Frozen Horror': 2,
-    'Full-tilt Goliaths': 2, 'Hibernal Legion': 1, Nanurluk: 1, Jormungand: 1, 'Draconian Bonekite': 1,
+    'Full-tilt Goliaths': 2, 'Hibernal Legion': 1, Nanurluk: 1, 'Seirawan Hydra': 1, 'Draconian Bonekite': 1,
     Toolbox: 3, 'Ring of Morrigan': 1,
   },
 }
