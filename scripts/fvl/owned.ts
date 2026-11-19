@@ -25,5 +25,6 @@ export function owned(name: string): { n: number; why: string } {
   if (boxed && c.rarity === 'Ordinary') bump(4, 'playset')
   if (boxed && c.rarity === 'Exceptional') bump(3, 'playset')
   if (LISTED.has(name)) { n = Math.max(n, 1); why = why || 'listed' }
+  if (name === 'Adept Illusionist') n = Math.max(n, 2) // they have two
   return { n, why }
 }

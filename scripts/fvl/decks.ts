@@ -239,9 +239,9 @@ DECKS['F12 Frost Control (owned)'] = {
 DECKS['Cold Snap'] = {
   ...DECKS['F9 Frost Control'], name: 'Cold Snap',
   spellbook: {
-    Freeze: 2, Shatter: 3, Frostbolt: 3, Slide: 2, 'Whirling Blades': 1, Pollimorph: 1,
+    Freeze: 2, Shatter: 3, Frostbolt: 3, Slide: 2, Pollimorph: 1,
     'Sissi Marksmen': 3, 'The White Death': 1, 'Stygian Archers': 3, Hailstriker: 2,
-    'Arctic Fox': 2, 'Highland Princess': 1, Runeling: 1, 'Coy Nixie': 3, 'Lugbog Cat': 2, 'Headless Haunt': 2, 'Gibbous Nightgaunts': 3, 'Order of the Sacred Oak': 3, 'Aria Wraith': 2, 'Frost Elemental': 3,
+    'Arctic Fox': 2, 'Highland Princess': 1, 'Adept Illusionist': 2, 'Coy Nixie': 3, 'Lugbog Cat': 2, 'Headless Haunt': 2, 'Gibbous Nightgaunts': 3, 'Order of the Sacred Oak': 3, 'Aria Wraith': 2, 'Frost Elemental': 3,
     'Sacred Stag': 1, 'Lacuna Entity': 1, 'Stomping Mammoth': 3, 'Frozen Horror': 2,
     'Full-tilt Goliaths': 2, 'Hibernal Legion': 1, Nanurluk: 1, Jormungand: 1, 'Draconian Bonekite': 1,
     Toolbox: 3, 'Ring of Morrigan': 1,
