@@ -2127,6 +2127,8 @@ function GameInner({
       }
       return
     }
+    // a location-picking Genesis (Hailstriker): an empty square or void next to the summoning square
+    if (castGenesisAtSquare(x, y)) return
     // square-target picking for spells (magic) AND activated abilities (Ancient
     // Dragon's breath, Ignis Rex's roar, Midland Army's bombard, Sparkmage's spark…)
     if ((mode.m === 'magic' || mode.m === 'abilityTargets') && currentSpec()?.what === 'square') {
@@ -2766,6 +2768,8 @@ function GameInner({
     }
     // a unit-picking Genesis: a click on the site itself is no pick (the units are their own chips)
     if (mode.m === 'genesisTargets' && genesisSpec()?.what !== 'square') { ev.stopPropagation(); return }
+    // a location-picking Genesis (Hailstriker): the site's square is the pick
+    if (castGenesisAtSquare(siteObj.x, siteObj.y)) { ev.stopPropagation(); return }
     // Editor open: a plain click selects ANY site for editing (either player's, any turn),
     // mirroring unit selection — the panel's Modify tab then shows this site's tools. NOT while
     // placing (judgePlace): a create-on-board click must fall through to clickSquare's placement.
@@ -3186,9 +3190,21 @@ function GameInner({
     const specs = getScript(view.cards[mode.cardId]?.name ?? '')?.genesisTargets ?? []
     return specs[specIndexForPick(specs, mode.picked.length)] ?? null
   }
+  // A Genesis that targets a LOCATION (Hailstriker's "target an adjacent location"): cast the minion with
+  // the clicked square. Only squares next to where the minion is being summoned are taken; the engine
+  // checks the rest. Returns true when the click was a Genesis location pick (used or not).
+  function castGenesisAtSquare(x: number, y: number): boolean {
+    if (mode.m !== 'genesisTargets' || genesisSpec()?.what !== 'square') return false
+    if (Math.abs(x - mode.at.x) + Math.abs(y - mode.at.y) !== 1) return true // not adjacent: ignore the click
+    send({ t: 'castSpell', cardId: mode.cardId, casterId: mode.casterId, at: mode.at, targets: [...mode.picked, `sq:${x},${y}`], extra: mode.extra })
+    setMode({ m: 'idle' })
+    return true
+  }
   // genesis target flow: click a unit while in genesisTargets mode
   function clickUnitForGenesis(u: UnitState) {
     if (mode.m !== 'genesisTargets') return false
+    // a location Genesis: the unit's chip covers its square, so the click means that square
+    if (genesisSpec()?.what === 'square') return castGenesisAtSquare(u.x, u.y)
     const picked = [...mode.picked, u.id]
     send({ t: 'castSpell', cardId: mode.cardId, casterId: mode.casterId, at: mode.at, targets: picked, extra: mode.extra })
     setMode({ m: 'idle' })
@@ -4938,7 +4954,7 @@ function GameInner({
       {/* genesis target skip */}
       {mode.m === 'genesisTargets' && (
         <div className="promptbanner" data-modebanner="genesisTargets">
-          Choose a target for {view.cards[mode.cardId]?.name}'s Genesis (click a unit) —{' '}
+          Choose a target for {view.cards[mode.cardId]?.name}'s Genesis ({genesisSpec()?.what === 'square' ? 'click a location next to where it is being summoned' : genesisSpec()?.what === 'site' ? 'click a site' : 'click a unit'}) —{' '}
           {/* the minion doesn't exist yet, so it can't be clicked: offer "itself" when its Genesis may
               target it (Town Priest under a Corruptor — Evil, and adjacent to its own square) */}
           {me !== null && genesisSelfTargetOk(st, me, view.cards[mode.cardId]?.name ?? '', mode.at, mode.picked.length, mode.picked.map((id) => ({ unit: id }))) && (

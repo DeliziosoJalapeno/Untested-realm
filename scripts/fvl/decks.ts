@@ -165,6 +165,61 @@ DECKS['F8 Frost Earth-Water'] = {
   },
 }
 
+// U0: the user's own list (a modified Frost Mage precon), as the baseline for F9.
+DECKS['U0 User Frost'] = {
+  name: 'U0 User Frost', avatar: 'Frost Mage',
+  collection: { Blizzard: 1, Disenchant: 1, Displace: 1, 'Lightning Bolt': 1, Drown: 1, 'Ice Shards': 1, 'Plumed Pegasus': 1, 'Tufted Turtles': 1, 'Arc Lightning': 1, 'Highland Clansmen': 1 },
+  atlas: { 'Ancient Thaw': 2, Avalanche: 1, 'Deep Sea': 2, 'Deep Snow': 2, 'Icicle Dome': 2, Lighthouse: 2, 'Mountain Pass': 2, 'Mountain Peaks': 2, Permafrost: 2, 'River Rapids': 1, 'Springstem Meadow': 2, 'Thin Ice': 3, Tundra: 2, 'Winter River': 4, 'Wuthering Heights': 1 },
+  spellbook: {
+    'Arctic Fox': 1, 'Highgate Guide': 3, 'Jussi Puffins': 2, Runeling: 3, 'Sissi Marksmen': 2, 'The White Death': 1, 'Aria Wraith': 2, 'A Yeti So Shy': 1, 'Coy Nixie': 2,
+    'Fey Changeling': 1, 'Lone Wolf': 1, 'Polar Bears': 4, 'Failed Mutation': 1, 'Frost Elemental': 3, Hailstriker: 2, 'Stomping Mammoth': 2, 'Swealand Longship': 1,
+    Bearserker: 2, 'Frozen Horror': 2, 'Hibernal Legion': 1, Nanurluk: 1, 'Full-tilt Goliaths': 1, Jormungand: 1,
+    Shatter: 3, Slide: 2, Frostbolt: 3, 'Polar Shift': 1, Research: 2, 'Frost Breath': 2, Snowball: 2, 'When the Peaks Fell': 1, 'Call of the Sea': 1,
+    'Man-made Ice Age': 1, Toolbox: 2,
+  },
+}
+// F9: the same deck rebuilt around its three ideas. Freeze first (Freeze, Frostbolt, Frost Elemental,
+// Hailstriker, Hyperparasite, the Avatar), kill what is frozen for 1 (Shatter, Aria Wraith, Icicle Dome),
+// shoot from range (Sissi Marksmen, Stygian Archers, The White Death, Hailstriker), then land the big bodies.
+DECKS['F9 Frost Control'] = {
+  name: 'F9 Frost Control', avatar: 'Frost Mage',
+  collection: { Blizzard: 1, Disenchant: 1, Displace: 1, 'Lightning Bolt': 1, Drown: 1, 'Ice Shards': 1, 'Ice Lance': 1, Sleep: 1, 'Arc Lightning': 1, 'Highland Clansmen': 1 },
+  atlas: { Tundra: 2, Lighthouse: 3, 'Icicle Dome': 2, Permafrost: 2, 'Deep Snow': 2, Avalanche: 2, 'Wuthering Heights': 2, 'River Rapids': 1, 'Winter River': 4, 'Mountain Pass': 2, 'Springstem Meadow': 2, 'Thin Ice': 2, 'Deep Sea': 2, 'Mountain Peaks': 2 },
+  spellbook: {
+    Freeze: 4, Shatter: 3, Frostbolt: 3, Slide: 2, Research: 2,
+    'Sissi Marksmen': 3, 'The White Death': 1, 'Stygian Archers': 3, Hailstriker: 2,
+    'Arctic Fox': 3, Runeling: 2, 'Jussi Puffins': 2, 'Coy Nixie': 3, 'Gibbous Nightgaunts': 3, 'Aria Wraith': 2, 'Frost Elemental': 3, 'Abaddon Succubus': 2,
+    Hyperparasite: 2, 'Stomping Mammoth': 2, 'Frozen Horror': 2,
+    'Full-tilt Goliaths': 2, 'Lord of Lies': 2, 'Hibernal Legion': 1, Nanurluk: 1, Jormungand: 1, 'Draconian Bonekite': 1,
+    Toolbox: 3,
+  },
+}
+
+// F10: F9 with fewer narrow cards (two Freeze, no Research / Hyperparasite / Puffins) and sturdier Gothic bodies.
+DECKS['F10 Frost Control B'] = {
+  ...DECKS['F9 Frost Control'], name: 'F10 Frost Control B',
+  spellbook: {
+    Freeze: 2, Shatter: 3, Frostbolt: 3, Slide: 2,
+    'Sissi Marksmen': 3, 'The White Death': 1, 'Stygian Archers': 3, Hailstriker: 2,
+    'Arctic Fox': 3, Runeling: 2, 'Coy Nixie': 3, 'Gibbous Nightgaunts': 3, 'Order of the Sacred Oak': 3, 'Aria Wraith': 2, 'Frost Elemental': 3, 'Abaddon Succubus': 2,
+    'Sacred Stag': 2, 'Lacuna Entity': 2, 'Stomping Mammoth': 3, 'Frozen Horror': 2,
+    'Full-tilt Goliaths': 2, 'Lord of Lies': 2, 'Hibernal Legion': 1, Nanurluk: 1, Jormungand: 1, 'Draconian Bonekite': 1,
+    Toolbox: 3,
+  },
+}
+// F11: as F10 but with the strongest cheap Air/Water bodies from older sets.
+DECKS['F11 Frost Control C'] = {
+  ...DECKS['F9 Frost Control'], name: 'F11 Frost Control C',
+  spellbook: {
+    Freeze: 2, Shatter: 3, Frostbolt: 3, Slide: 2,
+    'Sissi Marksmen': 3, 'The White Death': 1, 'Stygian Archers': 3, Hailstriker: 2,
+    'Arctic Fox': 3, Runeling: 2, 'Coy Nixie': 3, 'Lugbog Cat': 3, 'Headless Haunt': 3, 'Gibbous Nightgaunts': 3, 'Aria Wraith': 2, 'Frost Elemental': 3, 'Abaddon Succubus': 2,
+    'Sacred Stag': 2, 'Stomping Mammoth': 2, 'Frozen Horror': 2,
+    'Full-tilt Goliaths': 2, 'Lord of Lies': 2, 'Hibernal Legion': 1, Nanurluk: 1, Jormungand: 1, 'Draconian Bonekite': 1,
+    Toolbox: 3,
+  },
+}
+
 // L6 (control): the Fire Necromancer list with the Avatar swapped, to see what the Lavamancer costs a proven shell.
 import { featuredDecks } from '../../packages/shared/src'
 const necro = (featuredDecks as DeckList[]).find((d) => d.name === 'Fire Necromancer')
