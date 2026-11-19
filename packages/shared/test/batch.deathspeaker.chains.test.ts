@@ -17,6 +17,10 @@ describe('Deathspeaker sees dead minions in EITHER cemetery', () => {
     waiveThreshold(g, 0) // the echo is a cast: it must meet the copied minion's threshold
     const cid = `c${g.nextId++}`; g.cards[cid] = { id: cid, name: 'Bone Jumble', owner: 1 } as any
     g.players[1].cemetery.push(cid) // a dead minion in the OPPONENT's cemetery
+    g.players[0].mana = 10 // only minions the Deathspeaker can pay for are offered
+    const none = structuredClone(g); none.players[0].mana = 0
+    getScript('Deathspeaker')!.abilities![0].effect(makeCtx(none, av.id, 0, []))
+    expect(none.prompts.length, 'nothing affordable: no question, nothing spent').toBe(0)
     getScript('Deathspeaker')!.abilities![0].effect(makeCtx(g, av.id, 0, []))
     const p: any = g.prompts[0]
     expect(p?.kind).toBe('chooseOption')

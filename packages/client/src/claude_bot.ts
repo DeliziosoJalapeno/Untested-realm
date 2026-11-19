@@ -12,7 +12,7 @@
 //      still legal and nothing unexpected happened — otherwise Claude is asked again.
 // If Claude can't be reached, answers nonsense, or takes too long, the search bot's move is played.
 import {
-  expandActions, evaluate, DEFAULT_WEIGHTS, getCard, psoCard, affinity, effAttack, effKeywords, isDisabled, opponent,
+  applyAction, expandActions, evaluate, DEFAULT_WEIGHTS, getCard, psoCard, affinity, effAttack, effKeywords, isDisabled, opponent,
   GRID_W, GRID_H, type Action, type GameState, type PlayerId, type UnitState,
 } from '@sorcery/shared'
 import { fairView, replyOutcome, type ReplyOutcome } from './bot_search'
@@ -82,6 +82,36 @@ function inReach(s: GameState, u: UnitState, x: number, y: number): boolean {
   return dx === 1 && dy === 1 && !!(effKeywords(s, u) as Record<string, unknown>).airborne
 }
 
+/** Enemy Ranged units with a clear line of fire to `av`: same row or column on the surface with no
+ *  unit in between (a projectile hits the first unit in its path). A shooter whose text lets it shoot
+ *  across the top and bottom edges is also checked the other way round its column. */
+export function rangedThreats(view: GameState, me: PlayerId, av: UnitState): { u: UnitState; wrap: boolean }[] {
+  const out: { u: UnitState; wrap: boolean }[] = []
+  const units = Object.values(view.units).filter((u) => u.region === 'surface' && !u.carriedBy)
+  const blocked = (cells: [number, number][]) => cells.some(([x, y]) => units.some((o) => o.x === x && o.y === y))
+  for (const u of units) {
+    if (u.controller === me || u.isAvatar || isDisabled(view, u) || av.region !== 'surface') continue
+    if (!(effKeywords(view, u) as Record<string, unknown>).ranged || effAttack(view, u) <= 0) continue
+    if (u.x === av.x && u.y === av.y) continue
+    let direct = false, wrap = false
+    if (u.x === av.x) {
+      const lo = Math.min(u.y, av.y), hi = Math.max(u.y, av.y)
+      const between: [number, number][] = []; for (let y = lo + 1; y < hi; y++) between.push([u.x, y])
+      direct = !blocked(between)
+      if (!direct && /across the top and bottom edges/i.test(getCard(u.name)?.text ?? '')) {
+        const round: [number, number][] = []; for (let y = 0; y < GRID_H; y++) if (y < lo || y > hi) round.push([u.x, y])
+        wrap = !blocked(round)
+      }
+    } else if (u.y === av.y) {
+      const lo = Math.min(u.x, av.x), hi = Math.max(u.x, av.x)
+      const between: [number, number][] = []; for (let x = lo + 1; x < hi; x++) between.push([x, u.y])
+      direct = !blocked(between)
+    }
+    if (direct || wrap) out.push({ u, wrap: !direct && wrap })
+  }
+  return out
+}
+
 /** the position in words, from seat `me`. `view` must already be me's fair view. */
 export function describePosition(view: GameState, me: PlayerId): string {
   const foe = opponent(me)
@@ -110,6 +140,10 @@ export function describePosition(view: GameState, me: PlayerId): string {
     out.push('', near.length
       ? `THREAT: enemy units one step from your Avatar (they can attack it next turn unless you leave an untapped defender within a step of it): ${near.map((u) => `${u.name} (${effAttack(view, u)})`).join(', ')}`
       : 'No enemy unit is within one step of your Avatar.')
+    // ...and who can SHOOT it from afar. In one reviewed game a Ranged minion shot the Avatar six turns
+    // running (12 of its 20 life) while Claude "kept the Avatar back" and never dealt with the shooter.
+    const shooters = rangedThreats(view, me, av)
+    if (shooters.length) out.push(`RANGED THREAT: ${shooters.map((t) => `${t.u.name} at ${sqName(me, t.u.x, t.u.y)} (${effAttack(view, t.u)} damage${t.wrap ? ', shooting across the edge of the realm' : ''})`).join(', ')} ${shooters.length > 1 ? 'have' : 'has'} a clear line of fire to your Avatar and can shoot it EVERY turn from where ${shooters.length > 1 ? 'they stand' : 'it stands'}; staying back does not help. Kill ${shooters.length > 1 ? 'them' : 'it'}, put a unit of yours in the line of fire, or move your Avatar out of that row or column.`)
   }
   // your own cards' text lives in the (cached) deck reference; only the name and cost are repeated here
   const own = ownCardNames(view, me)
@@ -143,6 +177,8 @@ export function describeAction(s: GameState, me: PlayerId, a: Action): string {
     case 'moveAttack': {
       const u = s.units[a.unitId]
       const last = a.path[a.path.length - 1]
+      // a unit that isn't on the board (a later step of a planned line, for a minion cast earlier in it)
+      if (!u) return `a unit ${last ? `moves to ${sqName(me, last.x, last.y)}${regionTag(last.region)}` : 'stays'}${a.attack ? ' and attacks' : ''}`
       const go = last ? (last.x === u.x && last.y === u.y ? (last.region !== u.region ? `changes layer to ${last.region}` : 'stays') : `moves to ${sqName(me, last.x, last.y)}${regionTag(last.region)}`) : 'stays'
       const atk = a.attack ? ('unit' in a.attack ? ` and ATTACKS ${un(a.attack.unit)}` : ` and ATTACKS THE SITE there`) : ''
       return `${un(a.unitId)} ${go}${atk}${a.attack ? defenders(s, me, u, last ?? { x: u.x, y: u.y, region: u.region }, 'unit' in a.attack ? a.attack.unit : null) : ''}`
@@ -280,7 +316,23 @@ export function buildRequest(real: GameState, me: PlayerId, cands: ClaudeCandida
     if (c.action.t === 'endTurn' && analysis?.pass) return `[then their reply: ${outcomeText(analysis.pass, analysis.pass, mine, theirs)}]`
     return `[eval ${c.delta >= 0 ? '+' : ''}${c.delta.toFixed(1)}]`
   }
-  const line = analysis?.line?.length ? `\n\nTHE SEARCH ENGINE'S PLAN FOR THIS TURN (its best line; a tactical suggestion, not an order):\n${analysis.line.map((a, i) => `  ${i + 1}) ${describeAction(view, me, a)}`).join('\n')}` : ''
+  // The engine's line is described step by step on a copy of the game that PLAYS each step: a later step
+  // can move a minion that an earlier step cast, which does not exist in the position as it stands
+  // (describing every step against today's board crashed on exactly that, and Claude lost the turn).
+  const lineText = (): string => {
+    if (!analysis?.line?.length) return ''
+    const sim = structuredClone(real)
+    const steps: string[] = []
+    for (const a of analysis.line) {
+      let text: string
+      try { text = describeAction(fairView(sim, me), me, a) } catch { text = '(a follow-up step)' }
+      steps.push(`  ${steps.length + 1}) ${text}`)
+      try { if (!applyAction(sim, me, a).ok) break } catch { break }
+    }
+    return `\n\nTHE SEARCH ENGINE'S PLAN FOR THIS TURN (its best line; a tactical suggestion, not an order):\n${steps.join('\n')}`
+  }
+  let line = ''
+  try { line = lineText() } catch { /* the plan is a hint: never worth losing the request over */ }
   return {
     reference: deckReference(view, me),
     position: (describePosition(view, me) + line).slice(0, 38_000),

@@ -82,6 +82,9 @@ Think like a strong human player. Before answering, work through the turn: what 
 - Attack sites to drain life when the Avatar is guarded; once the enemy Avatar is at Death's Door, switch entirely to getting ONE point of damage onto it (a strike or any damage spell).
 - Tempo and cards: a removal spell on a minion that cost more than the spell is a good trade. Hold removal for the unit that is actually stopping you (a guard, a Spellcaster, a big attacker). Don't spend a card for no gain.
 - A minion you only control temporarily should be used NOW: attack with it.
+- Recurring damage decides games. An enemy that can hit your Avatar or your sites EVERY turn (a Ranged unit with a clear line of fire, an attacker you never answer) comes before everything else: kill it, block its line with a unit, or step out of its row or column. Keeping the Avatar "back" does nothing against Ranged. The position names these under RANGED THREAT.
+- Do not pass with good attacks available just to "hold position". Leave a guard only against a threat the position actually names; if none is named, use your units: hit undefended sites, take the trades you win. A turn that neither develops nor attacks hands the opponent the game one turn sooner, and unspent mana is wasted.
+- An effect that applies to BOTH players or to "each" unit applies to you too. Before casting one, ask what the opponent does with it: a card that lets each player control the other's next turn gives the opponent YOUR turn, with your sites and abilities to sacrifice or waste.
 - Read each card's text before using it; an ability that sounds strong can hurt you (moving your own units or sites into danger, damaging your own units, giving the opponent something).
 - Have a game plan and keep to it across turns: are you the aggressor racing their life total, or defending until your bigger spells take over? Say so in "strategy".
 

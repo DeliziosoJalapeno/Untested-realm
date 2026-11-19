@@ -329,3 +329,33 @@ describe('Claude opponent — the server side', () => {
     }
   })
 })
+
+describe('lessons from reviewed Claude games (19 November)', () => {
+  it("describes the engine's line step by step, so a later step may use a minion an earlier step casts", () => {
+    const t = scene({ sites: [[0, 'Valley', 2, 0], [0, 'Valley', 2, 1], [1, 'Wasteland', 2, 3]], hand: ['Foot Soldiers'], mana: 5 })
+    const cast = candidates(t.g, 0).find((c) => c.action.t === 'castSpell')!
+    // the second step moves a unit that does not exist yet: describing it against today's board threw
+    const ghostMove: Action = { t: 'moveAttack', unitId: 'not-on-the-board-yet', path: [{ x: 2, y: 1, region: 'surface' }] } as any
+    const req = buildRequest(t.g, 0, candidates(t.g, 0), cast.action, '', { line: [cast.action, ghostMove], pass: null, outcomes: {} })
+    expect(req.position).toMatch(/SEARCH ENGINE'S PLAN/)
+    expect(req.position).toMatch(/1\) CAST Foot Soldiers/)
+    expect(req.candidates.length).toBeGreaterThan(1)
+  })
+
+  it('names a Ranged enemy with a clear line of fire to the Avatar, and not one that is blocked', () => {
+    const open = scene({ avatars: ['Deathspeaker', 'Frost Mage'], sites: [[0, 'Valley', 2, 0], [0, 'Valley', 2, 1], [1, 'Spire', 2, 2], [1, 'Spire', 2, 3]], at: [[2, 0], [3, 3]], units: [{ key: 's', p: 1, name: 'Sissi Marksmen', x: 2, y: 3 }] })
+    expect(describePosition(fairView(open.g, 0), 0)).toMatch(/RANGED THREAT: Sissi Marksmen at .* can shoot it EVERY turn/)
+    const blocked = scene({ avatars: ['Deathspeaker', 'Frost Mage'], sites: [[0, 'Valley', 2, 0], [0, 'Valley', 2, 1], [1, 'Spire', 2, 2], [1, 'Spire', 2, 3]], at: [[2, 0], [3, 3]], units: [{ key: 's', p: 1, name: 'Stygian Archers', x: 2, y: 3 }, { key: 'g', p: 0, name: 'Foot Soldiers', x: 2, y: 1 }] })
+    expect(describePosition(fairView(blocked.g, 0), 0)).not.toMatch(/RANGED THREAT/)
+    // Sissi Marksmen may shoot across the top and bottom edges: a blocker in between is not enough
+    const wrap = scene({ avatars: ['Deathspeaker', 'Frost Mage'], sites: [[0, 'Valley', 2, 0], [0, 'Valley', 2, 1], [1, 'Spire', 2, 2], [1, 'Spire', 2, 3]], at: [[2, 0], [3, 3]], units: [{ key: 's', p: 1, name: 'Sissi Marksmen', x: 2, y: 3 }, { key: 'g', p: 0, name: 'Foot Soldiers', x: 2, y: 1 }] })
+    expect(describePosition(fairView(wrap.g, 0), 0)).toMatch(/RANGED THREAT: Sissi Marksmen .*across the edge/)
+  })
+
+  it('tells Claude about recurring damage, passing with attacks available, and effects that hit both players', () => {
+    expect(SYSTEM_PROMPT).toMatch(/Recurring damage decides games/)
+    expect(SYSTEM_PROMPT).toMatch(/Do not pass with good attacks available/)
+    expect(SYSTEM_PROMPT).toMatch(/applies to BOTH players/)
+  })
+})
+

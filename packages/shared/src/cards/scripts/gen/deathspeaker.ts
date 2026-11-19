@@ -69,8 +69,14 @@ registerScript('Deathspeaker', {
           if (getCard(ctx.state.cards[id].name).type === 'Minion') names.add(ctx.state.cards[id].name)
         }
       }
-      const options = [...names].filter((n) => echoThresholdOk(ctx.state, ctx.controller, n))
-      if (!options.length) return ctx.log(names.size ? 'No dead minion whose threshold you meet.' : 'No dead minion to speak for.')
+      // only minions the Deathspeaker can pay for now are offered: choosing one that costs too much did
+      // nothing but log "Not enough mana"
+      const self = ctx.state.units[ctx.sourceId]
+      const mana = ctx.state.players[ctx.controller].mana
+      const price = (n: string) => (self?.deathsDoor ? 0 : findCard(n)?.cost ?? 0) + zoneAccessToll(ctx.state)
+      const castable = [...names].filter((n) => echoThresholdOk(ctx.state, ctx.controller, n))
+      const options = castable.filter((n) => price(n) <= mana)
+      if (!options.length) return ctx.log(!names.size ? 'No dead minion to speak for.' : castable.length ? 'No dead minion you can pay for right now.' : 'No dead minion whose threshold you meet.')
       ctx.ask({ kind: 'chooseOption', title: 'Speak for which dead minion?', data: { options } }, 'speak')
     },
   }],
