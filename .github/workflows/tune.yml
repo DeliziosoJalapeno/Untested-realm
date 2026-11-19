@@ -1,0 +1,88 @@
+# Self-tuning, one generation: 20 candidates, each the base evaluation weights with every weight nudged at
+# random, play the base on the meta decks (scripts/fvl/tune_gen.ts). The totalling step turns the results
+# into the next base (scripts/fvl/tune_total.mjs) and prints it as a NEXT line: feed its "weights" back in
+# as `base` for the following generation, and confirm a result with the Self-play workflow before keeping it.
+name: Tune
+on:
+  workflow_dispatch:
+    inputs:
+      base:
+        description: 'Base weights (JSON, only those that differ from the code defaults)'
+        default: '{}'
+      pairs:
+        description: 'Pairings per candidate (each is two games)'
+        default: '120'
+      seed:
+        description: 'Seed: use a new one for every generation'
+        default: '1'
+      sigma:
+        description: 'Size of the nudges (0.15 = about 15%)'
+        default: '0.15'
+      budget:
+        description: 'Thinking time per plan (ms)'
+        default: '150'
+      label:
+        description: 'Generation label'
+        default: ''
+permissions:
+  contents: read
+env:
+  CANDIDATES: 20
+jobs:
+  play:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    strategy:
+      fail-fast: false
+      matrix:
+        candidate: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Play
+        env:
+          BASE: ${{ inputs.base }}
+          PAIRS: ${{ inputs.pairs }}
+          SEED: ${{ inputs.seed }}
+          SIGMA: ${{ inputs.sigma }}
+          BUDGET: ${{ inputs.budget }}
+          CAND: ${{ matrix.candidate }}
+        run: |
+          cores=$(nproc)
+          for k in $(seq 0 $((cores-1))); do
+            npx tsx scripts/fvl/tune_gen.ts "$CAND" "$CANDIDATES" "$PAIRS" "$SEED" "$SIGMA" "$BUDGET" "$BASE" "$k/$cores" > "part-$CAND-$k.json" &
+          done
+          wait
+          cat part-$CAND-*.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: part-${{ matrix.candidate }}
+          path: part-*.json
+  total:
+    needs: play
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - name: Next base
+        env:
+          BASE: ${{ inputs.base }}
+          SEED: ${{ inputs.seed }}
+          SIGMA: ${{ inputs.sigma }}
+          LABEL: ${{ inputs.label }}
+        run: |
+          defaults=$(npx tsx -e "import { DEFAULT_WEIGHTS } from './packages/shared/src/bot/eval.weights'; console.log(JSON.stringify(DEFAULT_WEIGHTS))")
+          node scripts/fvl/tune_total.mjs "$CANDIDATES" "$SEED" "$SIGMA" "$BASE" "$defaults" | tee out.txt
+          { echo "### Tuning generation ${LABEL}"; echo; echo '```'; cat out.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

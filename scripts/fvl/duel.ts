@@ -9,7 +9,9 @@ import { searchBotAction, DEFAULT_SEARCH, resetSearchState, rolloutStats, type S
 
 const [pArg, sArg, aArg, bArg, partArg] = process.argv.slice(2)
 const PAIRS = Number(pArg ?? 10), SEED = Number(sArg ?? 1)
-const cfgs: SearchConfig[] = [{ ...DEFAULT_SEARCH, ...JSON.parse(aArg ?? '{}') }, { ...DEFAULT_SEARCH, ...JSON.parse(bArg ?? '{}') }]
+// a `weights` entry holds only the weights that differ from the defaults
+const cfgOf = (json: string | undefined): SearchConfig => { const o = JSON.parse(json || '{}'); return { ...DEFAULT_SEARCH, ...o, weights: { ...DEFAULT_SEARCH.weights, ...(o.weights ?? {}) } } }
+const cfgs: SearchConfig[] = [cfgOf(aArg), cfgOf(bArg)]
 const [pi, pn] = (partArg ?? '0/1').split('/').map(Number)
 const field = (featuredDecks as DeckList[]).filter((d) => !/FvL precon/.test(d.name))
 let rng = SEED * 2654435761 >>> 0
