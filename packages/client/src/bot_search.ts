@@ -1013,7 +1013,7 @@ export const rolloutStats = () => ROLL_STATS
 /** A copy of the game in which every card `me` has not seen is reshuffled: the opponent's hand is redealt
  *  from their hand and decks together (keeping how many spells and sites they hold), and both players'
  *  decks are put in a new order. What `me` knows stays as it is. */
-function reshuffled(real: GameState, me: PlayerId, rand: () => number): GameState {
+export function reshuffled(real: GameState, me: PlayerId, rand: () => number): GameState {
   const s = clone(real)
   const shuffle = (a: string[]) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [a[i], a[j]] = [a[j], a[i]] } }
   const foe = s.players[opponent(me)]
