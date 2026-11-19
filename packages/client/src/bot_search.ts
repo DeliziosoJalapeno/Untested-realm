@@ -932,6 +932,28 @@ function playSiteInFront(state: GameState, me: PlayerId): Action | null {
  *  caches a contingency plan; subsequent actions replay it (instant) until reality diverges. */
 export function searchBotAction(state: GameState, me: PlayerId, cfg: SearchConfig = DEFAULT_SEARCH): Action {
   if (state.phase === 'mulligan') return { t: 'mulligan', back: mulliganTargets(state, me) }
+  // the bot's own anti-loop ward: a main-phase action that left the position's score exactly where it was
+  // (an ability opened and cancelled, a move there and back) is not offered again this turn. The app
+  // keeps such a list too (cfg.banned); this one also covers every other caller.
+  const mainNow = state.phase === 'main' && state.activePlayer === me && !state.prompts[0]
+  const ward = WARDS[me]
+  if (ward.turn !== state.turn) { ward.turn = state.turn; ward.banned = new Set(); ward.last = null }
+  if (mainNow) {
+    const score = evaluate(state, me, cfg.weights)
+    if (ward.last && ward.last.score === score) { ward.banned.add(ward.last.key); PLAN = null; CONTS[me] = null }
+    ward.last = null
+    if (ward.banned.size) cfg = { ...cfg, banned: new Set([...(cfg.banned ?? []), ...ward.banned]) }
+    const a = searchBotActionInner(state, me, cfg)
+    if (a.t !== 'endTurn') ward.last = { key: botActionKey(a), score }
+    return a
+  }
+  return searchBotActionInner(state, me, cfg)
+}
+/** per seat: the turn, the actions warded off this turn, and the last main-phase action with the score before it */
+const WARDS: { turn: number; banned: Set<string>; last: { key: string; score: number } | null }[] = [
+  { turn: -1, banned: new Set(), last: null }, { turn: -1, banned: new Set(), last: null },
+]
+function searchBotActionInner(state: GameState, me: PlayerId, cfg: SearchConfig): Action {
   // every judgement below is made on `me`'s fair copy of the game (hidden information); only legality
   // checks and the "what happened" matching (sig) look at the real state
   let fair: GameState | null = null
@@ -1170,6 +1192,7 @@ export function lastSearchStats(): { nodes: number; ttHits: number; ttSize: numb
 /** forget every cached plan / tree / continuation, so the next call plans from scratch (tests / A-B checks). */
 export function resetSearchState(): void {
   PLAN = null; PLAN_SEAT = null; PLAN_TURN = -1
+  for (const w of WARDS) { w.turn = -1; w.banned = new Set(); w.last = null }
   CONTS[0] = CONTS[1] = null
   TREES[0] = new Map(); TREES[1] = new Map()
   TTS[0] = new Map(); TTS[1] = new Map()
