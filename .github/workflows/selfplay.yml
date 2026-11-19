@@ -1,0 +1,105 @@
+# Self-play: two Thinking-bot configurations head to head on the meta decks, spread over many machines.
+# Each pairing is played twice with the configurations swapped (scripts/fvl/duel.ts), so deck strength
+# and who goes first cancel out. Start it from the Actions tab, or: gh workflow run selfplay.yml -f b='{...}'
+name: Self-play
+on:
+  workflow_dispatch:
+    inputs:
+      a:
+        description: 'Configuration A (JSON over the defaults; {} = the current Thinking bot)'
+        default: '{}'
+      b:
+        description: 'Configuration B (JSON over the defaults)'
+        default: '{}'
+      pairs:
+        description: 'Pairings in total (each is two games)'
+        default: '160'
+      machines:
+        description: 'Machines to spread over (1-20)'
+        default: '20'
+      seed:
+        description: 'Seed (same seed = same pairings)'
+        default: '1'
+      label:
+        description: 'What this run is testing'
+        default: ''
+permissions:
+  contents: read
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      shards: ${{ steps.s.outputs.shards }}
+    steps:
+      - id: s
+        env:
+          MACHINES: ${{ inputs.machines }}
+        run: |
+          n=$(( MACHINES < 1 ? 1 : (MACHINES > 20 ? 20 : MACHINES) ))
+          echo "shards=[$(seq -s, 0 $((n-1)))]" >> "$GITHUB_OUTPUT"
+  play:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.plan.outputs.shards) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Play
+        env:
+          A: ${{ inputs.a }}
+          B: ${{ inputs.b }}
+          PAIRS: ${{ inputs.pairs }}
+          MACHINES: ${{ inputs.machines }}
+          SEED: ${{ inputs.seed }}
+          SHARD: ${{ matrix.shard }}
+        run: |
+          cores=$(nproc)
+          total=$(( MACHINES * cores ))
+          for k in $(seq 0 $((cores-1))); do
+            npx tsx scripts/fvl/duel.ts "$PAIRS" "$SEED" "$A" "$B" "$(( SHARD * cores + k ))/$total" > "part-$SHARD-$k.json" &
+          done
+          wait
+          cat part-$SHARD-*.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: part-${{ matrix.shard }}
+          path: part-*.json
+  total:
+    needs: play
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - name: Total
+        env:
+          A: ${{ inputs.a }}
+          B: ${{ inputs.b }}
+          LABEL: ${{ inputs.label }}
+        run: |
+          node -e '
+            const fs = require("fs")
+            let a = 0, b = 0, d = 0, parts = 0
+            for (const f of fs.readdirSync(".").filter((x) => /^part-.*\.json$/.test(x))) {
+              for (const line of fs.readFileSync(f, "utf8").split("\n")) {
+                if (!line.trim().startsWith("{")) continue
+                const r = JSON.parse(line); a += r.a; b += r.b; d += r.draws; parts++
+              }
+            }
+            const n = a + b
+            const share = n ? b / n : 0.5
+            const se = n ? Math.sqrt(0.25 / n) : 0
+            const out = { label: process.env.LABEL, a: process.env.A, b: process.env.B, winsA: a, winsB: b, draws: d, parts,
+              shareB: +(100 * share).toFixed(1), marginOfError: +(196 * se).toFixed(1) }
+            console.log("RESULT " + JSON.stringify(out))
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### ${out.label || "Self-play"}\n\nA \`${out.a}\`: **${a}** wins\n\nB \`${out.b}\`: **${b}** wins\n\nDraws: ${d}\n\nB won ${out.shareB}% of decided games (margin of error about ±${out.marginOfError} points).\n`)
+          '
