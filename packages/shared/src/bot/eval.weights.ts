@@ -73,6 +73,12 @@ export interface EvalWeights {
    *  count. Flat (a version doubled when behind on life made paying life flip the score). Waived when the foe is at death's door (the
    *  finish is worth the walk). A 1-damage site hit must not lure the Avatar into the enemy's units. */
   avatarAbroad: number
+  /** STANDING THREATS. Per point of attack of every enemy minion that can strike my avatar turn after turn,
+   *  tapped or not (`myAvatarExposed` only sees untapped ones, so a ranged minion that has just shot looks
+   *  harmless at the moment the search judges the position). 0 = off. */
+  standingThreat: number
+  /** extra per point when none of my units can strike that minion back next turn */
+  standingThreatUnanswered: number
   /** penalty for spending the avatar's Tap on a NON-site special ability (Sorcerer's "Draw a spell", …)
    *  instead of developing. HEAVY under 5 sites, moderate at 5, slight at 6, NOTHING above 6 (fully
    *  developed). Below 4 sites the bot never even considers it (a hard ban in moves.ts). */
@@ -191,6 +197,8 @@ export const DEFAULT_WEIGHTS: EvalWeights = {
   avatarIdle: 26, // (was 12) while developing (<6 sites) an untapped avatar is a WASTED site play — prized
   avatarWander: 28, // roaming instead of developing (scaled ×2 weak / ×1 strong <4 sites / ×0.5 strong 4–5)
   avatarAbroad: 60, // more than two site hits are worth (~24 each + pressure)
+  standingThreat: 0, // off until a self-play test says otherwise
+  standingThreatUnanswered: 0,
   avatarTapWaste: 45, // Tap squandered on a non-site ability vs developing — heavy (>a card/site's worth) so
   //                     it beats even a strong Tap while developing; scaled ×1 <5 / ×0.5 at 5 / ×0.2 at 6 / 0 above 6
   pathfinderIdle: 50, // SEVERE — a Pathfinder that can blaze but doesn't is wasting a site play AND a board

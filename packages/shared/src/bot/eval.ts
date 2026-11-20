@@ -387,6 +387,21 @@ function explainEvalRaw(state: GameState, me: PlayerId, w: EvalWeights): EvalBre
   terms.foeLifePressure = w.foeLifePressure * Math.max(0, (getCard(foeAv.name).life ?? 20) - (foeAv.life ?? 0))
   terms.myAvatarExposed = -w.myAvatarExposed * reachingPower(state, foe, myAv)
   terms.foeAvatarThreatened = w.foeAvatarThreatened * reachingPower(state, me, foeAv)
+  // STANDING THREATS: enemy minions that can strike my avatar every turn (Sissi Marksmen dealt 12 of a
+  // Deathspeaker's 20 life this way, unanswered). Counted whether tapped or not, and counted more when
+  // nothing of mine can strike the minion back.
+  if (w.standingThreat || w.standingThreatUnanswered) {
+    let pts = 0
+    const mine = [...boardUnits(state, me), myAv] // my avatar can strike back too
+    for (const u of boardUnits(state, foe)) {
+      const atk = unitAttack(state, u)
+      const reach = attackReach(state, u)
+      if (atk <= 0 || reach < 0 || stepDistance(u, myAv) > reach) continue
+      const answered = mine.some((m) => unitAttack(state, m) > 0 && stepDistance(m, u) <= attackReach(state, m))
+      pts += atk * (w.standingThreat + (answered ? 0 : w.standingThreatUnanswered))
+    }
+    if (pts) terms.standingThreat = -pts
+  }
   // Interrogator: striking the enemy avatar taxes them 3 life OR draws me a spell — so avatar
   // aggression is a genuine goal for this pilot (the search also sees it via the mechanic).
   if (iAmInterrogator) {
