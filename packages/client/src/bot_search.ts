@@ -130,13 +130,13 @@ export interface RolloutConfig {
 
 export const DEFAULT_SEARCH: SearchConfig = {
   timeBudgetMs: 5000, // anytime cap per planning search; runs once per turn (replays are instant)
-  beamWidth: 4,
+  beamWidth: 6, // 4 → 6 on 20 Nov 2026: 792–628 over 1,420 self-play games (55.8%)
   beamDepth: 3,
   maxPlanDepth: 16,
   oppTurnMaxActions: 6,
   nodeBudget: 12000,
   avoidSiteAttacksAtDeathsDoor: true,
-  proceduralDraws: false,
+  proceduralDraws: true, // on since 20 Nov 2026: 766–661 alone (53.7%); with beamWidth 6, 548–405 (57.5%) against the old defaults
   earlyPlanUntilTurn: 7, // only look ahead while current turn ≤ 7
   earlyHorizonTurn: 8, // never roll past turn 8
   maxLookaheadTurns: 5, // and at most 5 turns from now (incl. the opponent's)
